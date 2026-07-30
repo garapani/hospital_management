@@ -6,15 +6,28 @@
   "private": true,
   "packageManager": "pnpm@11.5.2",
   "devDependencies": {
+    "@nx/jest": "23.1.0",
     "@nx/js": "23.1.0",
     "@nx/nest": "^23.1.0",
     "@swc-node/register": "1.11.1",
     "@swc/core": "1.15.8",
     "@swc/helpers": "0.5.18",
+    "@swc/jest": "~0.2.38",
+    "@types/express": "^5.0.6",
+    "@types/jest": "~30.0.0",
     "@types/node": "^24.0.0",
+    "jest": "~30.3.0",
+    "jest-environment-node": "~30.3.0",
+    "jest-util": "~30.3.0",
     "nx": "23.1.0",
     "prettier": "^3.8.1",
+    "ts-jest": "^29.4.7",
+    "ts-node": "10.9.1",
     "tslib": "^2.3.0",
     "typescript": "~6.0.3"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.28",
+    "express": "^5.2.1"
   }
 }
