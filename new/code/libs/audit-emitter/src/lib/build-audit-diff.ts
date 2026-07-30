@@ -13,8 +13,14 @@ export function buildAuditDiff(
   after: Record<string, unknown> | null,
 ): AuditDiffEntry[] {
   const excluded = new Set(getAuditExcludedFields(entityClass));
+  // The primary key is captured separately as `recordId` on the AuditEvent, so it's
+  // excluded here to avoid redundancy. Assumes the PK field is literally named 'id' -
+  // entities with a differently-named PK won't get this treatment.
   excluded.add('id');
-  const fields = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
+  const fields = new Set([
+    ...Object.keys(before ?? {}),
+    ...Object.keys(after ?? {}),
+  ]);
 
   const diff: AuditDiffEntry[] = [];
   for (const field of fields) {
@@ -24,7 +30,11 @@ export function buildAuditDiff(
     const beforeValue = before ? before[field] : null;
     const afterValue = after ? after[field] : null;
     if (beforeValue !== afterValue) {
-      diff.push({ field, before: beforeValue ?? null, after: afterValue ?? null });
+      diff.push({
+        field,
+        before: beforeValue ?? null,
+        after: afterValue ?? null,
+      });
     }
   }
   return diff;

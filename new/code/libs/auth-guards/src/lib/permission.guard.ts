@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { REQUIRED_PERMISSION_KEY } from './require-permission.decorator.js';
 
@@ -24,7 +29,9 @@ export class PermissionGuard implements CanActivate {
       .filter(Boolean);
 
     if (!grantedPermissions.includes(requiredPermission)) {
-      throw new ForbiddenException(`Missing required permission: ${requiredPermission}`);
+      throw new ForbiddenException(
+        `Missing required permission: ${requiredPermission}`,
+      );
     }
 
     return true;

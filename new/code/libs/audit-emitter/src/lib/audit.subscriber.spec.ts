@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { Logger } from '@nestjs/common';
 import { InsertEvent, RemoveEvent, UpdateEvent } from 'typeorm';
 import { AuditExclude } from './audit-exclude.decorator.js';
 import { AuditEventPublisher } from './audit-event-publisher.interface.js';
@@ -27,13 +28,19 @@ describe('AuditSubscriber', () => {
 
   it('publishes a create event with the correct diff on afterInsert', async () => {
     const { subscriber, tenantContext, published } = buildSubscriber();
-    const entity = Object.assign(new Account(), { id: '1', username: 'alice', passwordHash: 'h' });
-    const event = { metadata: { tableName: 'account' }, entity } as unknown as InsertEvent<
-      Record<string, unknown>
-    >;
+    const entity = Object.assign(new Account(), {
+      id: '1',
+      username: 'alice',
+      passwordHash: 'h',
+    });
+    const event = {
+      metadata: { tableName: 'account' },
+      entity,
+    } as unknown as InsertEvent<Record<string, unknown>>;
 
-    await tenantContext.run({ tenantId: 'h1', accountId: 'admin-1', correlationId: 'corr-1' }, () =>
-      subscriber.afterInsert(event),
+    await tenantContext.run(
+      { tenantId: 'h1', accountId: 'admin-1', correlationId: 'corr-1' },
+      () => subscriber.afterInsert(event),
     );
 
     expect(published).toEqual([
@@ -57,7 +64,11 @@ describe('AuditSubscriber', () => {
       username: 'alice',
       passwordHash: 'old',
     });
-    const entity = Object.assign(new Account(), { id: '1', username: 'alice2', passwordHash: 'new' });
+    const entity = Object.assign(new Account(), {
+      id: '1',
+      username: 'alice2',
+      passwordHash: 'new',
+    });
     const event = {
       metadata: { tableName: 'account' },
       entity,
@@ -83,7 +94,11 @@ describe('AuditSubscriber', () => {
       username: 'alice',
       passwordHash: 'old',
     });
-    const entity = Object.assign(new Account(), { id: '1', username: 'alice', passwordHash: 'new' });
+    const entity = Object.assign(new Account(), {
+      id: '1',
+      username: 'alice',
+      passwordHash: 'new',
+    });
     const event = {
       metadata: { tableName: 'account' },
       entity,
@@ -95,6 +110,43 @@ describe('AuditSubscriber', () => {
     );
 
     expect(published).toEqual([]);
+  });
+
+  it('skips publishing and logs a warning when the entity is a plain object, not a decorated class instance', async () => {
+    const { subscriber, tenantContext, published } = buildSubscriber();
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const databaseEntity = { id: '1', username: 'alice', passwordHash: 'old' };
+    const entity = { id: '1', username: 'alice2', passwordHash: 'new' };
+
+    const insertEvent = {
+      metadata: { tableName: 'account' },
+      entity,
+    } as unknown as InsertEvent<Record<string, unknown>>;
+    const updateEvent = {
+      metadata: { tableName: 'account' },
+      entity,
+      databaseEntity,
+    } as unknown as UpdateEvent<Record<string, unknown>>;
+    const removeEvent = {
+      metadata: { tableName: 'account' },
+      databaseEntity,
+    } as unknown as RemoveEvent<Record<string, unknown>>;
+
+    await tenantContext.run({ tenantId: 'h1', correlationId: 'corr-5' }, () =>
+      subscriber.afterInsert(insertEvent),
+    );
+    await tenantContext.run({ tenantId: 'h1', correlationId: 'corr-5' }, () =>
+      subscriber.afterUpdate(updateEvent),
+    );
+    await tenantContext.run({ tenantId: 'h1', correlationId: 'corr-5' }, () =>
+      subscriber.afterRemove(removeEvent),
+    );
+
+    expect(published).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledTimes(3);
+    warnSpy.mockRestore();
   });
 
   it('publishes a delete event on afterRemove', async () => {

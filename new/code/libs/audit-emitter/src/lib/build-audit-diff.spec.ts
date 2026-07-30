@@ -16,7 +16,9 @@ describe('buildAuditDiff', () => {
       { username: 'alice2', passwordHash: 'old-hash' },
     );
 
-    expect(diff).toEqual([{ field: 'username', before: 'alice', after: 'alice2' }]);
+    expect(diff).toEqual([
+      { field: 'username', before: 'alice', after: 'alice2' },
+    ]);
   });
 
   it('never includes a field marked with @AuditExclude, even when it changed', () => {
@@ -30,12 +32,19 @@ describe('buildAuditDiff', () => {
   });
 
   it('treats a null before as a create, diffing every non-excluded field', () => {
-    const diff = buildAuditDiff(Account, null, { username: 'alice', passwordHash: 'hash' });
+    const diff = buildAuditDiff(Account, null, {
+      username: 'alice',
+      passwordHash: 'hash',
+    });
     expect(diff).toEqual([{ field: 'username', before: null, after: 'alice' }]);
   });
 
   it('treats a null after as a delete, diffing every non-excluded field', () => {
-    const diff = buildAuditDiff(Account, { username: 'alice', passwordHash: 'hash' }, null);
+    const diff = buildAuditDiff(
+      Account,
+      { username: 'alice', passwordHash: 'hash' },
+      null,
+    );
     expect(diff).toEqual([{ field: 'username', before: 'alice', after: null }]);
   });
 });

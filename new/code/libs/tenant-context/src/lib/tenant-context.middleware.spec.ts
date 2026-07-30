@@ -24,7 +24,11 @@ describe('TenantContextMiddleware', () => {
       };
     });
 
-    expect(observed).toEqual({ tenantId: 'h1', accountId: 'acc-1', correlationId: 'corr-1' });
+    expect(observed).toEqual({
+      tenantId: 'h1',
+      accountId: 'acc-1',
+      correlationId: 'corr-1',
+    });
   });
 
   it('generates a new correlation id when none is provided', () => {

@@ -6,7 +6,8 @@ export type EntityClass = new (...args: unknown[]) => unknown;
 
 export function AuditExclude(): PropertyDecorator {
   return (target, propertyKey) => {
-    const existing: string[] = Reflect.getMetadata(AUDIT_EXCLUDE_KEY, target.constructor) ?? [];
+    const existing: string[] =
+      Reflect.getMetadata(AUDIT_EXCLUDE_KEY, target.constructor) ?? [];
     Reflect.defineMetadata(
       AUDIT_EXCLUDE_KEY,
       [...existing, propertyKey.toString()],

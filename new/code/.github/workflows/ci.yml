@@ -34,7 +34,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm exec nx format:check --base="remotes/origin/main"
-      - run: pnpm exec nx run-many -t lint test build typecheck e2e
+      # lint/build/e2e are intentionally omitted: no ESLint config, build, or
+      # e2e targets exist yet for any project, so nx run-many would silently
+      # no-op on them. Add them back once those targets are actually wired up.
+      - run: pnpm exec nx run-many -t test typecheck
 
       # Nx Cloud self-healing CI is not connected yet.
       # When it is, re-add the corresponding `nx fix-ci` step here.

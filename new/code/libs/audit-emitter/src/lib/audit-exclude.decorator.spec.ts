@@ -1,5 +1,8 @@
 import 'reflect-metadata';
-import { AuditExclude, getAuditExcludedFields } from './audit-exclude.decorator.js';
+import {
+  AuditExclude,
+  getAuditExcludedFields,
+} from './audit-exclude.decorator.js';
 
 describe('AuditExclude', () => {
   it('records decorated property names on the class', () => {
@@ -11,7 +14,10 @@ describe('AuditExclude', () => {
       otpCode!: string;
     }
 
-    expect(getAuditExcludedFields(Account)).toEqual(['passwordHash', 'otpCode']);
+    expect(getAuditExcludedFields(Account)).toEqual([
+      'passwordHash',
+      'otpCode',
+    ]);
   });
 
   it('returns an empty array for a class with no excluded fields', () => {

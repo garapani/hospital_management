@@ -12,6 +12,8 @@ export class TenantContextMiddleware implements NestMiddleware {
     const accountId = req.header('x-account-id') || undefined;
     const correlationId = req.header('x-correlation-id') || randomUUID();
 
-    this.tenantContext.run({ tenantId, accountId, correlationId }, () => next());
+    this.tenantContext.run({ tenantId, accountId, correlationId }, () =>
+      next(),
+    );
   }
 }

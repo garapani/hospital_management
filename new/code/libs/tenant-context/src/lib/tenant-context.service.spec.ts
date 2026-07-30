@@ -11,12 +11,15 @@ describe('TenantContextService', () => {
 
   it('returns the values set for the current run() scope', () => {
     const service = new TenantContextService();
-    service.run({ tenantId: 'h1', accountId: 'acc-1', correlationId: 'corr-1' }, () => {
-      expect(service.getTenantId()).toBe('h1');
-      expect(service.getAccountId()).toBe('acc-1');
-      expect(service.getCorrelationId()).toBe('corr-1');
-      expect(service.getSchemaName()).toBe('tenant_h1');
-    });
+    service.run(
+      { tenantId: 'h1', accountId: 'acc-1', correlationId: 'corr-1' },
+      () => {
+        expect(service.getTenantId()).toBe('h1');
+        expect(service.getAccountId()).toBe('acc-1');
+        expect(service.getCorrelationId()).toBe('corr-1');
+        expect(service.getSchemaName()).toBe('tenant_h1');
+      },
+    );
   });
 
   it('isolates context across concurrent async run() calls', async () => {

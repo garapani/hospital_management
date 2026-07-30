@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   EntitySubscriberInterface,
   EventSubscriber,
@@ -17,16 +17,29 @@ type EntityAction = 'create' | 'update' | 'delete';
 @EventSubscriber()
 @Injectable()
 export class AuditSubscriber implements EntitySubscriberInterface {
+  private readonly logger = new Logger(AuditSubscriber.name);
+
   constructor(
-    @Inject(AUDIT_EVENT_PUBLISHER) private readonly publisher: AuditEventPublisher,
+    @Inject(AUDIT_EVENT_PUBLISHER)
+    private readonly publisher: AuditEventPublisher,
     private readonly tenantContext: TenantContextService,
   ) {}
 
-  async afterInsert(event: InsertEvent<Record<string, unknown>>): Promise<void> {
-    await this.emit('create', event.metadata.tableName, event.entity, null, event.entity ?? null);
+  async afterInsert(
+    event: InsertEvent<Record<string, unknown>>,
+  ): Promise<void> {
+    await this.emit(
+      'create',
+      event.metadata.tableName,
+      event.entity,
+      null,
+      event.entity ?? null,
+    );
   }
 
-  async afterUpdate(event: UpdateEvent<Record<string, unknown>>): Promise<void> {
+  async afterUpdate(
+    event: UpdateEvent<Record<string, unknown>>,
+  ): Promise<void> {
     await this.emit(
       'update',
       event.metadata.tableName,
@@ -36,7 +49,9 @@ export class AuditSubscriber implements EntitySubscriberInterface {
     );
   }
 
-  async afterRemove(event: RemoveEvent<Record<string, unknown>>): Promise<void> {
+  async afterRemove(
+    event: RemoveEvent<Record<string, unknown>>,
+  ): Promise<void> {
     await this.emit(
       'delete',
       event.metadata.tableName,
@@ -53,7 +68,14 @@ export class AuditSubscriber implements EntitySubscriberInterface {
     before: Record<string, unknown> | null,
     after: Record<string, unknown> | null,
   ): Promise<void> {
-    const entityClass = ((before ?? after)?.constructor ?? Object) as EntityClass;
+    const resolvedClass = (before ?? after)?.constructor;
+    if (resolvedClass === undefined || resolvedClass === Object) {
+      this.logger.warn(
+        `Skipped audit event for table "${tableName}" (action: ${action}): entity class could not be determined, so sensitive-field exclusion could not be verified.`,
+      );
+      return;
+    }
+    const entityClass = resolvedClass as EntityClass;
     const diff = buildAuditDiff(entityClass, before, after);
     if (diff.length === 0) {
       return;
