@@ -5,6 +5,9 @@
   "references": [
     {
       "path": "./libs/tenant-context"
+    },
+    {
+      "path": "./libs/auth-guards"
     }
   ],
   "compilerOptions": {}
