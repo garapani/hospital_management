@@ -3,6 +3,8 @@ import { DataSource } from 'typeorm';
 import { Role } from '../rbac/entities/role.entity.js';
 import { Permission } from '../rbac/entities/permission.entity.js';
 import { RolePermission } from '../rbac/entities/role-permission.entity.js';
+import { Account } from '../accounts/entities/account.entity.js';
+import { AccountRole } from '../accounts/entities/account-role.entity.js';
 import { CreateRbacCatalogTables1738200000000 } from './migrations/1738200000000-create-rbac-catalog-tables.js';
 
 export function createDataSource(): DataSource {
@@ -13,7 +15,7 @@ export function createDataSource(): DataSource {
     username: process.env['DB_USERNAME'] ?? 'identity_access',
     password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
     database: process.env['DB_DATABASE'] ?? 'identity_access',
-    entities: [Role, Permission, RolePermission],
+    entities: [Role, Permission, RolePermission, Account, AccountRole],
     migrations: [CreateRbacCatalogTables1738200000000],
     synchronize: false,
   });
