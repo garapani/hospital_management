@@ -14,15 +14,22 @@ Owns authentication identity (staff and patient accounts), RBAC (roles, permissi
 
 ## Data model
 
-Postgres, one `tenant_<hospitalId>` schema per hospital (PRD §4). Super Admin accounts live in a platform-level schema, not any tenant schema, since that role isn't pinned to one hospital (§6.2).
+Like System Admin and Master Data Services, this service's Postgres instance has two layers, not one — the role/permission catalog is platform-level, not per-tenant.
+
+### Platform-level (shared across all tenants)
 
 | Table | Key fields | Notes |
 |---|---|---|
-| `accounts` | id, account_type (`staff`\|`patient`), display_name, is_active, failed_login_attempts, locked_until, created_at, updated_at. Staff-only: username, email, password_hash. Patient-only: phone_number, phone_verified_at | Single unified table for both account types — same RBAC/JWT machinery serves both, avoiding duplicate auth code paths. |
-| `roles` | id, name, description, priority, bypasses_permission_checks, is_cross_tenant, is_active | See "Departures from the old model" — splits the old `IsSysAdmin` flag into two independent booleans. |
-| `permissions` | id, name, description, is_active | Definitions only. No route/URL topology stored here — see "Departures." |
-| `role_permissions` | role_id, permission_id | Join table. |
-| `account_roles` | account_id, role_id, start_date, end_date, is_active | Carries over the old `UserRoleMap`'s time-bound assignment (temporary role coverage, e.g. a doctor covering OT for a week). |
+| `roles` | id, name, description, priority, bypasses_permission_checks, is_cross_tenant, is_active | PRD §6.1 defines a fixed, closed catalog of 13 roles — hospitals don't invent their own roles or redefine what a role can access. Same catalog for every tenant, seeded via migration, not per-hospital-customizable in Phase 0. Splits the old `IsSysAdmin` flag into two independent booleans — see "Departures from the old model." |
+| `permissions` | id, name, description, is_active | Definitions only, no route/URL topology (see "Departures"). Inherently platform-wide: permissions are a byproduct of whatever routes exist in deployed code, identical for every tenant running the same code version. |
+| `role_permissions` | role_id, permission_id | Join table. Fixed platform policy, not tenant-editable in Phase 0 — matches §6.1's role-access table being a platform design decision, not a per-hospital one. |
+
+### Per-tenant (inside `tenant_<hospitalId>`)
+
+| Table | Key fields | Notes |
+|---|---|---|
+| `accounts` | id, account_type (`staff`\|`patient`), display_name, is_active, failed_login_attempts, locked_until, created_at, updated_at. Staff-only: username, email, password_hash. Patient-only: phone_number, phone_verified_at | Single unified table for both account types — same RBAC/JWT machinery serves both, avoiding duplicate auth code paths. Super Admin accounts live in a separate platform-level schema instead, since that role isn't pinned to one hospital (§6.2). |
+| `account_roles` | account_id, role_id, start_date, end_date, is_active | References the platform-level `roles` table by id. Carries over the old `UserRoleMap`'s time-bound assignment (temporary role coverage, e.g. a doctor covering OT for a week). This is the one genuinely tenant-scoped part of RBAC — *who* holds *which* role. |
 | `refresh_tokens` (Redis) | token_hash, account_id, hospital_id, issued_at, expires_at, revoked_at, replaced_by | Rotatable and revocable. No old-system precedent — old auth is session-cookie based, not JWT (see "Departures"). |
 | OTP codes (Redis, ephemeral) | phone_number, code_hash, expires_at, attempt_count | Not persisted to Postgres — short-lived, doesn't need durable audit storage beyond the attempt counter used for lockout. |
 
