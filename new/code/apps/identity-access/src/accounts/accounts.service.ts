@@ -96,4 +96,26 @@ export class AccountsService {
 
     return { account, roleNames: roles.map((role) => role.name) };
   }
+
+  async recordFailedLogin(accountId: string): Promise<void> {
+    await this.tenantConnection.runInTenantSchema((manager) =>
+      manager
+        .getRepository(Account)
+        .increment({ id: accountId }, 'failedLoginAttempts', 1),
+    );
+  }
+
+  async lockAccount(accountId: string, lockedUntil: Date): Promise<void> {
+    await this.tenantConnection.runInTenantSchema((manager) =>
+      manager.getRepository(Account).update({ id: accountId }, { lockedUntil }),
+    );
+  }
+
+  async resetFailedLogins(accountId: string): Promise<void> {
+    await this.tenantConnection.runInTenantSchema((manager) =>
+      manager
+        .getRepository(Account)
+        .update({ id: accountId }, { failedLoginAttempts: 0, lockedUntil: null }),
+    );
+  }
 }
