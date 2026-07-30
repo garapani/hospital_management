@@ -28,7 +28,7 @@ Like System Admin and Master Data Services, this service's Postgres instance has
 
 | Table | Key fields | Notes |
 |---|---|---|
-| `accounts` | id, account_type (`staff`\|`patient`), display_name, is_active, failed_login_attempts, locked_until, created_at, updated_at. Staff-only: username, email, password_hash. Patient-only: phone_number, phone_verified_at | Single unified table for both account types — same RBAC/JWT machinery serves both, avoiding duplicate auth code paths. Super Admin accounts live in a separate platform-level schema instead, since that role isn't pinned to one hospital (§6.2). |
+| `accounts` | id, account_type (`staff`\|`patient`), display_name, is_active, needs_password_update, failed_login_attempts, locked_until, created_at, updated_at. Staff-only: username, email, password_hash. Patient-only: phone_number, phone_verified_at | Single unified table for both account types — same RBAC/JWT machinery serves both, avoiding duplicate auth code paths. Super Admin accounts live in a separate platform-level schema instead, since that role isn't pinned to one hospital (§6.2). `needs_password_update` carries over the old `RbacUser.NeedsPasswordUpdate` field — set when an admin creates a staff account with a temporary password, forcing a password change before the account can do anything else. |
 | `account_roles` | account_id, role_id, start_date, end_date, is_active | References the platform-level `roles` table by id. Carries over the old `UserRoleMap`'s time-bound assignment (temporary role coverage, e.g. a doctor covering OT for a week). This is the one genuinely tenant-scoped part of RBAC — *who* holds *which* role. |
 | `refresh_tokens` (Redis) | token_hash, account_id, hospital_id, issued_at, expires_at, revoked_at, replaced_by | Rotatable and revocable. No old-system precedent — old auth is session-cookie based, not JWT (see "Departures"). |
 | OTP codes (Redis, ephemeral) | phone_number, code_hash, expires_at, attempt_count | Not persisted to Postgres — short-lived, doesn't need durable audit storage beyond the attempt counter used for lockout. |
@@ -55,6 +55,8 @@ Like System Admin and Master Data Services, this service's Postgres instance has
 - **Staff login:** username + password → bcrypt/argon2id verify (fixes the old system's reversible MD5+3DES scheme, PRD §6) → issue access JWT (~15min) + refresh JWT (rotatable, Redis-backed, ~7–30 days).
 - **Patient login:** phone + OTP (SMS sent via Notification Service) → verify → same JWT shape, with a `patientId` claim added once Patient Service exists (Phase 1). The `accounts` schema supports the patient account type from Phase 0; the feature activates when Patient Service ships.
 - **Both:** 5 failed attempts locks the account for 15 minutes; the API Gateway additionally applies IP-based rate limiting on the login endpoint.
+- **Forced password change:** a successful login where `needs_password_update = true` issues a short-lived, restricted-scope token that only permits calling the password-change endpoint — not a normal access token. The account gets a full session only after the password is changed, so a leaked or guessed temporary password can't be used to do anything beyond that.
+- **Admin unlock:** a Hospital Admin or Super Admin can clear `failed_login_attempts`/`locked_until` on an account before the 15-minute auto-expiry, for the ordinary case of an employee locking themselves out and needing IT to unblock them immediately rather than wait.
 
 ## JWT claims
 
