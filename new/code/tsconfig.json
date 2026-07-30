@@ -8,6 +8,9 @@
     },
     {
       "path": "./libs/auth-guards"
+    },
+    {
+      "path": "./libs/audit-emitter"
     }
   ],
   "compilerOptions": {}
