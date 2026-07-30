@@ -243,6 +243,7 @@ flowchart TB
 - **Asynchronous** side effects (billing on order completion, audit logging, notifications, GST compliance sync) go through RabbitMQ — this is the direct fix for the old system's tight in-process coupling (e.g. billing logic invoked inline from clinical controllers).
 - Each service has its **own dedicated Postgres instance**, own credentials, own connection string; cross-domain reads go through the owning service's API, never direct SQL. There is no shared instance for a *service* boundary to leak across — that isolation is physical.
 - Within a service's instance, **tenants are separated by schema**, resolved per-request from the `hospitalId` JWT claim (§4, §6.2) — this is a logical, not physical, boundary, so it is enforced with Postgres role-level schema grants (a tenant's DB role can only reference its own schema) rather than relying on application code alone.
+- **A service's instance may have two layers, not one.** Most services are pure schema-per-tenant, but where a service has genuinely platform-wide data — a bootstrapping registry that must exist *before* any tenant schema does (System Admin's tenant registry), or reference data identical for every hospital that shouldn't be duplicated per tenant (Master Data's ICD10/geography tables, Identity & Access's fixed RBAC role/permission catalog per §6.1) — that service also maintains one platform-level, non-tenant-scoped set of tables alongside its per-tenant schemas. This is a deliberate, stated exception decided per-service in that service's own design spec (`docs/superpowers/specs/`), not a general license to share data; cross-*service* database access remains forbidden absolutely (G2).
 
 ## 8. Phased Build Sequence
 
@@ -257,6 +258,8 @@ Greenfield build — there is no production `old/` instance to interoperate with
 | **Phase 4 — Clinical Long Tail** | Clinical/EMR, Nursing, Emergency, OT, Maternity, CSSD | Lower transaction volume, can build at leisure |
 | **Phase 5 — HR & Compliance** | Employee, Payroll, Fraction & Incentive | Isolated from clinical workflow; safe to do last. (India Compliance Adapter itself moved to Phase 1, §8 — GST is a Billing-blocking legal requirement, not deferrable HR/payroll-adjacent scope; ESI/PF payroll compliance is deferred per §3, revisited only when a tenant needs it) |
 | **Phase 6 — Ancillary + Reporting** | Helpdesk, Marketing & Referral, Social Service Unit, Notification, Document & Print, **Reporting/Dashboard (full aggregation/UI, reading the Phase-1 archive)** | Long-tail modules; the dashboard/query layer lands last since it aggregates data from every other service, but it's reading history the archiver (Phase 1) has been collecting all along — no backfill gap |
+
+**Phase 0 detailed designs:** all five Phase 0 services now have approved, committed design specs in `docs/superpowers/specs/` (2026-07-30), covering schema, event contracts, and stated departures from the old system in more detail than this section does. Later phases should follow the same process before implementation.
 
 ## 9. Deployment Model (Hybrid: Multi-Tenant Hosted + Single-Tenant On-Prem)
 
@@ -278,7 +281,7 @@ hosted-stack/
     rabbitmq-data/
 ```
 
-- **One dedicated Postgres container per service** (~36 instances total, regardless of tenant count), each holding one schema per onboarded hospital.
+- **One dedicated Postgres container per service** (~35 instances total, regardless of tenant count — API Gateway/BFF is a stateless proxy with no Postgres instance of its own, per its Phase 0 design spec), each holding one schema per onboarded hospital.
 - Onboarding hospital #N: System Admin Service creates the tenant record and publishes `tenant.provisioned`; every service consumes it and runs its migration set against a new `tenant_<hospitalId>` schema (§5.1, §8 Phase 0). No new containers, no redeploy.
 - MinIO objects and RabbitMQ routing keys are namespaced by `hospitalId` so tenants share the broker/object store without cross-tenant visibility.
 - India Compliance Adapter runs as one shared container processing every tenant schema — since all confirmed tenants are Indian, there's currently no `country` flag gating it the way the old Nepal-only toggle worked; it's effectively always-on, kept as a separate service only so it stays swappable if that ever changes (§5.7).
@@ -360,6 +363,7 @@ hospital-vm/
 - ~~Backup destination~~ — offsite/off-VM required in both modes, not just an on-machine backup volume (§9.3, §10).
 
 **Still open:**
-1. Exact reference server spec for the hosted VM (CPU/RAM/disk) — needs the load test called out in §11's single-machine-ceiling risk before the first hosted onboarding.
+1. Exact reference server spec for the hosted VM (CPU/RAM/disk) — needs the load test called out in §11's single-machine-ceiling risk before the first hosted onboarding. **Tension with the resolved decision above (2026-07-30):** a mid-tier Hostinger VPS (4-8 vCPU, 16-32GB RAM, India region — satisfying §10's data-residency requirement) is now under active consideration/use, which directly conflicts with §9.1/§10's locked-in "self-owned in-house server, not a rented cloud VM." Product design/development is the stated current priority; infra sizing and the final self-owned-vs-rented-VPS choice are explicitly deferred until after the initial build, with all services running as plain Docker containers in the interim. The ~35-Postgres-instance resource floor (§9.1, §11) is tight against this VPS tier's RAM ceiling and has not been load-tested — this needs a real decision before first hosted onboarding, not just before "the load test."
 2. Timeline/trigger for ABHA/PM-JAY/ESI-PF phases of India Compliance Adapter (§3, §5.7) — deferred, but not yet scheduled against any specific tenant's needs.
-3. Hardware-failure runbook for the in-house server (§11) — offsite backups are required, but the actual recovery procedure (spare hardware on hand? vendor support contract? rebuild time target?) isn't specified yet.
+3. Hardware-failure runbook for the in-house server (§11) — offsite backups are required, but the actual recovery procedure (spare hardware on hand? vendor support contract? rebuild time target?) isn't specified yet. Moot if the Hostinger-VPS direction above is finalized instead of a self-owned server (a rented VPS shifts hardware-failure recovery to the provider's own infrastructure guarantees, not a runbook this team maintains) — pending item 1.
+4. Local/CI development stack composition — whether engineers run the full ~35-service `docker-compose` stack locally per PRD §9.4, or only a subset scoped to the service under work. Not yet decided; affects Phase 0 developer experience directly.
