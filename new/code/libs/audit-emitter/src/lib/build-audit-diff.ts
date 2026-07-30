@@ -1,4 +1,5 @@
 import { getAuditExcludedFields } from './audit-exclude.decorator.js';
+import type { EntityClass } from './audit-exclude.decorator.js';
 
 export interface AuditDiffEntry {
   field: string;
@@ -7,7 +8,7 @@ export interface AuditDiffEntry {
 }
 
 export function buildAuditDiff(
-  entityClass: () => void,
+  entityClass: EntityClass,
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
 ): AuditDiffEntry[] {

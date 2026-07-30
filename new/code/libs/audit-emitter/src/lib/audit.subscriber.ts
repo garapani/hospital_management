@@ -8,7 +8,9 @@ import {
 } from 'typeorm';
 import { TenantContextService } from '@hospital/tenant-context';
 import { buildAuditDiff } from './build-audit-diff.js';
-import { AUDIT_EVENT_PUBLISHER, AuditEventPublisher } from './audit-event-publisher.interface.js';
+import type { EntityClass } from './audit-exclude.decorator.js';
+import { AUDIT_EVENT_PUBLISHER } from './audit-event-publisher.interface.js';
+import type { AuditEventPublisher } from './audit-event-publisher.interface.js';
 
 type EntityAction = 'create' | 'update' | 'delete';
 
@@ -51,7 +53,7 @@ export class AuditSubscriber implements EntitySubscriberInterface {
     before: Record<string, unknown> | null,
     after: Record<string, unknown> | null,
   ): Promise<void> {
-    const entityClass = ((before ?? after)?.constructor ?? Object) as () => void;
+    const entityClass = ((before ?? after)?.constructor ?? Object) as EntityClass;
     const diff = buildAuditDiff(entityClass, before, after);
     if (diff.length === 0) {
       return;

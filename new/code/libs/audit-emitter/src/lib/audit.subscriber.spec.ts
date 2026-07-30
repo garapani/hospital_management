@@ -28,7 +28,9 @@ describe('AuditSubscriber', () => {
   it('publishes a create event with the correct diff on afterInsert', async () => {
     const { subscriber, tenantContext, published } = buildSubscriber();
     const entity = Object.assign(new Account(), { id: '1', username: 'alice', passwordHash: 'h' });
-    const event = { metadata: { tableName: 'account' }, entity } as unknown as InsertEvent<Account>;
+    const event = { metadata: { tableName: 'account' }, entity } as unknown as InsertEvent<
+      Record<string, unknown>
+    >;
 
     await tenantContext.run({ tenantId: 'h1', accountId: 'admin-1', correlationId: 'corr-1' }, () =>
       subscriber.afterInsert(event),
@@ -60,7 +62,7 @@ describe('AuditSubscriber', () => {
       metadata: { tableName: 'account' },
       entity,
       databaseEntity,
-    } as unknown as UpdateEvent<Account>;
+    } as unknown as UpdateEvent<Record<string, unknown>>;
 
     await tenantContext.run({ tenantId: 'h1', correlationId: 'corr-2' }, () =>
       subscriber.afterUpdate(event),
@@ -86,7 +88,7 @@ describe('AuditSubscriber', () => {
       metadata: { tableName: 'account' },
       entity,
       databaseEntity,
-    } as unknown as UpdateEvent<Account>;
+    } as unknown as UpdateEvent<Record<string, unknown>>;
 
     await tenantContext.run({ tenantId: 'h1', correlationId: 'corr-3' }, () =>
       subscriber.afterUpdate(event),
@@ -105,7 +107,7 @@ describe('AuditSubscriber', () => {
     const event = {
       metadata: { tableName: 'account' },
       databaseEntity,
-    } as unknown as RemoveEvent<Account>;
+    } as unknown as RemoveEvent<Record<string, unknown>>;
 
     await tenantContext.run({ tenantId: 'h1', correlationId: 'corr-4' }, () =>
       subscriber.afterRemove(event),
