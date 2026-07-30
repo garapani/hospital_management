@@ -1,8 +1,12 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { TenantContextModule, TenantContextMiddleware } from '@hospital/tenant-context';
+import { AuthModule } from '../auth/auth.module.js';
 
 @Module({
-  imports: [],
-  controllers: [],
-  providers: [],
+  imports: [TenantContextModule, AuthModule],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(TenantContextMiddleware).forRoutes('*');
+  }
+}
