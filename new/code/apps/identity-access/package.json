@@ -2,6 +2,7 @@
   "name": "@org/identity-access",
   "version": "0.0.1",
   "private": true,
+  "type": "module",
   "nx": {
     "name": "identity-access",
     "targets": {
@@ -84,6 +85,7 @@
     }
   },
   "dependencies": {
+    "@hospital/tenant-context": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
