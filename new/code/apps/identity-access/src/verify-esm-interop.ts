@@ -29,6 +29,17 @@
  * real compiled require()/import() shape webpack produces for this
  * package. Do not treat a green run of this script as proof that
  * "type": "module" is still doing anything.
+ *
+ * THE AUTHORITATIVE REGRESSION GUARD IS ELSEWHERE: see
+ * apps/identity-access/src/esm-package-type.spec.ts. It doesn't try to
+ * exercise Node's real module boundary at all (that boundary turned out to
+ * be sandbox/tool-dependent, as documented above) - instead it just asserts
+ * apps/identity-access/package.json still declares "type": "module", which
+ * is the actual config invariant that ERR_REQUIRE_ESM depends on. That
+ * assertion can't be fooled by any transform, sandbox Node version, or
+ * tool-specific interop bridge, because it never crosses a module-loading
+ * boundary in the first place - it just reads JSON. Treat this tsx script
+ * as illustrative only; treat esm-package-type.spec.ts as the real gate.
  */
 import { TenantContextService } from '@hospital/tenant-context';
 
