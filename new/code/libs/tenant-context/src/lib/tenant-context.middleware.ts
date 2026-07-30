@@ -1,7 +1,7 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { NextFunction, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
-import { TenantContextService } from './tenant-context.service';
+import { TenantContextService } from './tenant-context.service.js';
 
 @Injectable()
 export class TenantContextMiddleware implements NestMiddleware {

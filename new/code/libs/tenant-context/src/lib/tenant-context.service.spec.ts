@@ -1,4 +1,4 @@
-import { TenantContextService } from './tenant-context.service';
+import { TenantContextService } from './tenant-context.service.js';
 
 describe('TenantContextService', () => {
   it('returns undefined for all fields outside of a run() call', () => {

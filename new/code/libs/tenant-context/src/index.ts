@@ -1,3 +1,3 @@
-export * from './lib/tenant-context.service';
-export * from './lib/tenant-context.middleware';
-export * from './lib/tenant-context.module';
+export * from './lib/tenant-context.service.js';
+export * from './lib/tenant-context.middleware.js';
+export * from './lib/tenant-context.module.js';

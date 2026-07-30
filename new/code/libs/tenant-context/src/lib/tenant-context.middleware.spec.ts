@@ -1,5 +1,5 @@
-import { TenantContextMiddleware } from './tenant-context.middleware';
-import { TenantContextService } from './tenant-context.service';
+import { TenantContextMiddleware } from './tenant-context.middleware.js';
+import { TenantContextService } from './tenant-context.service.js';
 
 describe('TenantContextMiddleware', () => {
   function buildRequest(headers: Record<string, string | undefined>) {
