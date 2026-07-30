@@ -112,11 +112,10 @@ const ROLE_CATALOG: RoleSeed[] = [
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
   const repository = dataSource.getRepository(Role);
+  // ON CONFLICT DO NOTHING (via .orIgnore()) rather than findOne-then-insert: multiple
+  // integration-spec suites call this concurrently in beforeAll against the same shared
+  // dev Postgres roles table, and a check-then-insert races under Jest's parallel workers.
   for (const roleSeed of ROLE_CATALOG) {
-    const existing = await repository.findOne({ where: { name: roleSeed.name } });
-    if (existing) {
-      continue;
-    }
-    await repository.save(repository.create(roleSeed));
+    await repository.createQueryBuilder().insert().into(Role).values(roleSeed).orIgnore().execute();
   }
 }
