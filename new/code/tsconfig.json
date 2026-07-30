@@ -11,6 +11,9 @@
     },
     {
       "path": "./libs/audit-emitter"
+    },
+    {
+      "path": "./apps/identity-access"
     }
   ],
   "compilerOptions": {}
