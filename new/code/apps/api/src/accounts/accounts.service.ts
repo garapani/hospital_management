@@ -7,10 +7,10 @@ import { Role } from '../rbac/entities/role.entity.js';
 import { Permission } from '../rbac/entities/permission.entity.js';
 import { RolePermission } from '../rbac/entities/role-permission.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
-import { CreateTenantAccountTables1738200000001 } from '../database/migrations/1738200000001-create-tenant-account-tables.js';
-import { AddAccountRolesUniqueActiveAssignment1738200000003 } from '../database/migrations/1738200000003-add-account-roles-unique-active-assignment.js';
-import { CreateAuditRecordsTable1738200000005 } from '../database/migrations/1738200000005-create-audit-records-table.js';
-import { CreateMasterDataTables1738200000006 } from '../database/migrations/1738200000006-create-master-data-tables.js';
+import { CreateTenantAccountTables1738200000001 } from '../database/migrations/accounts/1738200000001-create-tenant-account-tables.js';
+import { AddAccountRolesUniqueActiveAssignment1738200000003 } from '../database/migrations/accounts/1738200000003-add-account-roles-unique-active-assignment.js';
+import { CreateAuditRecordsTable1738200000005 } from '../database/migrations/audit/1738200000005-create-audit-records-table.js';
+import { CreateMasterDataTables1738200000006 } from '../database/migrations/master-data/1738200000006-create-master-data-tables.js';
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
 const BCRYPT_SALT_ROUNDS = 12;
