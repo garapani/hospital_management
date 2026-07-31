@@ -1,5 +1,8 @@
+import { In } from 'typeorm';
 import { createDataSource } from '../database/data-source.js';
 import { Role } from './entities/role.entity.js';
+import { Permission } from './entities/permission.entity.js';
+import { RolePermission } from './entities/role-permission.entity.js';
 import { seedRbacCatalog } from './seed-rbac-catalog.js';
 
 describe('seedRbacCatalog (integration)', () => {
@@ -42,5 +45,27 @@ describe('seedRbacCatalog (integration)', () => {
     await seedRbacCatalog(dataSource);
     const roles = await dataSource.getRepository(Role).find();
     expect(roles).toHaveLength(14);
+  });
+
+  it('creates the identity.accounts.manage permission', async () => {
+    await seedRbacCatalog(dataSource);
+    const permission = await dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'identity.accounts.manage' },
+    });
+    expect(permission.isActive).toBe(true);
+  });
+
+  it('maps identity.accounts.manage to Hospital Admin and Super Admin only', async () => {
+    await seedRbacCatalog(dataSource);
+    const permission = await dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'identity.accounts.manage' },
+    });
+    const mappings = await dataSource.getRepository(RolePermission).find({
+      where: { permissionId: permission.id },
+    });
+    const roles = await dataSource.getRepository(Role).find({
+      where: { id: In(mappings.map((m) => m.roleId)) },
+    });
+    expect(roles.map((r) => r.name).sort()).toEqual(['Hospital Admin', 'Super Admin']);
   });
 });

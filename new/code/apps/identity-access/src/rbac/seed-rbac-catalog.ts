@@ -1,5 +1,7 @@
 import { DataSource } from 'typeorm';
 import { Role } from './entities/role.entity.js';
+import { Permission } from './entities/permission.entity.js';
+import { RolePermission } from './entities/role-permission.entity.js';
 
 interface RoleSeed {
   name: string;
@@ -110,12 +112,55 @@ const ROLE_CATALOG: RoleSeed[] = [
   },
 ];
 
+interface PermissionSeed {
+  name: string;
+  description: string;
+}
+
+const PERMISSION_CATALOG: PermissionSeed[] = [
+  {
+    name: 'identity.accounts.manage',
+    description: 'Create, list, deactivate, unlock accounts and manage role assignments.',
+  },
+];
+
+interface RolePermissionMapping {
+  roleName: string;
+  permissionName: string;
+}
+
+const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
+  { roleName: 'Hospital Admin', permissionName: 'identity.accounts.manage' },
+  { roleName: 'Super Admin', permissionName: 'identity.accounts.manage' },
+];
+
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
-  const repository = dataSource.getRepository(Role);
-  // ON CONFLICT DO NOTHING (via .orIgnore()) rather than findOne-then-insert: multiple
-  // integration-spec suites call this concurrently in beforeAll against the same shared
-  // dev Postgres roles table, and a check-then-insert races under Jest's parallel workers.
+  const roleRepository = dataSource.getRepository(Role);
   for (const roleSeed of ROLE_CATALOG) {
-    await repository.createQueryBuilder().insert().into(Role).values(roleSeed).orIgnore().execute();
+    await roleRepository.createQueryBuilder().insert().into(Role).values(roleSeed).orIgnore().execute();
+  }
+
+  const permissionRepository = dataSource.getRepository(Permission);
+  for (const permissionSeed of PERMISSION_CATALOG) {
+    await permissionRepository
+      .createQueryBuilder()
+      .insert()
+      .into(Permission)
+      .values(permissionSeed)
+      .orIgnore()
+      .execute();
+  }
+
+  const rolePermissionRepository = dataSource.getRepository(RolePermission);
+  for (const mapping of ROLE_PERMISSION_MAPPINGS) {
+    const role = await roleRepository.findOneOrFail({ where: { name: mapping.roleName } });
+    const permission = await permissionRepository.findOneOrFail({ where: { name: mapping.permissionName } });
+    await rolePermissionRepository
+      .createQueryBuilder()
+      .insert()
+      .into(RolePermission)
+      .values({ roleId: role.id, permissionId: permission.id })
+      .orIgnore()
+      .execute();
   }
 }

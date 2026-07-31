@@ -6,6 +6,7 @@ import { RolePermission } from '../rbac/entities/role-permission.entity.js';
 import { Account } from '../accounts/entities/account.entity.js';
 import { AccountRole } from '../accounts/entities/account-role.entity.js';
 import { CreateRbacCatalogTables1738200000000 } from './migrations/1738200000000-create-rbac-catalog-tables.js';
+import { AddRolePermissionsUniqueConstraint1738200000002 } from './migrations/1738200000002-add-role-permissions-unique-constraint.js';
 
 export function createDataSource(): DataSource {
   return new DataSource({
@@ -16,7 +17,7 @@ export function createDataSource(): DataSource {
     password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
     database: process.env['DB_DATABASE'] ?? 'identity_access',
     entities: [Role, Permission, RolePermission, Account, AccountRole],
-    migrations: [CreateRbacCatalogTables1738200000000],
+    migrations: [CreateRbacCatalogTables1738200000000, AddRolePermissionsUniqueConstraint1738200000002],
     synchronize: false,
   });
 }
