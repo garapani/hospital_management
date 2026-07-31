@@ -22,6 +22,9 @@
   "references": [
     {
       "path": "../../libs/tenant-context/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/audit-emitter/tsconfig.lib.json"
     }
   ]
 }

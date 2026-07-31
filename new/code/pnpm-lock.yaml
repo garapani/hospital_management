@@ -138,6 +138,9 @@ importers:
 
   apps/identity-access:
     dependencies:
+      '@hospital/audit-emitter':
+        specifier: workspace:*
+        version: link:../../libs/audit-emitter
       '@hospital/tenant-context':
         specifier: workspace:*
         version: link:../../libs/tenant-context

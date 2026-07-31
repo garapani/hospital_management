@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { AuditExclude } from '@hospital/audit-emitter';
 
 @Entity('accounts')
 export class Account {
@@ -30,6 +31,7 @@ export class Account {
   email!: string | null;
 
   @Column({ type: 'varchar', nullable: true })
+  @AuditExclude()
   passwordHash!: string | null;
 
   @Column({ type: 'varchar', nullable: true })
