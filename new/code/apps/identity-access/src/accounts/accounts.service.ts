@@ -207,6 +207,11 @@ export class AccountsService {
     }
 
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const account = await manager.getRepository(Account).findOne({ where: { id: accountId } });
+      if (!account) {
+        throw new NotFoundException(`Account ${accountId} not found`);
+      }
+
       const repository = manager.getRepository(AccountRole);
       const existing = await repository.findOne({
         where: { accountId, roleId: role.id, isActive: true },

@@ -113,6 +113,14 @@ describe('AccountsController (integration)', () => {
     expect(response.status).toBe(404);
   });
 
+  it('returns 404 when assigning a role to an unknown account id', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/accounts/00000000-0000-0000-0000-000000000000/roles')
+      .set(adminHeaders)
+      .send({ roleName: 'Doctor' });
+    expect(response.status).toBe(404);
+  });
+
   it('assigns and revokes a role assignment', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/accounts')

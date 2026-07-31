@@ -214,6 +214,12 @@ describe('AccountsService (integration)', () => {
     );
   });
 
+  it('returns not found when assigning a role to a nonexistent account', async () => {
+    await expect(
+      inTenant(() => accountsService.assignRole('00000000-0000-0000-0000-000000000000', 'Doctor')),
+    ).rejects.toThrow('not found');
+  });
+
   it('revokes a role assignment, idempotently, and rejects an unknown assignment id', async () => {
     const created = await inTenant(() =>
       accountsService.createStaffAccount({
