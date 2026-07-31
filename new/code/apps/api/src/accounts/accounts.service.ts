@@ -9,6 +9,7 @@ import { RolePermission } from '../rbac/entities/role-permission.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { CreateTenantAccountTables1738200000001 } from '../database/migrations/1738200000001-create-tenant-account-tables.js';
 import { AddAccountRolesUniqueActiveAssignment1738200000003 } from '../database/migrations/1738200000003-add-account-roles-unique-active-assignment.js';
+import { CreateAuditRecordsTable1738200000005 } from '../database/migrations/1738200000005-create-audit-records-table.js';
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
 const BCRYPT_SALT_ROUNDS = 12;
@@ -53,6 +54,8 @@ export class AccountsService {
       await migration.up(queryRunner);
       const uniqueActiveAssignmentMigration = new AddAccountRolesUniqueActiveAssignment1738200000003();
       await uniqueActiveAssignmentMigration.up(queryRunner);
+      const auditRecordsMigration = new CreateAuditRecordsTable1738200000005();
+      await auditRecordsMigration.up(queryRunner);
     } finally {
       await queryRunner.release();
     }
