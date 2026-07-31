@@ -11,7 +11,6 @@ describe('AppointmentsController (e2e)', () => {
   let dataSource: DataSource;
   let accountsService: AccountsService;
   const TEST_TENANT_ID = 'test_appointments_e2e';
-  const DOCTOR_ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({

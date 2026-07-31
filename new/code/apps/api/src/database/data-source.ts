@@ -14,10 +14,17 @@ import { PatientAddress } from '../patients/entities/patient-address.entity.js';
 import { PatientKin } from '../patients/entities/patient-kin.entity.js';
 import { PatientSequence } from '../patients/entities/patient-sequence.entity.js';
 import { Appointment } from '../appointments/entities/appointment.entity.js';
+import { Vital } from '../clinical/vitals/entities/vital.entity.js';
+import { ClinicalNote } from '../clinical/encounters/entities/clinical-note.entity.js';
+import { Diagnosis } from '../clinical/encounters/entities/diagnosis.entity.js';
+import { Prescription } from '../clinical/encounters/entities/prescription.entity.js';
+import { TriageEntry } from '../clinical/triage/entities/triage-entry.entity.js';
 import { CreateRbacCatalogTables } from './migrations/0001-create-rbac-catalog-tables.js';
 import { AddRolePermissionsUniqueConstraint } from './migrations/0003-add-role-permissions-unique-constraint.js';
 import { CreateTenantsTable } from './migrations/0005-create-tenants-table.js';
 import { CreatePatientTables005 } from './migrations/005_create_patient_tables.js';
+import { CreateVitalsTable0010 } from './migrations/0010-create-vitals-table.js';
+import { CreateTriageTable0012 } from './migrations/0012-create-triage-table.js';
 
 export function createDataSource(): DataSource {
   return new DataSource({
@@ -27,8 +34,8 @@ export function createDataSource(): DataSource {
     username: process.env['DB_USERNAME'] ?? 'identity_access',
     password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
     database: process.env['DB_DATABASE'] ?? 'identity_access',
-    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment],
-    migrations: [CreateRbacCatalogTables, AddRolePermissionsUniqueConstraint, CreateTenantsTable, CreatePatientTables005],
+    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry],
+    migrations: [CreateRbacCatalogTables, AddRolePermissionsUniqueConstraint, CreateTenantsTable, CreatePatientTables005, CreateVitalsTable0010, CreateTriageTable0012],
     synchronize: false,
   });
 }
