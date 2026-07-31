@@ -146,6 +146,14 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'patients.manage',
     description: 'Deactivate and manage patient records',
   },
+  {
+    name: 'appointment.manage',
+    description: 'Book, modify, and cancel appointments',
+  },
+  {
+    name: 'appointment.read',
+    description: 'View appointment schedules',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -172,6 +180,14 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Nurse', permissionName: 'patients.read' },
   { roleName: 'Nurse', permissionName: 'patients.create' },
   { roleName: 'Nurse', permissionName: 'patients.update' },
+  { roleName: 'Super Admin', permissionName: 'appointment.manage' },
+  { roleName: 'Super Admin', permissionName: 'appointment.read' },
+  { roleName: 'Hospital Admin', permissionName: 'appointment.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'appointment.read' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'appointment.manage' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'appointment.read' },
+  { roleName: 'Doctor', permissionName: 'appointment.read' },
+  { roleName: 'Nurse', permissionName: 'appointment.read' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {

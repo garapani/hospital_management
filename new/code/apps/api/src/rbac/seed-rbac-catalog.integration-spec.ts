@@ -140,4 +140,29 @@ describe('seedRbacCatalog (integration)', () => {
     const manageRoles = await dataSource.getRepository(Role).find({ where: { id: In(manageMappings.map((m) => m.roleId)) } });
     expect(manageRoles.map((r) => r.name)).toEqual(['Hospital Admin']);
   });
+
+  it('creates the appointment.manage and appointment.read permissions', async () => {
+    await seedRbacCatalog(dataSource);
+    const managePerm = await dataSource.getRepository(Permission).findOneOrFail({ where: { name: 'appointment.manage' } });
+    const readPerm = await dataSource.getRepository(Permission).findOneOrFail({ where: { name: 'appointment.read' } });
+    expect(managePerm.isActive).toBe(true);
+    expect(readPerm.isActive).toBe(true);
+  });
+
+  it('maps appointment permissions to correct roles', async () => {
+    await seedRbacCatalog(dataSource);
+    const managePerm = await dataSource.getRepository(Permission).findOneOrFail({ where: { name: 'appointment.manage' } });
+    const readPerm = await dataSource.getRepository(Permission).findOneOrFail({ where: { name: 'appointment.read' } });
+    
+    const manageMappings = await dataSource.getRepository(RolePermission).find({ where: { permissionId: managePerm.id } });
+    const readMappings = await dataSource.getRepository(RolePermission).find({ where: { permissionId: readPerm.id } });
+    
+    const roles = await dataSource.getRepository(Role).find();
+    
+    const manageRoleNames = manageMappings.map(m => roles.find(r => r.id === m.roleId)!.name);
+    expect(manageRoleNames.sort()).toEqual(['Hospital Admin', 'Receptionist / Front Desk', 'Super Admin'].sort());
+    
+    const readRoleNames = readMappings.map(m => roles.find(r => r.id === m.roleId)!.name);
+    expect(readRoleNames.sort()).toEqual(['Doctor', 'Hospital Admin', 'Nurse', 'Receptionist / Front Desk', 'Super Admin'].sort());
+  });
 });
