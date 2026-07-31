@@ -99,4 +99,26 @@ describe('seedRbacCatalog (integration)', () => {
     });
     expect(roles.map((r) => r.name)).toEqual(['Super Admin']);
   });
+
+  it('creates the master-data.manage permission', async () => {
+    await seedRbacCatalog(dataSource);
+    const permission = await dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'master-data.manage' },
+    });
+    expect(permission.isActive).toBe(true);
+  });
+
+  it('maps master-data.manage to Hospital Admin and Super Admin', async () => {
+    await seedRbacCatalog(dataSource);
+    const permission = await dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'master-data.manage' },
+    });
+    const mappings = await dataSource.getRepository(RolePermission).find({
+      where: { permissionId: permission.id },
+    });
+    const roles = await dataSource.getRepository(Role).find({
+      where: { id: In(mappings.map((m) => m.roleId)) },
+    });
+    expect(roles.map((r) => r.name).sort()).toEqual(['Hospital Admin', 'Super Admin']);
+  });
 });

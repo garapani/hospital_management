@@ -126,6 +126,10 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'system-admin.tenants.manage',
     description: 'Provision, list, view, suspend, and reactivate hospital tenants.',
   },
+  {
+    name: 'master-data.manage',
+    description: 'Create, list, deactivate, and reactivate departments and wards.',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -137,6 +141,8 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'identity.accounts.manage' },
   { roleName: 'Super Admin', permissionName: 'identity.accounts.manage' },
   { roleName: 'Super Admin', permissionName: 'system-admin.tenants.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'master-data.manage' },
+  { roleName: 'Super Admin', permissionName: 'master-data.manage' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
