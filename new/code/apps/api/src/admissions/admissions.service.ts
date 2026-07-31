@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Admission } from './entities/admission.entity.js';
 import { BedTransfer } from './entities/bed-transfer.entity.js';
@@ -64,18 +65,26 @@ export class AdmissionsService {
       await bedRepository.save(bed);
 
       const admissionRepository = manager.getRepository(Admission);
-      const admission = await admissionRepository.save(
-        admissionRepository.create({
-          patientId: input.patientId,
-          admissionSource: input.admissionSource,
-          sourceAppointmentId: input.sourceAppointmentId ?? null,
-          sourceTriageEntryId: input.sourceTriageEntryId ?? null,
-          admittingDoctorId: input.admittingDoctorId,
-          wardId: bed.wardId,
-          bedId: bed.id,
-          status: 'Admitted',
-        }),
-      );
+      let admission: Admission;
+      try {
+        admission = await admissionRepository.save(
+          admissionRepository.create({
+            patientId: input.patientId,
+            admissionSource: input.admissionSource,
+            sourceAppointmentId: input.sourceAppointmentId ?? null,
+            sourceTriageEntryId: input.sourceTriageEntryId ?? null,
+            admittingDoctorId: input.admittingDoctorId,
+            wardId: bed.wardId,
+            bedId: bed.id,
+            status: 'Admitted',
+          }),
+        );
+      } catch (error) {
+        if (error instanceof QueryFailedError && (error as QueryFailedError & { code?: string }).code === '23505') {
+          throw new ConflictException(`Bed ${input.bedId} is not available (status: Occupied)`);
+        }
+        throw error;
+      }
 
       const bedTransferRepository = manager.getRepository(BedTransfer);
       await bedTransferRepository.save(

@@ -10,6 +10,7 @@ import { MasterDataService } from '../master-data/master-data.service.js';
 import { AppointmentsService } from '../appointments/appointments.service.js';
 import { TriageService } from '../clinical/triage/triage.service.js';
 import { AdmissionsService } from './admissions.service.js';
+import { Admission } from './entities/admission.entity.js';
 
 describe('AdmissionsService (integration)', () => {
   const dataSource = createDataSource();
@@ -204,6 +205,45 @@ describe('AdmissionsService (integration)', () => {
     await expect(
       inTenant(tenantId1, () =>
         admissionsService.admit({ patientId: patientB.id, admissionSource: 'Direct', admittingDoctorId: DOCTOR_ID, bedId: bed.id }),
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('maps a bed double-booking race at the DB constraint level to ConflictException', async () => {
+    // Simulates the losing side of a race between two concurrent admit() calls that
+    // both pass the synchronous `bed.status !== 'Available'` check before either
+    // commits its Admission insert. Rather than relying on true concurrency (flaky
+    // in this environment), we force the same failure deterministically: insert an
+    // 'Admitted' row for this bed directly via the repository, bypassing admit()'s
+    // own bed-status check entirely, so the Bed row is left 'Available' while an
+    // active Admission for it already exists. A subsequent admit() call for the
+    // same bed then passes the bed-status check (bed is still 'Available') and only
+    // fails when its own Admission insert hits the partial unique index
+    // (UQ_admissions_active_bed on (bedId) WHERE status = 'Admitted') — exactly the
+    // path the real race would take. This must surface as ConflictException, not a
+    // raw QueryFailedError.
+    const patient = await makePatient(tenantId1, '3330000016');
+    const bed = await makeBed(tenantId1, 'ADTRACE');
+
+    await inTenant(tenantId1, () =>
+      tenantConnection.runInTenantSchema(async (manager) => {
+        const repository = manager.getRepository(Admission);
+        await repository.save(
+          repository.create({
+            patientId: patient.id,
+            admissionSource: 'Direct',
+            admittingDoctorId: DOCTOR_ID,
+            wardId: bed.wardId,
+            bedId: bed.id,
+            status: 'Admitted',
+          }),
+        );
+      }),
+    );
+
+    await expect(
+      inTenant(tenantId1, () =>
+        admissionsService.admit({ patientId: patient.id, admissionSource: 'Direct', admittingDoctorId: DOCTOR_ID, bedId: bed.id }),
       ),
     ).rejects.toThrow(ConflictException);
   });
