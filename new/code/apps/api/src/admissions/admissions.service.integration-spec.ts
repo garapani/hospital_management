@@ -158,6 +158,32 @@ describe('AdmissionsService (integration)', () => {
     expect(admission.sourceTriageEntryId).toBe(triageEntry.id);
   });
 
+  it('advances the triage entry status to Admitted and removes it from the active triage board', async () => {
+    const patient = await makePatient(tenantId1, '3330000004');
+    const bed = await makeBed(tenantId1, 'ADT3B');
+    const triageEntry = await inTenant(tenantId1, () => triageService.create({ chiefComplaint: 'Test' }));
+    await inTenant(tenantId1, () => triageService.linkPatient(triageEntry.id, patient.id));
+
+    const activeBefore = await inTenant(tenantId1, () => triageService.listActive());
+    expect(activeBefore.some((entry) => entry.id === triageEntry.id)).toBe(true);
+
+    await inTenant(tenantId1, () =>
+      admissionsService.admit({
+        patientId: patient.id,
+        admissionSource: 'ER',
+        sourceTriageEntryId: triageEntry.id,
+        admittingDoctorId: DOCTOR_ID,
+        bedId: bed.id,
+      }),
+    );
+
+    const updatedEntry = await inTenant(tenantId1, () => triageService.findOne(triageEntry.id));
+    expect(updatedEntry.status).toBe('Admitted');
+
+    const activeAfter = await inTenant(tenantId1, () => triageService.listActive());
+    expect(activeAfter.some((entry) => entry.id === triageEntry.id)).toBe(false);
+  });
+
   it('rejects admitting from an unlinked (anonymous) triage entry', async () => {
     const bed = await makeBed(tenantId1, 'ADT4');
     const anonymousEntry = await inTenant(tenantId1, () => triageService.create({ firstName: 'Unknown' }));
@@ -207,6 +233,21 @@ describe('AdmissionsService (integration)', () => {
         admissionsService.admit({ patientId: patientB.id, admissionSource: 'Direct', admittingDoctorId: DOCTOR_ID, bedId: bed.id }),
       ),
     ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects admitting an unknown patientId', async () => {
+    const bed = await makeBed(tenantId1, 'ADT6B');
+
+    await expect(
+      inTenant(tenantId1, () =>
+        admissionsService.admit({
+          patientId: '00000000-0000-0000-0000-000000000000',
+          admissionSource: 'Direct',
+          admittingDoctorId: DOCTOR_ID,
+          bedId: bed.id,
+        }),
+      ),
+    ).rejects.toThrow(NotFoundException);
   });
 
   it('maps a bed double-booking race at the DB constraint level to ConflictException', async () => {

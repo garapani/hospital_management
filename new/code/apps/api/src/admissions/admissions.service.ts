@@ -5,6 +5,7 @@ import { Admission } from './entities/admission.entity.js';
 import { BedTransfer } from './entities/bed-transfer.entity.js';
 import { Bed } from '../master-data/entities/bed.entity.js';
 import { TriageEntry } from '../clinical/triage/entities/triage-entry.entity.js';
+import { Patient } from '../patients/entities/patient.entity.js';
 
 export interface CreateAdmissionInput {
   patientId: string;
@@ -40,8 +41,9 @@ export class AdmissionsService {
     }
 
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      let triageEntry: TriageEntry | null = null;
       if (input.sourceTriageEntryId) {
-        const triageEntry = await manager.getRepository(TriageEntry).findOne({ where: { id: input.sourceTriageEntryId } });
+        triageEntry = await manager.getRepository(TriageEntry).findOne({ where: { id: input.sourceTriageEntryId } });
         if (!triageEntry) {
           throw new NotFoundException(`Triage entry ${input.sourceTriageEntryId} not found`);
         }
@@ -52,6 +54,11 @@ export class AdmissionsService {
         }
       }
 
+      const patient = await manager.getRepository(Patient).findOne({ where: { id: input.patientId } });
+      if (!patient) {
+        throw new NotFoundException(`Patient ${input.patientId} not found`);
+      }
+
       const bedRepository = manager.getRepository(Bed);
       const bed = await bedRepository.findOne({ where: { id: input.bedId } });
       if (!bed) {
@@ -60,9 +67,6 @@ export class AdmissionsService {
       if (bed.status !== 'Available') {
         throw new ConflictException(`Bed ${input.bedId} is not available (status: ${bed.status})`);
       }
-
-      bed.status = 'Occupied';
-      await bedRepository.save(bed);
 
       const admissionRepository = manager.getRepository(Admission);
       let admission: Admission;
@@ -86,6 +90,9 @@ export class AdmissionsService {
         throw error;
       }
 
+      bed.status = 'Occupied';
+      await bedRepository.save(bed);
+
       const bedTransferRepository = manager.getRepository(BedTransfer);
       await bedTransferRepository.save(
         bedTransferRepository.create({
@@ -96,6 +103,11 @@ export class AdmissionsService {
           reason: 'Initial admission',
         }),
       );
+
+      if (triageEntry) {
+        triageEntry.status = 'Admitted';
+        await manager.getRepository(TriageEntry).save(triageEntry);
+      }
 
       return admission;
     });
