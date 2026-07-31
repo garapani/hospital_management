@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { InsertEvent, RemoveEvent, UpdateEvent } from 'typeorm';
+import type { EntityManager } from 'typeorm';
 import { AuditExclude } from './audit-exclude.decorator.js';
 import { AuditEventPublisher } from './audit-event-publisher.interface.js';
 import { AuditSubscriber } from './audit.subscriber.js';
@@ -171,5 +172,29 @@ describe('AuditSubscriber', () => {
         diff: [{ field: 'username', before: 'alice', after: null }],
       }),
     ]);
+  });
+
+  it('passes the active EntityManager through to the publisher so it can reuse the same connection', async () => {
+    const publishedManagers: unknown[] = [];
+    const publisher: AuditEventPublisher = {
+      publish: async (_event, manager) => {
+        publishedManagers.push(manager);
+      },
+    };
+    const tenantContext = new TenantContextService();
+    const subscriber = new AuditSubscriber(publisher, tenantContext);
+    const fakeManager = { fake: 'manager' } as unknown as EntityManager;
+    const entity = Object.assign(new Account(), { id: '1', username: 'alice', passwordHash: 'h' });
+    const event = {
+      metadata: { tableName: 'account' },
+      entity,
+      manager: fakeManager,
+    } as unknown as InsertEvent<Record<string, unknown>>;
+
+    await tenantContext.run({ tenantId: 'h1', correlationId: 'corr-6' }, () =>
+      subscriber.afterInsert(event),
+    );
+
+    expect(publishedManagers).toEqual([fakeManager]);
   });
 });

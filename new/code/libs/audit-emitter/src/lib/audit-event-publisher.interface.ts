@@ -1,3 +1,4 @@
+import type { EntityManager } from 'typeorm';
 import { AuditDiffEntry } from './build-audit-diff.js';
 
 export interface AuditEvent {
@@ -12,7 +13,7 @@ export interface AuditEvent {
 }
 
 export interface AuditEventPublisher {
-  publish(event: AuditEvent): Promise<void>;
+  publish(event: AuditEvent, manager?: EntityManager): Promise<void>;
 }
 
 export const AUDIT_EVENT_PUBLISHER = Symbol('AUDIT_EVENT_PUBLISHER');
