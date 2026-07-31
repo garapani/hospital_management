@@ -4,12 +4,14 @@ import { TenantContextModule } from '@hospital/tenant-context';
 import { AuditSubscriber, AUDIT_EVENT_PUBLISHER } from '@hospital/audit-emitter';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { createDataSource } from '../database/data-source.js';
+import { AccountsController } from './accounts.controller.js';
 import { AccountsService } from './accounts.service.js';
 import { LoggingAuditEventPublisher } from './logging-audit-event-publisher.js';
 import { AuditWiringService } from './audit-wiring.service.js';
 
 @Module({
   imports: [TenantContextModule],
+  controllers: [AccountsController],
   providers: [
     AccountsService,
     TenantConnectionService,

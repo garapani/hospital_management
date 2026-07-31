@@ -141,6 +141,9 @@ importers:
       '@hospital/audit-emitter':
         specifier: workspace:*
         version: link:../../libs/audit-emitter
+      '@hospital/auth-guards':
+        specifier: workspace:*
+        version: link:../../libs/auth-guards
       '@hospital/tenant-context':
         specifier: workspace:*
         version: link:../../libs/tenant-context
