@@ -9,9 +9,9 @@ import { Tenant } from '../tenants/entities/tenant.entity.js';
 import { AuditRecord } from '../audit/entities/audit-record.entity.js';
 import { Department } from '../master-data/entities/department.entity.js';
 import { Ward } from '../master-data/entities/ward.entity.js';
-import { CreateRbacCatalogTables1738200000000 } from './migrations/rbac/1738200000000-create-rbac-catalog-tables.js';
-import { AddRolePermissionsUniqueConstraint1738200000002 } from './migrations/rbac/1738200000002-add-role-permissions-unique-constraint.js';
-import { CreateTenantsTable1738200000004 } from './migrations/tenants/1738200000004-create-tenants-table.js';
+import { CreateRbacCatalogTables1738200000000 } from './migrations/1738200000000-create-rbac-catalog-tables.js';
+import { AddRolePermissionsUniqueConstraint1738200000002 } from './migrations/1738200000002-add-role-permissions-unique-constraint.js';
+import { CreateTenantsTable1738200000004 } from './migrations/1738200000004-create-tenants-table.js';
 
 export function createDataSource(): DataSource {
   return new DataSource({
