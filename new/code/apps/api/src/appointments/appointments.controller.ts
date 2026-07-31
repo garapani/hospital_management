@@ -1,0 +1,46 @@
+import { Controller, Get, Post, Put, Body, Param, Query, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { RequirePermission, PermissionGuard } from '@hospital/auth-guards';
+import { AppointmentsService, CreateAppointmentInput, UpdateAppointmentInput, AppointmentFilters } from './appointments.service.js';
+
+@Controller('appointments')
+@UseGuards(PermissionGuard)
+export class AppointmentsController {
+  constructor(private readonly appointmentsService: AppointmentsService) {}
+
+  @Post()
+  @RequirePermission('appointment.manage')
+  async createAppointment(@Body() body: CreateAppointmentInput) {
+    return this.appointmentsService.create(body);
+  }
+
+  @Get()
+  @RequirePermission('appointment.read')
+  async listAppointments(
+    @Query('date') date?: string,
+    @Query('doctorId') doctorId?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('status') status?: string,
+  ) {
+    const filters: AppointmentFilters = { date, doctorId, departmentId, status };
+    return this.appointmentsService.list(filters);
+  }
+
+  @Get(':id')
+  @RequirePermission('appointment.read')
+  async getAppointment(@Param('id') id: string) {
+    return this.appointmentsService.getById(id);
+  }
+
+  @Put(':id')
+  @RequirePermission('appointment.manage')
+  async updateAppointment(@Param('id') id: string, @Body() body: UpdateAppointmentInput) {
+    return this.appointmentsService.update(id, body);
+  }
+
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('appointment.manage')
+  async cancelAppointment(@Param('id') id: string, @Body() body: { cancelledRemarks: string }) {
+    return this.appointmentsService.cancel(id, body.cancelledRemarks);
+  }
+}
