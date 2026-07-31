@@ -72,7 +72,6 @@ describe('AccountsService (integration)', () => {
     const hospitalAdminRole = await dataSource
       .getRepository(Role)
       .findOneOrFail({ where: { name: 'Hospital Admin' } });
-    const doctorRole = await dataSource.getRepository(Role).findOneOrFail({ where: { name: 'Doctor' } });
 
     const permissionsForAdmin = await accountsService.getPermissionNamesForRoles([hospitalAdminRole.id]);
     expect(permissionsForAdmin).toContain('identity.accounts.manage');

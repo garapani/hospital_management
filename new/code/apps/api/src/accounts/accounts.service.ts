@@ -11,6 +11,8 @@ import { CreateTenantAccountTables } from '../database/migrations/0002-create-te
 import { AddAccountRolesUniqueActiveAssignment } from '../database/migrations/0004-add-account-roles-unique-active-assignment.js';
 import { CreateAuditRecordsTable } from '../database/migrations/0006-create-audit-records-table.js';
 import { CreateMasterDataTables } from '../database/migrations/0007-create-master-data-tables.js';
+import { CreatePatientTables005 } from '../database/migrations/005_create_patient_tables.js';
+import { CreateAppointmentsTable0009 } from '../database/migrations/0009-create-appointments-table.js';
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
 const BCRYPT_SALT_ROUNDS = 12;
@@ -59,6 +61,10 @@ export class AccountsService {
       await auditRecordsMigration.up(queryRunner);
       const masterDataMigration = new CreateMasterDataTables();
       await masterDataMigration.up(queryRunner);
+      const patientTablesMigration = new CreatePatientTables005();
+      await patientTablesMigration.up(queryRunner);
+      const appointmentsMigration = new CreateAppointmentsTable0009();
+      await appointmentsMigration.up(queryRunner);
     } finally {
       await queryRunner.release();
     }
