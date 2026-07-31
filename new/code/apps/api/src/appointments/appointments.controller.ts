@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Body, Param, Query, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { RequirePermission, PermissionGuard } from '@hospital/auth-guards';
-import { AppointmentsService, CreateAppointmentInput, UpdateAppointmentInput, AppointmentFilters } from './appointments.service.js';
+import { AppointmentsService } from './appointments.service.js';
+import type { CreateAppointmentInput, UpdateAppointmentInput, AppointmentFilters } from './appointments.service.js';
 
 @Controller('appointments')
 @UseGuards(PermissionGuard)

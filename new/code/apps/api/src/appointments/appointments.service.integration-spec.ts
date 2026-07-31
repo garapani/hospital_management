@@ -40,10 +40,12 @@ describe('AppointmentsService (integration)', () => {
   });
 
   afterEach(async () => {
-    // Clean up appointments table after each test
-    await inTenant(() => 
+    // Clean up appointments table after each test. Uses DELETE rather than
+    // TypeORM's clear()/TRUNCATE, which fails once other tenant tables (e.g.
+    // vitals) hold a foreign key onto appointments.
+    await inTenant(() =>
       tenantConnection.runInTenantSchema(async (manager) => {
-        await manager.getRepository(Appointment).clear();
+        await manager.createQueryBuilder().delete().from(Appointment).execute();
       })
     );
   });

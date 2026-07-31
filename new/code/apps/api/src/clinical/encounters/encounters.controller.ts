@@ -31,7 +31,7 @@ export class EncountersController {
   @Post('diagnoses')
   @RequirePermission('encounter.manage')
   async createDiagnosis(@Body() input: CreateDiagnosisDto) {
-    return this.encountersService.createDiagnosis(input);
+    return this.encountersService.createDiagnosis({ ...input, isPrimary: input.isPrimary ?? false });
   }
 
   @Delete('diagnoses/:id')

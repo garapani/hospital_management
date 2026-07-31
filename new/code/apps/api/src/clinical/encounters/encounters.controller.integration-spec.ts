@@ -5,13 +5,13 @@ import { AppModule } from '../../app/app.module.js';
 import { createDataSource } from '../../database/data-source.js';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
 import { AccountsService } from '../../accounts/accounts.service.js';
-import { EncountersService } from './encounters.service.js';
 import { PermissionGuard } from '@hospital/auth-guards';
+import { TenantContextService } from '@hospital/tenant-context';
 
 describe('EncountersController (integration)', () => {
   let app: INestApplication;
   const dataSource = createDataSource();
-  const tenantConnectionService = new TenantConnectionService(dataSource);
+  const tenantConnectionService = new TenantConnectionService(dataSource, new TenantContextService());
   const accountsService = new AccountsService(tenantConnectionService, dataSource);
   const tenantId = 'test_encounters_ctrl';
   const patientId = '00000000-0000-0000-0000-000000000001';

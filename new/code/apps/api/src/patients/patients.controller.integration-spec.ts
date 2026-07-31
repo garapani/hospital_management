@@ -7,7 +7,6 @@ import { createDataSource } from '../database/data-source.js';
 import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
-import { CreatePatientTables005 } from '../database/migrations/005_create_patient_tables.js';
 import { PatientsModule } from './patients.module.js';
 
 describe('PatientsController (integration)', () => {

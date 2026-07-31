@@ -3,11 +3,12 @@ import { EncountersService } from './encounters.service.js';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
 import { createDataSource } from '../../database/data-source.js';
 import { AccountsService } from '../../accounts/accounts.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 
 describe('EncountersService (integration)', () => {
   let service: EncountersService;
   const dataSource = createDataSource();
-  const accountsService = new AccountsService(new TenantConnectionService(dataSource), dataSource);
+  const accountsService = new AccountsService(new TenantConnectionService(dataSource, new TenantContextService()), dataSource);
   const tenantId = 'test_encounters_svc';
 
   beforeAll(async () => {
