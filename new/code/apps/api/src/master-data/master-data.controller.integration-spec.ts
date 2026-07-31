@@ -130,4 +130,25 @@ describe('MasterDataController (integration)', () => {
     expect(deactivated.status).toBe(200);
     expect(deactivated.body.isActive).toBe(false);
   });
+
+  it('creates a bed under a ward and lists it', async () => {
+    const wardResponse = await request(app.getHttpServer())
+      .post('/wards')
+      .set(adminHeaders)
+      .send({ wardCode: 'CTRLBED', wardName: 'Ctrl Bed Ward' });
+    expect(wardResponse.status).toBe(201);
+
+    const bedResponse = await request(app.getHttpServer())
+      .post(`/wards/${wardResponse.body.id}/beds`)
+      .set(adminHeaders)
+      .send({ bedNumber: '1', bedType: 'General' });
+    expect(bedResponse.status).toBe(201);
+    expect(bedResponse.body.wardId).toBe(wardResponse.body.id);
+
+    const listResponse = await request(app.getHttpServer())
+      .get(`/wards/${wardResponse.body.id}/beds`)
+      .set(adminHeaders);
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.some((b: { id: string }) => b.id === bedResponse.body.id)).toBe(true);
+  });
 });

@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Department } from './entities/department.entity.js';
 import { Ward } from './entities/ward.entity.js';
+import { Bed } from './entities/bed.entity.js';
 
 export interface CreateDepartmentInput {
   departmentCode: string;
@@ -18,6 +19,12 @@ export interface CreateWardInput {
   wardName: string;
   wardType?: string;
   bedCapacity?: number;
+}
+
+export interface CreateBedInput {
+  wardId: string;
+  bedNumber: string;
+  bedType?: string;
 }
 
 @Injectable()
@@ -146,6 +153,73 @@ export class MasterDataService {
       }
       ward.isActive = true;
       return repository.save(ward);
+    });
+  }
+
+  async createBed(input: CreateBedInput): Promise<Bed> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const ward = await manager.getRepository(Ward).findOne({ where: { id: input.wardId } });
+      if (!ward) {
+        throw new NotFoundException(`Ward ${input.wardId} not found`);
+      }
+
+      const repository = manager.getRepository(Bed);
+      const existing = await repository.findOne({ where: { wardId: input.wardId, bedNumber: input.bedNumber } });
+      if (existing) {
+        throw new ConflictException(`Bed ${input.bedNumber} already exists in ward ${input.wardId}`);
+      }
+
+      return repository.save(
+        repository.create({
+          wardId: input.wardId,
+          bedNumber: input.bedNumber,
+          bedType: input.bedType ?? null,
+          status: 'Available',
+          isActive: true,
+        }),
+      );
+    });
+  }
+
+  async listBedsByWard(wardId: string): Promise<Bed[]> {
+    return this.tenantConnection.runInTenantSchema((manager) =>
+      manager.getRepository(Bed).find({ where: { wardId }, order: { bedNumber: 'ASC' } }),
+    );
+  }
+
+  async getBed(id: string): Promise<Bed | null> {
+    return this.tenantConnection.runInTenantSchema((manager) =>
+      manager.getRepository(Bed).findOne({ where: { id } }),
+    );
+  }
+
+  async deactivateBed(id: string): Promise<Bed> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Bed);
+      const bed = await repository.findOne({ where: { id } });
+      if (!bed) {
+        throw new NotFoundException(`Bed ${id} not found`);
+      }
+      if (bed.status === 'Occupied') {
+        throw new ConflictException(`Cannot deactivate bed ${id}: it is currently occupied`);
+      }
+      if (!bed.isActive) {
+        return bed;
+      }
+      bed.isActive = false;
+      return repository.save(bed);
+    });
+  }
+
+  async reactivateBed(id: string): Promise<Bed> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Bed);
+      const bed = await repository.findOne({ where: { id } });
+      if (!bed) {
+        throw new NotFoundException(`Bed ${id} not found`);
+      }
+      bed.isActive = true;
+      return repository.save(bed);
     });
   }
 }

@@ -14,6 +14,7 @@ import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { MasterDataService } from './master-data.service.js';
 import { CreateDepartmentDto } from './dto/create-department.dto.js';
 import { CreateWardDto } from './dto/create-ward.dto.js';
+import { CreateBedDto } from './dto/create-bed.dto.js';
 
 const REQUIRED_PERMISSION = 'master-data.manage';
 
@@ -90,5 +91,40 @@ export class MasterDataController {
   @RequirePermission(REQUIRED_PERMISSION)
   async reactivateWard(@Param('id') id: string) {
     return this.masterDataService.reactivateWard(id);
+  }
+
+  @Post('wards/:wardId/beds')
+  @RequirePermission(REQUIRED_PERMISSION)
+  @HttpCode(HttpStatus.CREATED)
+  async createBed(@Param('wardId') wardId: string, @Body() body: CreateBedDto) {
+    return this.masterDataService.createBed({ ...body, wardId });
+  }
+
+  @Get('wards/:wardId/beds')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async listBedsByWard(@Param('wardId') wardId: string) {
+    return this.masterDataService.listBedsByWard(wardId);
+  }
+
+  @Get('beds/:id')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async getBed(@Param('id') id: string) {
+    const bed = await this.masterDataService.getBed(id);
+    if (!bed) {
+      throw new NotFoundException(`Bed ${id} not found`);
+    }
+    return bed;
+  }
+
+  @Patch('beds/:id/deactivate')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async deactivateBed(@Param('id') id: string) {
+    return this.masterDataService.deactivateBed(id);
+  }
+
+  @Patch('beds/:id/reactivate')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async reactivateBed(@Param('id') id: string) {
+    return this.masterDataService.reactivateBed(id);
   }
 }
