@@ -154,6 +154,14 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'appointment.read',
     description: 'View appointment schedules',
   },
+  {
+    name: 'vitals.manage',
+    description: 'Create, update, and void patient vitals',
+  },
+  {
+    name: 'vitals.read',
+    description: 'View patient vitals',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -188,6 +196,15 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Receptionist / Front Desk', permissionName: 'appointment.read' },
   { roleName: 'Doctor', permissionName: 'appointment.read' },
   { roleName: 'Nurse', permissionName: 'appointment.read' },
+  { roleName: 'Super Admin', permissionName: 'vitals.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'vitals.manage' },
+  { roleName: 'Doctor', permissionName: 'vitals.manage' },
+  { roleName: 'Nurse', permissionName: 'vitals.manage' },
+  { roleName: 'Super Admin', permissionName: 'vitals.read' },
+  { roleName: 'Hospital Admin', permissionName: 'vitals.read' },
+  { roleName: 'Doctor', permissionName: 'vitals.read' },
+  { roleName: 'Nurse', permissionName: 'vitals.read' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'vitals.read' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
