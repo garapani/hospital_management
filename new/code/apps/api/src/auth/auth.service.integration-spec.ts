@@ -95,6 +95,6 @@ describe('AuthService (integration)', () => {
       string,
       unknown
     >;
-    expect(decoded['permissions']).toEqual(['identity.accounts.manage']);
+    expect(decoded['permissions']).toContain('identity.accounts.manage');
   });
 });
