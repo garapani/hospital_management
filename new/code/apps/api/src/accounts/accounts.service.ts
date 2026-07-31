@@ -17,6 +17,7 @@ import { CreateVitalsTable0010 } from '../database/migrations/0010-create-vitals
 import { CreateEncounterTables011 } from '../database/migrations/0011_create_encounter_tables.js';
 import { CreateTriageTable0012 } from '../database/migrations/0012-create-triage-table.js';
 import { CreateBedsTable0013 } from '../database/migrations/0013-create-beds-table.js';
+import { CreateAdmissionsTables0014 } from '../database/migrations/0014-create-admissions-tables.js';
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
 const BCRYPT_SALT_ROUNDS = 12;
@@ -77,6 +78,8 @@ export class AccountsService {
       await triageMigration.up(queryRunner);
       const bedsMigration = new CreateBedsTable0013();
       await bedsMigration.up(queryRunner);
+      const admissionsMigration = new CreateAdmissionsTables0014();
+      await admissionsMigration.up(queryRunner);
     } finally {
       await queryRunner.release();
     }
