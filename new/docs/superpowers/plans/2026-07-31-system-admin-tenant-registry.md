@@ -16,6 +16,7 @@
 - `hospitalId` values must be validated against `/^[a-z0-9_]+$/` before use — this is the same format `AccountsService.provisionTenantSchema` already enforces for `tenant_<hospitalId>` schema names (`apps/api/src/accounts/accounts.service.ts`), and this registry's `hospitalId` is the same identifier space.
 - No `ValidationPipe`/class-validator on DTOs — matches this codebase's existing convention (see `CreateAccountDto`); not introducing new dependencies for this plan.
 - `apps/api/src/database/migrate.ts` is known-broken (pre-existing, unrelated to this plan — a TypeORM/tsx decorator-metadata error). New migrations must be applied to the dev database manually via `psql`, matching the precedent already established for this app's other migrations.
+- The `tenants` table is a shared, persistent platform table (not a disposable per-test `tenant_<id>` schema like `accounts`, and not an idempotent fixed catalog like `roles`/`permissions`). Every test file that creates rows in it must delete them in `afterAll` (e.g. `DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_svc_%'`), or a second run against the same dev database fails with `ConflictException: Tenant ... already exists` on rows left over from the previous run.
 - Follow this workspace's git conventions: never `git commit --amend`, never add AI co-authorship trailers, prefer `git add <specific files>` over `git add -A` (a prior task in this repo's history accidentally committed unrelated untracked files, including a broken git submodule reference, via `git add -A` — name files explicitly in every commit in this plan).
 
 ---
@@ -622,6 +623,7 @@ describe('TenantsController (integration)', () => {
   });
 
   afterAll(async () => {
+    await dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_ctrl_%'`);
     await dataSource.destroy();
     await app.close();
   });
@@ -886,6 +888,7 @@ describe('TenantsController permission gating (integration)', () => {
   });
 
   afterAll(async () => {
+    await dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = 'test_tenant_permgate'`);
     await dataSource.destroy();
     await app.close();
   });
