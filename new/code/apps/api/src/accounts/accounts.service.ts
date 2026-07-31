@@ -13,6 +13,7 @@ import { CreateAuditRecordsTable } from '../database/migrations/0006-create-audi
 import { CreateMasterDataTables } from '../database/migrations/0007-create-master-data-tables.js';
 import { CreatePatientTables005 } from '../database/migrations/005_create_patient_tables.js';
 import { CreateAppointmentsTable0009 } from '../database/migrations/0009-create-appointments-table.js';
+import { CreateVitalsTable0010 } from '../database/migrations/0010-create-vitals-table.js';
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
 const BCRYPT_SALT_ROUNDS = 12;
@@ -65,6 +66,8 @@ export class AccountsService {
       await patientTablesMigration.up(queryRunner);
       const appointmentsMigration = new CreateAppointmentsTable0009();
       await appointmentsMigration.up(queryRunner);
+      const vitalsMigration = new CreateVitalsTable0010();
+      await vitalsMigration.up(queryRunner);
     } finally {
       await queryRunner.release();
     }
