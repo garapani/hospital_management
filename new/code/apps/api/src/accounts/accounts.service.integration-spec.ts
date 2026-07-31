@@ -77,8 +77,9 @@ describe('AccountsService (integration)', () => {
     const permissionsForAdmin = await accountsService.getPermissionNamesForRoles([hospitalAdminRole.id]);
     expect(permissionsForAdmin).toContain('identity.accounts.manage');
 
-    const permissionsForDoctor = await accountsService.getPermissionNamesForRoles([doctorRole.id]);
-    expect(permissionsForDoctor).toEqual([]);
+    const helpdeskRole = await dataSource.getRepository(Role).findOneOrFail({ where: { name: 'Helpdesk Agent' } });
+    const permissionsForHelpdesk = await accountsService.getPermissionNamesForRoles([helpdeskRole.id]);
+    expect(permissionsForHelpdesk).toEqual([]);
   });
 
   it('creates a staff account with needsPasswordUpdate set when requested', async () => {

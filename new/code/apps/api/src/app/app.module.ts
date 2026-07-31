@@ -4,9 +4,10 @@ import { AuthModule } from '../auth/auth.module.js';
 import { TenantsModule } from '../tenants/tenants.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { MasterDataModule } from '../master-data/master-data.module.js';
+import { PatientsModule } from '../patients/patients.module.js';
 
 @Module({
-  imports: [TenantContextModule, AuthModule, TenantsModule, AuditModule, MasterDataModule],
+  imports: [TenantContextModule, AuthModule, TenantsModule, AuditModule, MasterDataModule, PatientsModule],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
