@@ -71,7 +71,7 @@ A bed's `status` tracks occupancy directly: `Occupied` from the moment it's assi
 - **Super Admin**: `admission.manage`, `admission.read`
 - **Receptionist / Front Desk**: `admission.read` (view-only)
 
-Bed CRUD endpoints live under Master Data and are covered by its existing `master-data.manage` / `master-data.read` permissions — no new permission needed for beds themselves.
+Bed CRUD endpoints live under Master Data and are covered by its existing `master-data.manage` permission (Master Data has no separate `.read` permission — `master-data.manage` gates every endpoint there, including reads, matching the existing Department/Ward pattern) — no new permission needed for beds themselves.
 
 ## API Endpoints
 
