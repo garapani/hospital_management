@@ -33,7 +33,7 @@ export class AuthService {
       return { invalidCredentials: true };
     }
 
-    const { account, roleNames } = found;
+    const { account, roleIds, roleNames } = found;
 
     if (account.lockedUntil && account.lockedUntil.getTime() > Date.now()) {
       const retryAfterSeconds = Math.ceil((account.lockedUntil.getTime() - Date.now()) / 1000);
@@ -55,10 +55,11 @@ export class AuthService {
     await this.accountsService.resetFailedLogins(account.id);
 
     const hospitalId = this.tenantContext.getTenantId();
+    const permissions = await this.accountsService.getPermissionNamesForRoles(roleIds);
     const payload = {
       sub: account.id,
       roles: roleNames,
-      permissions: [] as string[],
+      permissions,
       hospitalId,
     };
 

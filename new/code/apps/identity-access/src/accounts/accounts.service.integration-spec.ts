@@ -3,6 +3,7 @@ import { TenantContextService } from '@hospital/tenant-context';
 import { createDataSource } from '../database/data-source.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
+import { Role } from '../rbac/entities/role.entity.js';
 import { AccountsService } from './accounts.service.js';
 
 describe('AccountsService (integration)', () => {
@@ -64,5 +65,18 @@ describe('AccountsService (integration)', () => {
   it('returns null for a username that does not exist', async () => {
     const found = await inTenant(() => accountsService.findByUsernameWithRoles('nobody'));
     expect(found).toBeNull();
+  });
+
+  it('resolves permission names granted to a set of role ids', async () => {
+    const hospitalAdminRole = await dataSource
+      .getRepository(Role)
+      .findOneOrFail({ where: { name: 'Hospital Admin' } });
+    const doctorRole = await dataSource.getRepository(Role).findOneOrFail({ where: { name: 'Doctor' } });
+
+    const permissionsForAdmin = await accountsService.getPermissionNamesForRoles([hospitalAdminRole.id]);
+    expect(permissionsForAdmin).toEqual(['identity.accounts.manage']);
+
+    const permissionsForDoctor = await accountsService.getPermissionNamesForRoles([doctorRole.id]);
+    expect(permissionsForDoctor).toEqual([]);
   });
 });

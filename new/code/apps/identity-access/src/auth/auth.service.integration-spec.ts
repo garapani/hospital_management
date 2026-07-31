@@ -27,6 +27,15 @@ describe('AuthService (integration)', () => {
         roleName: 'Doctor',
       }),
     );
+    await tenantContext.run({ tenantId: 'test_auth', correlationId: 'setup' }, () =>
+      accountsService.createStaffAccount({
+        username: 'admin.amy',
+        email: 'amy@example.com',
+        displayName: 'Admin Amy',
+        password: 'correct-password-123',
+        roleName: 'Hospital Admin',
+      }),
+    );
   });
 
   afterAll(async () => {
@@ -75,5 +84,17 @@ describe('AuthService (integration)', () => {
 
     expect(result).toMatchObject({ locked: true });
     expect((result as { retryAfterSeconds: number }).retryAfterSeconds).toBeGreaterThan(0);
+  });
+
+  it("includes the account's real permissions in the JWT, not an empty placeholder", async () => {
+    const result = await inTenant(() =>
+      authService.login({ username: 'admin.amy', password: 'correct-password-123' }),
+    );
+
+    const decoded = jwtService.decode((result as { accessToken: string }).accessToken) as Record<
+      string,
+      unknown
+    >;
+    expect(decoded['permissions']).toEqual(['identity.accounts.manage']);
   });
 });

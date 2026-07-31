@@ -4,6 +4,8 @@ import { DataSource, In } from 'typeorm';
 import { Account } from './entities/account.entity.js';
 import { AccountRole } from './entities/account-role.entity.js';
 import { Role } from '../rbac/entities/role.entity.js';
+import { Permission } from '../rbac/entities/permission.entity.js';
+import { RolePermission } from '../rbac/entities/role-permission.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { CreateTenantAccountTables1738200000001 } from '../database/migrations/1738200000001-create-tenant-account-tables.js';
 
@@ -20,6 +22,7 @@ export interface CreateStaffAccountInput {
 
 export interface AccountWithRoles {
   account: Account;
+  roleIds: string[];
   roleNames: string[];
 }
 
@@ -84,7 +87,27 @@ export class AccountsService {
     if (!account) {
       return null;
     }
+    return this.attachRoles(account);
+  }
 
+  async getPermissionNamesForRoles(roleIds: string[]): Promise<string[]> {
+    if (roleIds.length === 0) {
+      return [];
+    }
+    const rolePermissions = await this.dataSource
+      .getRepository(RolePermission)
+      .find({ where: { roleId: In(roleIds) } });
+    const permissionIds = [...new Set(rolePermissions.map((rp) => rp.permissionId))];
+    if (permissionIds.length === 0) {
+      return [];
+    }
+    const permissions = await this.dataSource
+      .getRepository(Permission)
+      .find({ where: { id: In(permissionIds) } });
+    return permissions.map((permission) => permission.name);
+  }
+
+  private async attachRoles(account: Account): Promise<AccountWithRoles> {
     const accountRoles = await this.tenantConnection.runInTenantSchema((manager) =>
       manager.getRepository(AccountRole).find({ where: { accountId: account.id, isActive: true } }),
     );
@@ -94,7 +117,7 @@ export class AccountsService {
         ? []
         : await this.dataSource.getRepository(Role).find({ where: { id: In(roleIds) } });
 
-    return { account, roleNames: roles.map((role) => role.name) };
+    return { account, roleIds, roleNames: roles.map((role) => role.name) };
   }
 
   async recordFailedLogin(accountId: string): Promise<void> {
