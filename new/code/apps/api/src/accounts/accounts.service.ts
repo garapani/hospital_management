@@ -51,14 +51,15 @@ export class AccountsService {
     try {
       await queryRunner.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
       await queryRunner.query(`SET search_path TO "${schemaName}", public`);
-      const migration = new CreateTenantAccountTables1738200000001();
-      await migration.up(queryRunner);
-      const uniqueActiveAssignmentMigration = new AddAccountRolesUniqueActiveAssignment1738200000003();
-      await uniqueActiveAssignmentMigration.up(queryRunner);
-      const auditRecordsMigration = new CreateAuditRecordsTable1738200000005();
-      await auditRecordsMigration.up(queryRunner);
-      const masterDataMigration = new CreateMasterDataTables1738200000006();
-      await masterDataMigration.up(queryRunner);
+      const tenantSchemaMigrations = [
+        CreateTenantAccountTables1738200000001,
+        AddAccountRolesUniqueActiveAssignment1738200000003,
+        CreateAuditRecordsTable1738200000005,
+        CreateMasterDataTables1738200000006,
+      ];
+      for (const Migration of tenantSchemaMigrations) {
+        await new Migration().up(queryRunner);
+      }
     } finally {
       await queryRunner.release();
     }
