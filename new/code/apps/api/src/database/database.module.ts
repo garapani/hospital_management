@@ -1,9 +1,12 @@
 import { Global, Module } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { TenantContextModule } from '@hospital/tenant-context';
 import { createDataSource } from './data-source.js';
+import { TenantConnectionService } from './tenant-connection.service.js';
 
 @Global()
 @Module({
+  imports: [TenantContextModule],
   providers: [
     {
       provide: DataSource,
@@ -15,7 +18,8 @@ import { createDataSource } from './data-source.js';
         return ds;
       },
     },
+    TenantConnectionService,
   ],
-  exports: [DataSource],
+  exports: [DataSource, TenantConnectionService],
 })
 export class DatabaseModule {}
