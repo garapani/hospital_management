@@ -34,7 +34,7 @@ const packageJson = JSON.parse(
 // causes the failure: this app's package.json must declare
 // "type": "module". A plain file read can't be fooled by any transform,
 // sandbox Node version, or tool-specific interop bridge.
-describe('identity-access package.json module type', () => {
+describe('apps/api package.json module type', () => {
   it('declares "type": "module" so it can import the pure-ESM @hospital/* shared libraries', () => {
     expect(packageJson.type).toBe('module');
   });

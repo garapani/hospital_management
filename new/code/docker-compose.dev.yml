@@ -1,7 +1,7 @@
 services:
-  identity-access-postgres:
+  api-postgres:
     image: postgres:16-alpine
-    container_name: identity-access-postgres-dev
+    container_name: api-postgres-dev
     environment:
       POSTGRES_USER: identity_access
       POSTGRES_PASSWORD: identity_access_dev_password
@@ -9,7 +9,7 @@ services:
     ports:
       - '5433:5432'
     volumes:
-      - identity-access-postgres-data:/var/lib/postgresql/data
+      - api-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U identity_access']
       interval: 5s
@@ -17,4 +17,4 @@ services:
       retries: 5
 
 volumes:
-  identity-access-postgres-data:
+  api-postgres-data:

@@ -3,16 +3,16 @@
  * `tsx` (not Jest) so the import actually goes through Node's real module
  * resolution instead of @swc/jest's transform.
  *
- *   pnpm exec tsx apps/identity-access/src/verify-esm-interop.ts
+ *   pnpm exec tsx apps/api/src/verify-esm-interop.ts
  *
  * VERIFIED LIMITATION - read before relying on this for ERR_REQUIRE_ESM:
- * this script does NOT prove that apps/identity-access/package.json's
+ * this script does NOT prove that apps/api/package.json's
  * "type": "module" field prevents ERR_REQUIRE_ESM. Both were checked
  * empirically:
  *   1. `tsx` ships its own CJS<->ESM interop bridge that transparently
  *      loads ESM-only packages even when the importing file is treated as
  *      CommonJS - this script keeps passing even with "type": "module"
- *      removed from apps/identity-access/package.json, and still passes
+ *      removed from apps/api/package.json, and still passes
  *      even under `NODE_OPTIONS=--no-experimental-require-module` (which
  *      rules out Node's own require(esm) feature as the explanation).
  *   2. Separately, on this workspace's Node version (v23.10.0),
@@ -31,10 +31,10 @@
  * "type": "module" is still doing anything.
  *
  * THE AUTHORITATIVE REGRESSION GUARD IS ELSEWHERE: see
- * apps/identity-access/src/esm-package-type.spec.ts. It doesn't try to
+ * apps/api/src/esm-package-type.spec.ts. It doesn't try to
  * exercise Node's real module boundary at all (that boundary turned out to
  * be sandbox/tool-dependent, as documented above) - instead it just asserts
- * apps/identity-access/package.json still declares "type": "module", which
+ * apps/api/package.json still declares "type": "module", which
  * is the actual config invariant that ERR_REQUIRE_ESM depends on. That
  * assertion can't be fooled by any transform, sandbox Node version, or
  * tool-specific interop bridge, because it never crosses a module-loading

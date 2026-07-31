@@ -10,7 +10,7 @@ const swcJestConfig = JSON.parse(
 swcJestConfig.swcrc = false;
 
 module.exports = {
-  displayName: 'identity-access',
+  displayName: 'api',
   preset: '../../jest.preset.js',
   testEnvironment: 'node',
   transform: {

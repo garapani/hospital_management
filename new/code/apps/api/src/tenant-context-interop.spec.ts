@@ -1,9 +1,9 @@
 import { TenantContextService } from '@hospital/tenant-context';
 
-// Smoke test: proves identity-access (a CommonJS-by-default app under Nx's
+// Smoke test: proves apps/api (a CommonJS-by-default app under Nx's
 // "nodenext" module resolution) can actually import and execute code from
 // @hospital/tenant-context, which is a pure-ESM package (no "require" export
-// condition). If apps/identity-access/package.json is missing
+// condition). If apps/api/package.json is missing
 // "type": "module", this import resolves fine under ts-jest/SWC transform
 // (which doesn't enforce Node's runtime module resolution rules) but would
 // fail at real runtime with ERR_REQUIRE_ESM once compiled by tsc. This test

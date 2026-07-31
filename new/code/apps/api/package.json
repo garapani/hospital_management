@@ -1,10 +1,10 @@
 {
-  "name": "@org/identity-access",
+  "name": "@org/api",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "nx": {
-    "name": "identity-access",
+    "name": "api",
     "targets": {
       "build": {
         "executor": "nx:run-commands",
@@ -65,15 +65,15 @@
           "build"
         ],
         "options": {
-          "buildTarget": "identity-access:build",
+          "buildTarget": "api:build",
           "runBuildTargetDependencies": false
         },
         "configurations": {
           "development": {
-            "buildTarget": "identity-access:build:development"
+            "buildTarget": "api:build:development"
           },
           "production": {
-            "buildTarget": "identity-access:build:production"
+            "buildTarget": "api:build:production"
           }
         }
       },

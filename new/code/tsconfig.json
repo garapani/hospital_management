@@ -13,7 +13,7 @@
       "path": "./libs/audit-emitter"
     },
     {
-      "path": "./apps/identity-access"
+      "path": "./apps/api"
     }
   ],
   "compilerOptions": {}
