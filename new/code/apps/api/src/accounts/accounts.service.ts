@@ -10,6 +10,7 @@ import { TenantConnectionService } from '../database/tenant-connection.service.j
 import { CreateTenantAccountTables1738200000001 } from '../database/migrations/1738200000001-create-tenant-account-tables.js';
 import { AddAccountRolesUniqueActiveAssignment1738200000003 } from '../database/migrations/1738200000003-add-account-roles-unique-active-assignment.js';
 import { CreateAuditRecordsTable1738200000005 } from '../database/migrations/1738200000005-create-audit-records-table.js';
+import { CreateMasterDataTables1738200000006 } from '../database/migrations/1738200000006-create-master-data-tables.js';
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
 const BCRYPT_SALT_ROUNDS = 12;
@@ -56,6 +57,8 @@ export class AccountsService {
       await uniqueActiveAssignmentMigration.up(queryRunner);
       const auditRecordsMigration = new CreateAuditRecordsTable1738200000005();
       await auditRecordsMigration.up(queryRunner);
+      const masterDataMigration = new CreateMasterDataTables1738200000006();
+      await masterDataMigration.up(queryRunner);
     } finally {
       await queryRunner.release();
     }
