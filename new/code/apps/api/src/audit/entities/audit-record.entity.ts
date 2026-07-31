@@ -1,6 +1,8 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { AuditExcludeEntity } from '@hospital/audit-emitter';
 
 @Entity('audit_records')
+@AuditExcludeEntity()
 export class AuditRecord {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

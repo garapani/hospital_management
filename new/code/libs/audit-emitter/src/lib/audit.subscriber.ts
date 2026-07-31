@@ -6,8 +6,10 @@ import {
   RemoveEvent,
   UpdateEvent,
 } from 'typeorm';
+import type { EntityManager } from 'typeorm';
 import { TenantContextService } from '@hospital/tenant-context';
 import { buildAuditDiff } from './build-audit-diff.js';
+import { isAuditExcludedEntity } from './audit-exclude.decorator.js';
 import type { EntityClass } from './audit-exclude.decorator.js';
 import { AUDIT_EVENT_PUBLISHER } from './audit-event-publisher.interface.js';
 import type { AuditEventPublisher } from './audit-event-publisher.interface.js';
@@ -34,6 +36,7 @@ export class AuditSubscriber implements EntitySubscriberInterface {
       event.entity,
       null,
       event.entity ?? null,
+      event.manager,
     );
   }
 
@@ -46,6 +49,7 @@ export class AuditSubscriber implements EntitySubscriberInterface {
       event.entity ?? event.databaseEntity,
       (event.databaseEntity as Record<string, unknown>) ?? null,
       (event.entity as Record<string, unknown>) ?? null,
+      event.manager,
     );
   }
 
@@ -58,6 +62,7 @@ export class AuditSubscriber implements EntitySubscriberInterface {
       event.databaseEntity,
       (event.databaseEntity as Record<string, unknown>) ?? null,
       null,
+      event.manager,
     );
   }
 
@@ -67,6 +72,7 @@ export class AuditSubscriber implements EntitySubscriberInterface {
     entityForId: Record<string, unknown> | undefined,
     before: Record<string, unknown> | null,
     after: Record<string, unknown> | null,
+    manager: EntityManager,
   ): Promise<void> {
     const resolvedClass = (before ?? after)?.constructor;
     if (resolvedClass === undefined || resolvedClass === Object) {
@@ -76,20 +82,26 @@ export class AuditSubscriber implements EntitySubscriberInterface {
       return;
     }
     const entityClass = resolvedClass as EntityClass;
+    if (isAuditExcludedEntity(entityClass)) {
+      return;
+    }
     const diff = buildAuditDiff(entityClass, before, after);
     if (diff.length === 0) {
       return;
     }
 
-    await this.publisher.publish({
-      tableName,
-      recordId: String(entityForId?.['id'] ?? ''),
-      action,
-      hospitalId: this.tenantContext.getTenantId(),
-      changedByAccountId: this.tenantContext.getAccountId(),
-      correlationId: this.tenantContext.getCorrelationId(),
-      diff,
-      occurredAt: new Date().toISOString(),
-    });
+    await this.publisher.publish(
+      {
+        tableName,
+        recordId: String(entityForId?.['id'] ?? ''),
+        action,
+        hospitalId: this.tenantContext.getTenantId(),
+        changedByAccountId: this.tenantContext.getAccountId(),
+        correlationId: this.tenantContext.getCorrelationId(),
+        diff,
+        occurredAt: new Date().toISOString(),
+      },
+      manager,
+    );
   }
 }
