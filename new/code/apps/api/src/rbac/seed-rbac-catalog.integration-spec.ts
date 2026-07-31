@@ -159,10 +159,10 @@ describe('seedRbacCatalog (integration)', () => {
     
     const roles = await dataSource.getRepository(Role).find();
     
-    const manageRoleNames = manageMappings.map(m => roles.find(r => r.id === m.roleId)!.name);
+    const manageRoleNames = manageMappings.map((m: RolePermission) => roles.find((r: Role) => r.id === m.roleId)!.name);
     expect(manageRoleNames.sort()).toEqual(['Hospital Admin', 'Receptionist / Front Desk', 'Super Admin'].sort());
     
-    const readRoleNames = readMappings.map(m => roles.find(r => r.id === m.roleId)!.name);
+    const readRoleNames = readMappings.map((m: RolePermission) => roles.find((r: Role) => r.id === m.roleId)!.name);
     expect(readRoleNames.sort()).toEqual(['Doctor', 'Hospital Admin', 'Nurse', 'Receptionist / Front Desk', 'Super Admin'].sort());
   });
 });

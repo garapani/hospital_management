@@ -42,12 +42,6 @@ describe('PatientsController (integration)', () => {
     const accountsService = new AccountsService(tenantConnection, dataSource);
     await accountsService.provisionTenantSchema(dataSource, tenantId);
 
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.query(`SET search_path TO "tenant_${tenantId}", public`);
-    await new CreatePatientTables005().up(queryRunner);
-    await queryRunner.release();
-
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
     app.use(
