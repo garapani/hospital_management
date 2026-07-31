@@ -8,9 +8,10 @@ import { PatientsModule } from '../patients/patients.module.js';
 import { AppointmentsModule } from '../appointments/appointments.module.js';
 import { VitalsModule } from '../clinical/vitals/vitals.module.js';
 import { EncountersModule } from '../clinical/encounters/encounters.module.js';
+import { TriageModule } from '../clinical/triage/triage.module.js';
 
 @Module({
-  imports: [TenantContextModule, AuthModule, TenantsModule, AuditModule, MasterDataModule, PatientsModule, AppointmentsModule, VitalsModule, EncountersModule],
+  imports: [TenantContextModule, AuthModule, TenantsModule, AuditModule, MasterDataModule, PatientsModule, AppointmentsModule, VitalsModule, EncountersModule, TriageModule],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
