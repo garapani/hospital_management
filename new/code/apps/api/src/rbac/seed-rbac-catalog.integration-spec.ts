@@ -121,4 +121,23 @@ describe('seedRbacCatalog (integration)', () => {
     });
     expect(roles.map((r) => r.name).sort()).toEqual(['Hospital Admin', 'Super Admin']);
   });
+
+  it('creates patient permissions and maps them to appropriate roles', async () => {
+    await seedRbacCatalog(dataSource);
+
+    const readPerm = await dataSource.getRepository(Permission).findOneOrFail({ where: { name: 'patients.read' } });
+    const readMappings = await dataSource.getRepository(RolePermission).find({ where: { permissionId: readPerm.id } });
+    const readRoles = await dataSource.getRepository(Role).find({ where: { id: In(readMappings.map((m) => m.roleId)) } });
+    expect(readRoles.map((r) => r.name).sort()).toEqual([
+      'Doctor',
+      'Hospital Admin',
+      'Nurse',
+      'Receptionist / Front Desk',
+    ]);
+
+    const managePerm = await dataSource.getRepository(Permission).findOneOrFail({ where: { name: 'patients.manage' } });
+    const manageMappings = await dataSource.getRepository(RolePermission).find({ where: { permissionId: managePerm.id } });
+    const manageRoles = await dataSource.getRepository(Role).find({ where: { id: In(manageMappings.map((m) => m.roleId)) } });
+    expect(manageRoles.map((r) => r.name)).toEqual(['Hospital Admin']);
+  });
 });

@@ -130,6 +130,22 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'master-data.manage',
     description: 'Create, list, deactivate, and reactivate departments and wards.',
   },
+  {
+    name: 'patients.read',
+    description: 'Read patient master records and search catalog',
+  },
+  {
+    name: 'patients.create',
+    description: 'Register new patient records',
+  },
+  {
+    name: 'patients.update',
+    description: 'Update patient demographics and details',
+  },
+  {
+    name: 'patients.manage',
+    description: 'Deactivate and manage patient records',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -143,6 +159,19 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Super Admin', permissionName: 'system-admin.tenants.manage' },
   { roleName: 'Hospital Admin', permissionName: 'master-data.manage' },
   { roleName: 'Super Admin', permissionName: 'master-data.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'patients.read' },
+  { roleName: 'Hospital Admin', permissionName: 'patients.create' },
+  { roleName: 'Hospital Admin', permissionName: 'patients.update' },
+  { roleName: 'Hospital Admin', permissionName: 'patients.manage' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'patients.read' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'patients.create' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'patients.update' },
+  { roleName: 'Doctor', permissionName: 'patients.read' },
+  { roleName: 'Doctor', permissionName: 'patients.create' },
+  { roleName: 'Doctor', permissionName: 'patients.update' },
+  { roleName: 'Nurse', permissionName: 'patients.read' },
+  { roleName: 'Nurse', permissionName: 'patients.create' },
+  { roleName: 'Nurse', permissionName: 'patients.update' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
