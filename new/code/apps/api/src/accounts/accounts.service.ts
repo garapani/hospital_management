@@ -7,10 +7,10 @@ import { Role } from '../rbac/entities/role.entity.js';
 import { Permission } from '../rbac/entities/permission.entity.js';
 import { RolePermission } from '../rbac/entities/role-permission.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
-import { CreateTenantAccountTables1738200000001 } from '../database/migrations/1738200000001-create-tenant-account-tables.js';
-import { AddAccountRolesUniqueActiveAssignment1738200000003 } from '../database/migrations/1738200000003-add-account-roles-unique-active-assignment.js';
-import { CreateAuditRecordsTable1738200000005 } from '../database/migrations/1738200000005-create-audit-records-table.js';
-import { CreateMasterDataTables1738200000006 } from '../database/migrations/1738200000006-create-master-data-tables.js';
+import { CreateTenantAccountTables } from '../database/migrations/0002-create-tenant-account-tables.js';
+import { AddAccountRolesUniqueActiveAssignment } from '../database/migrations/0004-add-account-roles-unique-active-assignment.js';
+import { CreateAuditRecordsTable } from '../database/migrations/0006-create-audit-records-table.js';
+import { CreateMasterDataTables } from '../database/migrations/0007-create-master-data-tables.js';
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
 const BCRYPT_SALT_ROUNDS = 12;
@@ -51,13 +51,13 @@ export class AccountsService {
     try {
       await queryRunner.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
       await queryRunner.query(`SET search_path TO "${schemaName}", public`);
-      const migration = new CreateTenantAccountTables1738200000001();
+      const migration = new CreateTenantAccountTables();
       await migration.up(queryRunner);
-      const uniqueActiveAssignmentMigration = new AddAccountRolesUniqueActiveAssignment1738200000003();
+      const uniqueActiveAssignmentMigration = new AddAccountRolesUniqueActiveAssignment();
       await uniqueActiveAssignmentMigration.up(queryRunner);
-      const auditRecordsMigration = new CreateAuditRecordsTable1738200000005();
+      const auditRecordsMigration = new CreateAuditRecordsTable();
       await auditRecordsMigration.up(queryRunner);
-      const masterDataMigration = new CreateMasterDataTables1738200000006();
+      const masterDataMigration = new CreateMasterDataTables();
       await masterDataMigration.up(queryRunner);
     } finally {
       await queryRunner.release();

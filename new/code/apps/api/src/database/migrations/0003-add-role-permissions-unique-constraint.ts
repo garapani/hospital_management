@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddRolePermissionsUniqueConstraint1738200000002 implements MigrationInterface {
-  name = 'AddRolePermissionsUniqueConstraint1738200000002';
+export class AddRolePermissionsUniqueConstraint implements MigrationInterface {
+  name = 'AddRolePermissionsUniqueConstraint';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

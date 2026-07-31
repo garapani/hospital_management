@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreateMasterDataTables1738200000006 implements MigrationInterface {
-  name = 'CreateMasterDataTables1738200000006';
+export class CreateMasterDataTables implements MigrationInterface {
+  name = 'CreateMasterDataTables';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

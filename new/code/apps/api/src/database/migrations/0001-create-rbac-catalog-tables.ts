@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreateRbacCatalogTables1738200000000 implements MigrationInterface {
-  name = 'CreateRbacCatalogTables1738200000000';
+export class CreateRbacCatalogTables implements MigrationInterface {
+  name = 'CreateRbacCatalogTables';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
