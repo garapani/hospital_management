@@ -5,6 +5,7 @@ import { TenantConnectionService } from '../database/tenant-connection.service.j
 import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
 import { Role } from '../rbac/entities/role.entity.js';
 import { AccountsService } from './accounts.service.js';
+import { AccountRole } from './entities/account-role.entity.js';
 
 describe('AccountsService (integration)', () => {
   const dataSource = createDataSource();
@@ -234,5 +235,38 @@ describe('AccountsService (integration)', () => {
     await expect(
       inTenant(() => accountsService.revokeRoleAssignment(created.id, '00000000-0000-0000-0000-000000000000')),
     ).rejects.toThrow('not found');
+  });
+
+  it('rejects a duplicate active role assignment even without the app-level check racing', async () => {
+    const created = await inTenant(() =>
+      accountsService.createStaffAccount({
+        username: 'race.role.user',
+        email: 'racerole@example.com',
+        displayName: 'Race Role User',
+        password: 'password-eight',
+        roleName: 'Nurse',
+      }),
+    );
+    const doctorRole = await dataSource.getRepository(Role).findOneOrFail({ where: { name: 'Doctor' } });
+
+    const insertBoth = () =>
+      inTenant(() =>
+        tenantConnection.runInTenantSchema((manager) =>
+          Promise.allSettled([
+            manager.getRepository(AccountRole).save(
+              manager.getRepository(AccountRole).create({ accountId: created.id, roleId: doctorRole.id }),
+            ),
+            manager.getRepository(AccountRole).save(
+              manager.getRepository(AccountRole).create({ accountId: created.id, roleId: doctorRole.id }),
+            ),
+          ]),
+        ),
+      );
+
+    const results = await insertBoth();
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
   });
 });

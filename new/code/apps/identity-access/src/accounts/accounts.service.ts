@@ -8,6 +8,7 @@ import { Permission } from '../rbac/entities/permission.entity.js';
 import { RolePermission } from '../rbac/entities/role-permission.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { CreateTenantAccountTables1738200000001 } from '../database/migrations/1738200000001-create-tenant-account-tables.js';
+import { AddAccountRolesUniqueActiveAssignment1738200000003 } from '../database/migrations/1738200000003-add-account-roles-unique-active-assignment.js';
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
 const BCRYPT_SALT_ROUNDS = 12;
@@ -50,6 +51,8 @@ export class AccountsService {
       await queryRunner.query(`SET search_path TO "${schemaName}", public`);
       const migration = new CreateTenantAccountTables1738200000001();
       await migration.up(queryRunner);
+      const uniqueActiveAssignmentMigration = new AddAccountRolesUniqueActiveAssignment1738200000003();
+      await uniqueActiveAssignmentMigration.up(queryRunner);
     } finally {
       await queryRunner.release();
     }
@@ -211,14 +214,21 @@ export class AccountsService {
       if (existing) {
         throw new ConflictException(`Account ${accountId} already holds an active assignment of role "${roleName}"`);
       }
-      return repository.save(
-        repository.create({
-          accountId,
-          roleId: role.id,
-          startDate: startDate ?? null,
-          endDate: endDate ?? null,
-        }),
-      );
+      try {
+        return await repository.save(
+          repository.create({
+            accountId,
+            roleId: role.id,
+            startDate: startDate ?? null,
+            endDate: endDate ?? null,
+          }),
+        );
+      } catch (error) {
+        if ((error as { code?: string }).code === '23505') {
+          throw new ConflictException(`Account ${accountId} already holds an active assignment of role "${roleName}"`);
+        }
+        throw error;
+      }
     });
   }
 
