@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
 import { DataSource, In } from 'typeorm';
 import { Account } from './entities/account.entity.js';
@@ -18,6 +18,7 @@ export interface CreateStaffAccountInput {
   displayName: string;
   password: string;
   roleName: string;
+  needsPasswordUpdate?: boolean;
 }
 
 export interface AccountWithRoles {
@@ -68,6 +69,7 @@ export class AccountsService {
           email: input.email,
           displayName: input.displayName,
           passwordHash,
+          needsPasswordUpdate: input.needsPasswordUpdate ?? false,
         }),
       );
       await manager.getRepository(AccountRole).save(
@@ -140,5 +142,95 @@ export class AccountsService {
         .getRepository(Account)
         .update({ id: accountId }, { failedLoginAttempts: 0, lockedUntil: null }),
     );
+  }
+
+  async listAccounts(limit: number, offset: number): Promise<Account[]> {
+    return this.tenantConnection.runInTenantSchema((manager) =>
+      manager.getRepository(Account).find({ take: limit, skip: offset, order: { createdAt: 'ASC' } }),
+    );
+  }
+
+  async getAccountWithRoles(accountId: string): Promise<AccountWithRoles | null> {
+    const account = await this.tenantConnection.runInTenantSchema((manager) =>
+      manager.getRepository(Account).findOne({ where: { id: accountId } }),
+    );
+    if (!account) {
+      return null;
+    }
+    return this.attachRoles(account);
+  }
+
+  async deactivateAccount(accountId: string): Promise<Account> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const account = await repository.findOne({ where: { id: accountId } });
+      if (!account) {
+        throw new NotFoundException(`Account ${accountId} not found`);
+      }
+      account.isActive = false;
+      return repository.save(account);
+    });
+  }
+
+  async reactivateAccount(accountId: string): Promise<Account> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const account = await repository.findOne({ where: { id: accountId } });
+      if (!account) {
+        throw new NotFoundException(`Account ${accountId} not found`);
+      }
+      account.isActive = true;
+      return repository.save(account);
+    });
+  }
+
+  async adminUnlockAccount(accountId: string): Promise<Account> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const account = await repository.findOne({ where: { id: accountId } });
+      if (!account) {
+        throw new NotFoundException(`Account ${accountId} not found`);
+      }
+      account.failedLoginAttempts = 0;
+      account.lockedUntil = null;
+      return repository.save(account);
+    });
+  }
+
+  async assignRole(accountId: string, roleName: string, startDate?: Date, endDate?: Date): Promise<AccountRole> {
+    const role = await this.dataSource.getRepository(Role).findOne({ where: { name: roleName } });
+    if (!role) {
+      throw new NotFoundException(`Unknown role: ${roleName}`);
+    }
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(AccountRole);
+      const existing = await repository.findOne({
+        where: { accountId, roleId: role.id, isActive: true },
+      });
+      if (existing) {
+        throw new ConflictException(`Account ${accountId} already holds an active assignment of role "${roleName}"`);
+      }
+      return repository.save(
+        repository.create({
+          accountId,
+          roleId: role.id,
+          startDate: startDate ?? null,
+          endDate: endDate ?? null,
+        }),
+      );
+    });
+  }
+
+  async revokeRoleAssignment(accountId: string, accountRoleId: string): Promise<void> {
+    await this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(AccountRole);
+      const accountRole = await repository.findOne({ where: { id: accountRoleId, accountId } });
+      if (!accountRole) {
+        throw new NotFoundException(`Role assignment ${accountRoleId} not found for account ${accountId}`);
+      }
+      accountRole.isActive = false;
+      await repository.save(accountRole);
+    });
   }
 }
