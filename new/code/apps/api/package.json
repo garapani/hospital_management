@@ -13,7 +13,7 @@
           "env": {
             "NODE_ENV": "production"
           },
-          "cwd": "apps/identity-access"
+          "cwd": "apps/api"
         },
         "configurations": {
           "development": {
@@ -30,8 +30,8 @@
         "cache": true,
         "executor": "@nx/js:prune-lockfile",
         "outputs": [
-          "{workspaceRoot}/apps/identity-access/dist/package.json",
-          "{workspaceRoot}/apps/identity-access/dist/pnpm-lock.yaml"
+          "{workspaceRoot}/apps/api/dist/package.json",
+          "{workspaceRoot}/apps/api/dist/pnpm-lock.yaml"
         ],
         "options": {
           "buildTarget": "build"
@@ -43,7 +43,7 @@
         ],
         "cache": true,
         "outputs": [
-          "{workspaceRoot}/apps/identity-access/dist/workspace_modules"
+          "{workspaceRoot}/apps/api/dist/workspace_modules"
         ],
         "executor": "@nx/js:copy-workspace-modules",
         "options": {
