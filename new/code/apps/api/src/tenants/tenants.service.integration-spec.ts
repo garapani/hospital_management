@@ -11,6 +11,7 @@ describe('TenantsService (integration)', () => {
   });
 
   afterAll(async () => {
+    await dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_svc_%'`);
     await dataSource.destroy();
   });
 
