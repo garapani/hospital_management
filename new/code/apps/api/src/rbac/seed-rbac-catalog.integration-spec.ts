@@ -77,4 +77,26 @@ describe('seedRbacCatalog (integration)', () => {
     });
     expect(roles.map((r) => r.name).sort()).toEqual(['Hospital Admin', 'Super Admin']);
   });
+
+  it('creates the system-admin.tenants.manage permission', async () => {
+    await seedRbacCatalog(dataSource);
+    const permission = await dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'system-admin.tenants.manage' },
+    });
+    expect(permission.isActive).toBe(true);
+  });
+
+  it('maps system-admin.tenants.manage to Super Admin only, not Hospital Admin', async () => {
+    await seedRbacCatalog(dataSource);
+    const permission = await dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'system-admin.tenants.manage' },
+    });
+    const mappings = await dataSource.getRepository(RolePermission).find({
+      where: { permissionId: permission.id },
+    });
+    const roles = await dataSource.getRepository(Role).find({
+      where: { id: In(mappings.map((m) => m.roleId)) },
+    });
+    expect(roles.map((r) => r.name)).toEqual(['Super Admin']);
+  });
 });

@@ -122,6 +122,10 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'identity.accounts.manage',
     description: 'Create, list, deactivate, unlock accounts and manage role assignments.',
   },
+  {
+    name: 'system-admin.tenants.manage',
+    description: 'Provision, list, view, suspend, and reactivate hospital tenants.',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -132,6 +136,7 @@ interface RolePermissionMapping {
 const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'identity.accounts.manage' },
   { roleName: 'Super Admin', permissionName: 'identity.accounts.manage' },
+  { roleName: 'Super Admin', permissionName: 'system-admin.tenants.manage' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
