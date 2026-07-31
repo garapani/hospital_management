@@ -214,4 +214,24 @@ describe('seedRbacCatalog (integration)', () => {
     const readRoleNames = readMappings.map((m: RolePermission) => roles.find((r: Role) => r.id === m.roleId)!.name);
     expect(readRoleNames.sort()).toEqual(['Super Admin', 'Hospital Admin', 'Doctor', 'Nurse'].sort());
   });
+
+  it('creates triage permissions and maps them to appropriate roles', async () => {
+    await seedRbacCatalog(dataSource);
+
+    const readPerm = await dataSource.getRepository(Permission).findOneOrFail({ where: { name: 'triage.read' } });
+    const readMappings = await dataSource.getRepository(RolePermission).find({ where: { permissionId: readPerm.id } });
+    const readRoles = await dataSource.getRepository(Role).find({ where: { id: In(readMappings.map((m) => m.roleId)) } });
+    expect(readRoles.map((r) => r.name).sort()).toEqual([
+      'Doctor',
+      'Hospital Admin',
+      'Nurse',
+      'Receptionist / Front Desk',
+      'Super Admin',
+    ]);
+
+    const managePerm = await dataSource.getRepository(Permission).findOneOrFail({ where: { name: 'triage.manage' } });
+    const manageMappings = await dataSource.getRepository(RolePermission).find({ where: { permissionId: managePerm.id } });
+    const manageRoles = await dataSource.getRepository(Role).find({ where: { id: In(manageMappings.map((m) => m.roleId)) } });
+    expect(manageRoles.map((r) => r.name).sort()).toEqual(['Doctor', 'Nurse', 'Super Admin']);
+  });
 });

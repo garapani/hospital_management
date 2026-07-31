@@ -170,6 +170,14 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'encounter.read',
     description: 'View clinical encounters',
   },
+  {
+    name: 'triage.manage',
+    description: 'Manage the ER triage queue and entries',
+  },
+  {
+    name: 'triage.read',
+    description: 'View the ER triage queue and entries',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -219,6 +227,14 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'encounter.read' },
   { roleName: 'Doctor', permissionName: 'encounter.read' },
   { roleName: 'Nurse', permissionName: 'encounter.read' },
+  { roleName: 'Super Admin', permissionName: 'triage.manage' },
+  { roleName: 'Super Admin', permissionName: 'triage.read' },
+  { roleName: 'Hospital Admin', permissionName: 'triage.read' },
+  { roleName: 'Doctor', permissionName: 'triage.manage' },
+  { roleName: 'Doctor', permissionName: 'triage.read' },
+  { roleName: 'Nurse', permissionName: 'triage.manage' },
+  { roleName: 'Nurse', permissionName: 'triage.read' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'triage.read' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
