@@ -290,4 +290,22 @@ describe('seedRbacCatalog (integration)', () => {
       'Super Admin',
     ]);
   });
+
+  it('maps billing.manage to Receptionist / Front Desk, Billing/Accounts Staff, Hospital Admin, Super Admin', async () => {
+    await seedRbacCatalog(dataSource);
+
+    const permission = await dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'billing.manage' },
+    });
+    const mappings = await dataSource.getRepository(RolePermission).find({
+      where: { permissionId: permission.id },
+    });
+    const roles = await dataSource.getRepository(Role).find({ where: { id: In(mappings.map((m) => m.roleId)) } });
+    expect(roles.map((r) => r.name).sort()).toEqual([
+      'Billing/Accounts Staff',
+      'Hospital Admin',
+      'Receptionist / Front Desk',
+      'Super Admin',
+    ]);
+  });
 });
