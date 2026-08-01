@@ -26,12 +26,18 @@ export interface CreateInvoiceInput {
   items: CreateInvoiceItemInput[];
 }
 
-function getFinancialYearStart(date: Date): number {
-  const month = date.getMonth();
-  return month >= 3 ? date.getFullYear() : date.getFullYear() - 1;
+export function getFinancialYearStart(date: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: 'numeric',
+  }).formatToParts(date);
+  const year = Number(parts.find((p) => p.type === 'year')!.value);
+  const month = Number(parts.find((p) => p.type === 'month')!.value); // 1-indexed here
+  return month >= 4 ? year : year - 1;
 }
 
-function formatFinancialYear(startYear: number): string {
+export function formatFinancialYear(startYear: number): string {
   const endYearShort = String((startYear + 1) % 100).padStart(2, '0');
   return `${startYear}-${endYearShort}`;
 }
@@ -78,6 +84,19 @@ export class InvoicesService {
       let taxableAmount = 0;
       let taxAmount = 0;
       let totalAmount = 0;
+
+      for (const item of input.items) {
+        if (item.unitPrice < 0) {
+          throw new BadRequestException(`Item "${item.description}" has a negative unitPrice`);
+        }
+        if (item.quantity !== undefined && item.quantity <= 0) {
+          throw new BadRequestException(`Item "${item.description}" must have a positive quantity`);
+        }
+        const lineGross = item.unitPrice * (item.quantity ?? 1);
+        if ((item.discountAmount ?? 0) > lineGross) {
+          throw new BadRequestException(`Item "${item.description}" has a discountAmount exceeding its line subtotal`);
+        }
+      }
 
       const itemsToInsert = input.items.map((item) => {
         const quantity = item.quantity ?? 1;

@@ -3,7 +3,7 @@ import { createDataSource } from '../database/data-source.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantsService } from '../tenants/tenants.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
-import { InvoicesService } from './invoices.service.js';
+import { InvoicesService, getFinancialYearStart } from './invoices.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
@@ -209,5 +209,46 @@ describe('InvoicesService (integration)', () => {
       invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 100 }] }),
     );
     await expect(inTenant(tenantId2, () => invoicesService.findOne(created.id))).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects an item with a negative unitPrice', async () => {
+    const patient = await makePatient(tenantId1, '5550000012');
+    await expect(
+      inTenant(tenantId1, () =>
+        invoicesService.create({
+          patientId: patient.id,
+          createdBy: STAFF_ID,
+          items: [{ description: 'Bad Item', unitPrice: -10 }],
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects an item whose discountAmount exceeds its line subtotal', async () => {
+    const patient = await makePatient(tenantId1, '5550000013');
+    await expect(
+      inTenant(tenantId1, () =>
+        invoicesService.create({
+          patientId: patient.id,
+          createdBy: STAFF_ID,
+          items: [{ description: 'Overdiscounted Item', unitPrice: 500, discountAmount: 1000 }],
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('getFinancialYearStart (IST pinning)', () => {
+  // 2026-03-31T19:00:00Z is 2026-04-01T00:30:00 in Asia/Kolkata (UTC+5:30) —
+  // the UTC calendar date is still March 31st, but the IST calendar date is
+  // already April 1st, which must fall in FY 2026 (not FY 2025). This proves
+  // the calculation is anchored to Asia/Kolkata regardless of the process's
+  // local/UTC timezone.
+  it('uses the IST calendar date, not the UTC/server-local date, at the FY boundary', () => {
+    const lateMarchUtc = new Date('2026-03-31T19:00:00Z');
+    expect(getFinancialYearStart(lateMarchUtc)).toBe(2026);
+
+    const justBeforeIstBoundary = new Date('2026-03-31T18:29:00Z'); // 2026-03-31T23:59 IST
+    expect(getFinancialYearStart(justBeforeIstBoundary)).toBe(2025);
   });
 });
