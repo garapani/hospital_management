@@ -7,6 +7,7 @@ import { InvoicesService, getFinancialYearStart } from './invoices.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
+import { DepositsService } from './deposits.service.js';
 
 describe('InvoicesService (integration)', () => {
   const dataSource = createDataSource();
@@ -14,6 +15,7 @@ describe('InvoicesService (integration)', () => {
   let tenantContextService: TenantContextService;
   let patientsService: PatientsService;
   let invoicesService: InvoicesService;
+  let depositsService: DepositsService;
 
   let tenantId1: string;
   let tenantId2: string;
@@ -28,6 +30,7 @@ describe('InvoicesService (integration)', () => {
     const patientSequence = new PatientNumberGeneratorService(tenantConnection);
     patientsService = new PatientsService(tenantConnection, patientSequence);
     invoicesService = new InvoicesService(tenantConnection);
+    depositsService = new DepositsService(tenantConnection);
 
     const uniqueId = Date.now().toString();
     const t1 = await tenantsService.provisionTenant({ hospitalId: `invoices_1_${uniqueId}`, hospitalName: 'Invoices Hospital 1' });
@@ -258,6 +261,144 @@ describe('InvoicesService (integration)', () => {
     );
 
     expect(second.invoiceNumber).toBe(first.invoiceNumber + 1);
+  });
+
+  it('records a partial payment, moving status to PartiallyPaid', async () => {
+    const patient = await makePatient(tenantId1, '5550000023');
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    const payment = await inTenant(tenantId1, () =>
+      invoicesService.recordPayment(invoice.id, { amount: 400, paymentMode: 'Cash', receivedBy: STAFF_ID }),
+    );
+    expect(payment.amount).toBe(400);
+    expect(payment.paymentMode).toBe('Cash');
+
+    const refetched = await inTenant(tenantId1, () => invoicesService.findOne(invoice.id));
+    expect(refetched.paidAmount).toBe(400);
+    expect(refetched.status).toBe('PartiallyPaid');
+    expect(refetched.payments).toHaveLength(1);
+  });
+
+  it('records a payment that completes the balance, moving status to Paid', async () => {
+    const patient = await makePatient(tenantId1, '5550000024');
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await inTenant(tenantId1, () => invoicesService.recordPayment(invoice.id, { amount: 400, paymentMode: 'Cash', receivedBy: STAFF_ID }));
+    await inTenant(tenantId1, () => invoicesService.recordPayment(invoice.id, { amount: 600, paymentMode: 'Card', receivedBy: STAFF_ID }));
+
+    const refetched = await inTenant(tenantId1, () => invoicesService.findOne(invoice.id));
+    expect(refetched.paidAmount).toBe(1000);
+    expect(refetched.status).toBe('Paid');
+    expect(refetched.payments).toHaveLength(2);
+  });
+
+  it('rejects a payment exceeding the outstanding balance', async () => {
+    const patient = await makePatient(tenantId1, '5550000025');
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await expect(
+      inTenant(tenantId1, () => invoicesService.recordPayment(invoice.id, { amount: 1500, paymentMode: 'Cash', receivedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a payment amount of zero or less', async () => {
+    const patient = await makePatient(tenantId1, '5550000026');
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await expect(
+      inTenant(tenantId1, () => invoicesService.recordPayment(invoice.id, { amount: 0, paymentMode: 'Cash', receivedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects cancelling an invoice that already has a payment', async () => {
+    const patient = await makePatient(tenantId1, '5550000027');
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await inTenant(tenantId1, () => invoicesService.recordPayment(invoice.id, { amount: 400, paymentMode: 'Cash', receivedBy: STAFF_ID }));
+    await expect(inTenant(tenantId1, () => invoicesService.cancel(invoice.id))).rejects.toThrow(ConflictException);
+  });
+
+  it('throws NotFoundException recording a payment against an unknown invoice', async () => {
+    await expect(
+      inTenant(tenantId1, () =>
+        invoicesService.recordPayment('00000000-0000-0000-0000-000000000000', { amount: 100, paymentMode: 'Cash', receivedBy: STAFF_ID }),
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects paymentMode Deposit without a sourceDepositId', async () => {
+    const patient = await makePatient(tenantId1, '5550000028');
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await expect(
+      inTenant(tenantId1, () => invoicesService.recordPayment(invoice.id, { amount: 400, paymentMode: 'Deposit', receivedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('applies a deposit as a payment, decrementing the deposit balance', async () => {
+    const patient = await makePatient(tenantId1, '5550000029');
+    const deposit = await inTenant(tenantId1, () => depositsService.create({ patientId: patient.id, amount: 2000, receivedBy: STAFF_ID }));
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await inTenant(tenantId1, () =>
+      invoicesService.recordPayment(invoice.id, { amount: 1000, paymentMode: 'Deposit', sourceDepositId: deposit.id, receivedBy: STAFF_ID }),
+    );
+
+    const refetchedInvoice = await inTenant(tenantId1, () => invoicesService.findOne(invoice.id));
+    expect(refetchedInvoice.status).toBe('Paid');
+    const refetchedDeposits = await inTenant(tenantId1, () => depositsService.list(patient.id));
+    expect(refetchedDeposits.data[0].balance).toBe(1000);
+  });
+
+  it('rejects applying a deposit with insufficient balance', async () => {
+    const patient = await makePatient(tenantId1, '5550000030');
+    const deposit = await inTenant(tenantId1, () => depositsService.create({ patientId: patient.id, amount: 100, receivedBy: STAFF_ID }));
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await expect(
+      inTenant(tenantId1, () =>
+        invoicesService.recordPayment(invoice.id, { amount: 500, paymentMode: 'Deposit', sourceDepositId: deposit.id, receivedBy: STAFF_ID }),
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects applying a deposit that belongs to a different patient', async () => {
+    const patientA = await makePatient(tenantId1, '5550000031');
+    const patientB = await makePatient(tenantId1, '5550000032');
+    const deposit = await inTenant(tenantId1, () => depositsService.create({ patientId: patientA.id, amount: 2000, receivedBy: STAFF_ID }));
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patientB.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await expect(
+      inTenant(tenantId1, () =>
+        invoicesService.recordPayment(invoice.id, { amount: 500, paymentMode: 'Deposit', sourceDepositId: deposit.id, receivedBy: STAFF_ID }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('throws NotFoundException applying an unknown deposit id', async () => {
+    const patient = await makePatient(tenantId1, '5550000033');
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await expect(
+      inTenant(tenantId1, () =>
+        invoicesService.recordPayment(invoice.id, {
+          amount: 500,
+          paymentMode: 'Deposit',
+          sourceDepositId: '00000000-0000-0000-0000-000000000000',
+          receivedBy: STAFF_ID,
+        }),
+      ),
+    ).rejects.toThrow(NotFoundException);
   });
 });
 

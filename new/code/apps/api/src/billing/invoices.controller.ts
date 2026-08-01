@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@ne
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { InvoicesService } from './invoices.service.js';
 import { CreateInvoiceDto } from './dto/create-invoice.dto.js';
+import { RecordPaymentDto } from './dto/record-payment.dto.js';
 
 @Controller('billing/invoices')
 @UseGuards(PermissionGuard)
@@ -30,5 +31,11 @@ export class InvoicesController {
   @RequirePermission('billing.manage')
   async cancel(@Param('id') id: string) {
     return this.invoicesService.cancel(id);
+  }
+
+  @Post(':id/payments')
+  @RequirePermission('billing.manage')
+  async recordPayment(@Param('id') id: string, @Body() dto: RecordPaymentDto) {
+    return this.invoicesService.recordPayment(id, dto);
   }
 }

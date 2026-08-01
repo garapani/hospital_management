@@ -5,6 +5,7 @@ import { Invoice } from './entities/invoice.entity.js';
 import { InvoiceItem } from './entities/invoice-item.entity.js';
 import { Payment } from './entities/payment.entity.js';
 import { Patient } from '../patients/entities/patient.entity.js';
+import { Deposit } from './entities/deposit.entity.js';
 import { roundMoney } from './money.util.js';
 
 export interface CreateInvoiceItemInput {
@@ -24,6 +25,13 @@ export interface CreateInvoiceInput {
   sourceAdmissionId?: string;
   notes?: string;
   items: CreateInvoiceItemInput[];
+}
+
+export interface RecordPaymentInput {
+  amount: number;
+  paymentMode: string;
+  sourceDepositId?: string;
+  receivedBy: string;
 }
 
 export function getFinancialYearStart(date: Date): number {
@@ -209,6 +217,61 @@ export class InvoicesService {
       }
       invoice.status = 'Cancelled';
       return repository.save(invoice);
+    });
+  }
+
+  async recordPayment(invoiceId: string, input: RecordPaymentInput): Promise<Payment> {
+    if (input.amount <= 0) {
+      throw new BadRequestException('Payment amount must be greater than zero');
+    }
+    if (input.paymentMode === 'Deposit' && !input.sourceDepositId) {
+      throw new BadRequestException('sourceDepositId is required when paymentMode is Deposit');
+    }
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const invoiceRepository = manager.getRepository(Invoice);
+      const invoice = await invoiceRepository.findOne({ where: { id: invoiceId } });
+      if (!invoice) {
+        throw new NotFoundException(`Invoice ${invoiceId} not found`);
+      }
+
+      const outstanding = roundMoney(invoice.totalAmount - invoice.paidAmount);
+      if (input.amount > outstanding) {
+        throw new BadRequestException(`Payment amount ${input.amount} exceeds outstanding balance ${outstanding}`);
+      }
+
+      if (input.paymentMode === 'Deposit') {
+        const depositRepository = manager.getRepository(Deposit);
+        const deposit = await depositRepository.findOne({ where: { id: input.sourceDepositId } });
+        if (!deposit) {
+          throw new NotFoundException(`Deposit ${input.sourceDepositId} not found`);
+        }
+        if (deposit.patientId !== invoice.patientId) {
+          throw new BadRequestException(`Deposit ${input.sourceDepositId} does not belong to patient ${invoice.patientId}`);
+        }
+        if (input.amount > deposit.balance) {
+          throw new ConflictException(`Deposit ${input.sourceDepositId} has insufficient balance for this payment`);
+        }
+        deposit.balance = roundMoney(deposit.balance - input.amount);
+        await depositRepository.save(deposit);
+      }
+
+      const paymentRepository = manager.getRepository(Payment);
+      const payment = await paymentRepository.save(
+        paymentRepository.create({
+          invoiceId,
+          amount: input.amount,
+          paymentMode: input.paymentMode,
+          sourceDepositId: input.paymentMode === 'Deposit' ? (input.sourceDepositId as string) : null,
+          receivedBy: input.receivedBy,
+        }),
+      );
+
+      invoice.paidAmount = roundMoney(invoice.paidAmount + input.amount);
+      invoice.status = invoice.paidAmount >= invoice.totalAmount ? 'Paid' : 'PartiallyPaid';
+      await invoiceRepository.save(invoice);
+
+      return payment;
     });
   }
 }
