@@ -4,6 +4,7 @@ packages:
   - 'apps/*'
 allowBuilds:
   '@parcel/watcher': true
+  '@scarf/scarf': set this to true or false
   '@swc/core': true
   esbuild: true
   less: true

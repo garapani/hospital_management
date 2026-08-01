@@ -1,0 +1,5 @@
+1. make sure pagination for most of the APIs.2. review the existing design with an architect
+3. review the existing code with princiapl engineer
+4. review the existing code with security expert
+5. make sure to have support for daily backups
+6. exports or reports functionality

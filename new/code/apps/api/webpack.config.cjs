@@ -5,9 +5,15 @@ module.exports = {
   output: {
     path: join(__dirname, 'dist'),
     clean: true,
+    module: true,
+    chunkFormat: 'module',
+    library: { type: 'module' },
     ...(process.env.NODE_ENV !== 'production' && {
       devtoolModuleFilenameTemplate: '[absolute-resource-path]',
     }),
+  },
+  experiments: {
+    outputModule: true
   },
   plugins: [
     new NxAppWebpackPlugin({
