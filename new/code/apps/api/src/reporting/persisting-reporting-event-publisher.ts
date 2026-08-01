@@ -6,7 +6,10 @@ import { ReportingEvent } from './entities/reporting-event.entity.js';
 export class PersistingReportingEventPublisher {
   private readonly logger = new Logger(PersistingReportingEventPublisher.name);
 
-  async publish(eventData: Partial<ReportingEvent>, manager: EntityManager): Promise<void> {
+  async publish(
+    eventData: Partial<ReportingEvent>,
+    manager: EntityManager,
+  ): Promise<void> {
     try {
       const event = manager.getRepository(ReportingEvent).create(eventData);
       await manager.getRepository(ReportingEvent).save(event);

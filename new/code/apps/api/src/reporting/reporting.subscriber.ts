@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntitySubscriberInterface, InsertEvent } from 'typeorm';
 import { Order } from '../orders/entities/order.entity.js';
-import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { Invoice } from '../billing/entities/invoice.entity.js';
 import { Payment } from '../billing/entities/payment.entity.js';
 import { Deposit } from '../billing/entities/deposit.entity.js';
@@ -27,19 +26,17 @@ export class ReportingSubscriber implements EntitySubscriberInterface {
     [
       Order,
       {
+        // Only Order-native columns are available here: afterInsert fires on the `orders` row
+        // before OrdersService saves its OrderItem rows, so item data cannot be enriched at
+        // insert time (see the insert-only Global Constraint in the reporting-archiver plan).
         eventType: 'OrderPlaced',
-        buildPayload: async (entity: Order, event: InsertEvent<Order>) => {
-          const items = await event.manager.find(OrderItem, {
-            where: { orderId: entity.id },
-          });
-          return {
-            orderId: entity.id,
-            patientId: entity.patientId,
-            orderedBy: entity.orderedBy,
-            itemCount: items.length,
-            itemTypes: items.map((i) => i.itemType),
-          };
-        },
+        buildPayload: (entity: Order) => ({
+          orderId: entity.id,
+          patientId: entity.patientId,
+          orderedBy: entity.orderedBy,
+          sourceAppointmentId: entity.sourceAppointmentId,
+          sourceAdmissionId: entity.sourceAdmissionId,
+        }),
       },
     ],
     [

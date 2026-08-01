@@ -1,6 +1,13 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
+import { AuditExcludeEntity } from '@hospital/audit-emitter';
 
 @Entity('reporting_events')
+@AuditExcludeEntity()
 export class ReportingEvent {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
