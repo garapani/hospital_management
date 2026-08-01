@@ -210,8 +210,11 @@ describe('OrdersService (integration)', () => {
     );
 
     const filtered = await inTenant(tenantId2, () => ordersService.list(patientA.id));
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0].patientId).toBe(patientA.id);
+    expect(filtered.total).toBe(1);
+    expect(filtered.data).toHaveLength(1);
+    expect(filtered.data[0].patientId).toBe(patientA.id);
+    expect(filtered.page).toBe(1);
+    expect(filtered.limit).toBe(20);
   });
 
   it('throws NotFoundException for an unknown order id', async () => {

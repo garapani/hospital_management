@@ -18,8 +18,8 @@ export class OrdersController {
 
   @Get()
   @RequirePermission('order.read')
-  async list(@Query('patientId') patientId?: string) {
-    return this.ordersService.list(patientId);
+  async list(@Query('patientId') patientId?: string, @Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.ordersService.list(patientId, page ? Number(page) : undefined, limit ? Number(limit) : undefined);
   }
 
   @Get(':id')

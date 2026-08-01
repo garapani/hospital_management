@@ -83,19 +83,27 @@ export class OrdersService {
       }
       const items = await manager.getRepository(OrderItem).find({
         where: { orderId: id },
-        order: { createdAt: 'ASC' },
+        order: { createdAt: 'ASC', id: 'ASC' },
       });
       return { ...order, items };
     });
   }
 
-  async list(patientId?: string): Promise<Order[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Order).find({
+  async list(
+    patientId?: string,
+    page = 1,
+    limit = 20,
+  ): Promise<{ data: Order[]; total: number; page: number; limit: number }> {
+    const skip = (page - 1) * limit;
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const [data, total] = await manager.getRepository(Order).findAndCount({
         where: patientId ? { patientId } : {},
         order: { orderedAt: 'DESC' },
-      }),
-    );
+        skip,
+        take: limit,
+      });
+      return { data, total, page, limit };
+    });
   }
 
   async completeItem(orderId: string, itemId: string, input: CompleteOrderItemInput): Promise<OrderItem> {
