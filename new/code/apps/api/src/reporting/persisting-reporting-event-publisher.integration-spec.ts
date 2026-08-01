@@ -335,7 +335,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     expect(reportingDataSource.isInitialized).toBe(true);
     expect(reportingDataSource.options.extra).toMatchObject({
       max: 3,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 2000,
     });
     // This pool never runs migrations and maps only the reporting entity.
     expect(reportingDataSource.options.migrations).toEqual([]);

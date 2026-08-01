@@ -20,8 +20,10 @@ export const REPORTING_DATA_SOURCE = Symbol('REPORTING_DATA_SOURCE');
  *
  * This pool removes that coupling entirely:
  * - it can never consume a connection a business query needs, and
- * - `connectionTimeoutMillis: 5000` turns reporting-side exhaustion into a thrown error that the
- *   publisher's try/catch swallows and logs, instead of an unbounded hang.
+ * - `connectionTimeoutMillis: 2000` turns reporting-side exhaustion into a thrown error that the
+ *   publisher's try/catch swallows and logs, instead of an unbounded hang. Kept short (vs. the
+ *   main pool's 5000ms) because reporting is a best-effort archive path: a business write should
+ *   not sit waiting on it any longer than necessary before the archive attempt gives up.
  *
  * Same Postgres credentials as the main pool; only `ReportingEvent` is mapped, and it never runs
  * migrations (the main pool owns schema changes).
@@ -39,7 +41,7 @@ export function createReportingDataSource(): DataSource {
     synchronize: false,
     extra: {
       max: 3,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 2000,
     },
   });
 }

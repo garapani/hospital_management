@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { Inject, Module, OnModuleDestroy } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { PersistingReportingEventPublisher } from './persisting-reporting-event-publisher.js';
 import { ReportingSubscriber } from './reporting.subscriber.js';
 import { TenantContextModule } from '@hospital/tenant-context';
@@ -27,4 +28,12 @@ import {
   ],
   exports: [PersistingReportingEventPublisher],
 })
-export class ReportingModule {}
+export class ReportingModule implements OnModuleDestroy {
+  constructor(@Inject(REPORTING_DATA_SOURCE) private readonly reportingDataSource: DataSource) {}
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.reportingDataSource.isInitialized) {
+      await this.reportingDataSource.destroy();
+    }
+  }
+}

@@ -10,6 +10,9 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // Without this, OnModuleDestroy hooks (e.g. closing the database connection pools) never run
+  // on SIGTERM/SIGINT — only when something explicitly calls app.close() (as tests do).
+  app.enableShutdownHooks();
   const globalPrefix = 'api';
   app.setGlobalPrefix(globalPrefix);
 

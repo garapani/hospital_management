@@ -54,6 +54,12 @@ export function createDataSource(): DataSource {
     entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, ReportingEvent],
     migrations: [CreateRbacCatalogTables, AddRolePermissionsUniqueConstraint, CreateTenantsTable, CreatePatientTables005, CreateVitalsTable0010, CreateTriageTable0012, CreateBedsTable0013, CreateAdmissionsTables0014, CreateOrdersTables0015, CreateBillingTables0016, CreateReportingTables0017],
     synchronize: false,
+    // Bounds connection acquisition so pool exhaustion fails fast (a thrown, catchable error)
+    // instead of queuing forever — node-postgres defaults to connectionTimeoutMillis: 0 (wait
+    // indefinitely), which turns sustained overload into a silent, unbounded stall.
+    extra: {
+      connectionTimeoutMillis: 5000,
+    },
   });
 }
 
