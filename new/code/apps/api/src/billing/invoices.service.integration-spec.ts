@@ -236,6 +236,29 @@ describe('InvoicesService (integration)', () => {
       ),
     ).rejects.toThrow(BadRequestException);
   });
+
+  it('does not consume an invoice sequence number when item validation rejects the invoice', async () => {
+    const patient = await makePatient(tenantId1, '5550000014');
+    const first = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 100 }] }),
+    );
+
+    await expect(
+      inTenant(tenantId1, () =>
+        invoicesService.create({
+          patientId: patient.id,
+          createdBy: STAFF_ID,
+          items: [{ description: 'Bad Item', unitPrice: -10 }],
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    const second = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item B', unitPrice: 100 }] }),
+    );
+
+    expect(second.invoiceNumber).toBe(first.invoiceNumber + 1);
+  });
 });
 
 describe('getFinancialYearStart (IST pinning)', () => {

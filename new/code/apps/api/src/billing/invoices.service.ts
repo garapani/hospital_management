@@ -77,14 +77,6 @@ export class InvoicesService {
         throw new NotFoundException(`Patient ${input.patientId} not found`);
       }
 
-      const { invoiceNumber, financialYear } = await this.generateInvoiceNumber(manager);
-
-      let subtotal = 0;
-      let discountAmount = 0;
-      let taxableAmount = 0;
-      let taxAmount = 0;
-      let totalAmount = 0;
-
       for (const item of input.items) {
         if (item.unitPrice < 0) {
           throw new BadRequestException(`Item "${item.description}" has a negative unitPrice`);
@@ -97,6 +89,14 @@ export class InvoicesService {
           throw new BadRequestException(`Item "${item.description}" has a discountAmount exceeding its line subtotal`);
         }
       }
+
+      const { invoiceNumber, financialYear } = await this.generateInvoiceNumber(manager);
+
+      let subtotal = 0;
+      let discountAmount = 0;
+      let taxableAmount = 0;
+      let taxAmount = 0;
+      let totalAmount = 0;
 
       const itemsToInsert = input.items.map((item) => {
         const quantity = item.quantity ?? 1;
