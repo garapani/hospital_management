@@ -194,6 +194,10 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'order.read',
     description: 'View orders',
   },
+  {
+    name: 'billing.manage',
+    description: 'Create invoices, record payments, cancel invoices, and manage deposits',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -269,6 +273,10 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Nurse', permissionName: 'order.manage' },
   { roleName: 'Nurse', permissionName: 'order.read' },
   { roleName: 'Receptionist / Front Desk', permissionName: 'order.read' },
+  { roleName: 'Super Admin', permissionName: 'billing.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'billing.manage' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'billing.manage' },
+  { roleName: 'Billing/Accounts Staff', permissionName: 'billing.manage' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
