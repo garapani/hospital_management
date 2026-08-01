@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, Logger } from '@nestjs/common';
 import { DataSource, ObjectLiteral, Repository } from 'typeorm';
+import type { DataSourceOptions } from 'typeorm';
 import { AppModule } from '../app/app.module.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { dataSource as globalDataSource } from '../database/data-source.js';
@@ -15,6 +16,10 @@ import { DepositsService } from '../billing/deposits.service.js';
 import { AuditRecord } from '../audit/entities/audit-record.entity.js';
 import { ReportingEvent } from './entities/reporting-event.entity.js';
 import { PersistingReportingEventPublisher } from './persisting-reporting-event-publisher.js';
+import {
+  REPORTING_DATA_SOURCE,
+  createReportingDataSource,
+} from '../database/reporting-data-source.js';
 
 describe('PersistingReportingEventPublisher (integration)', () => {
   let app: INestApplication;
@@ -297,6 +302,50 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     });
   });
 
+  it('writes reporting events on a dedicated, bounded connection pool', () => {
+    // Reporting writes take a *second* connection while the business transaction still holds its
+    // own. If both came from the same pool, N concurrent tracked writes at pool capacity would
+    // block forever (node-postgres defaults to connectionTimeoutMillis: 0 = wait indefinitely).
+    // What bounds that: a pool object distinct from the main one, capped, with a finite
+    // acquisition timeout so exhaustion throws (and is caught + logged by the publisher).
+    const reportingDataSource = app.get<DataSource>(REPORTING_DATA_SOURCE);
+    const mainDataSource = app.get(DataSource);
+
+    expect(reportingDataSource).not.toBe(mainDataSource);
+    expect(reportingDataSource.isInitialized).toBe(true);
+    expect(reportingDataSource.options.extra).toMatchObject({
+      max: 3,
+      connectionTimeoutMillis: 5000,
+    });
+    // This pool never runs migrations and maps only the reporting entity.
+    expect(reportingDataSource.options.migrations).toEqual([]);
+    expect(reportingDataSource.options.entities).toEqual([ReportingEvent]);
+  });
+
+  it('fails fast instead of hanging when the reporting pool is exhausted', async () => {
+    // Proves the *mechanism* the config above relies on: with a bounded `max` and a finite
+    // `connectionTimeoutMillis`, an over-capacity acquisition rejects rather than waiting forever.
+    // Run against a throwaway 1-connection / 200ms clone so the assertion is deterministic and
+    // costs a fraction of a second — the real pool's 3/5000s values are asserted separately above.
+    const tinyPool = new DataSource({
+      ...createReportingDataSource().options,
+      extra: { max: 1, connectionTimeoutMillis: 200 },
+    } as DataSourceOptions);
+    await tinyPool.initialize();
+
+    const held = tinyPool.createQueryRunner();
+    await held.connect(); // occupies the pool's only connection
+    try {
+      const starved = tinyPool.createQueryRunner();
+      const startedAt = Date.now();
+      await expect(starved.connect()).rejects.toThrow(/timeout/i);
+      expect(Date.now() - startedAt).toBeLessThan(3000);
+    } finally {
+      await held.release();
+      await tinyPool.destroy();
+    }
+  });
+
   // Global Constraint: "Failed reporting-archive write must never roll back or block the
   // real business transaction." The first test is the definitive one — a genuine Postgres error
   // on the reporting_events INSERT. The remaining two simulate failure above the SQL layer and
@@ -366,12 +415,15 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       jest.restoreAllMocks();
 
       // The reporting write really did blow up at the SQL layer — a vacuous pass (e.g. the
-      // subscriber never firing) would leave nothing logged.
+      // subscriber never firing) would leave nothing logged. The assertion also pins the actual
+      // Postgres undefined_table text, so an unrelated failure that shares the same log prefix
+      // (e.g. "No tenant context set") cannot satisfy it.
       expect(
         loggedErrors.some(
           (message) =>
             typeof message === 'string' &&
-            message.includes('Failed to persist reporting event OrderPlaced'),
+            message.includes('Failed to persist reporting event OrderPlaced') &&
+            /reporting_events.*does not exist/i.test(message),
         ),
       ).toBe(true);
 
