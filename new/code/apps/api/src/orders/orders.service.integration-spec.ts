@@ -217,6 +217,39 @@ describe('OrdersService (integration)', () => {
     expect(filtered.limit).toBe(20);
   });
 
+  it('paginates orders using page and limit', async () => {
+    const patient = await makePatient(tenantId1, '4440000011');
+    for (const description of ['CBC', 'LFT', 'RFT']) {
+      await inTenant(tenantId1, () =>
+        ordersService.create({ patientId: patient.id, orderedBy: DOCTOR_ID, items: [{ itemType: 'Lab', itemDescription: description }] }),
+      );
+    }
+
+    const firstPage = await inTenant(tenantId1, () => ordersService.list(patient.id, 1, 2));
+    expect(firstPage.total).toBe(3);
+    expect(firstPage.data).toHaveLength(2);
+    expect(firstPage.page).toBe(1);
+    expect(firstPage.limit).toBe(2);
+
+    const secondPage = await inTenant(tenantId1, () => ordersService.list(patient.id, 2, 2));
+    expect(secondPage.total).toBe(3);
+    expect(secondPage.data).toHaveLength(1);
+    expect(secondPage.page).toBe(2);
+
+    const firstPageIds = firstPage.data.map((order) => order.id);
+    expect(firstPageIds).not.toContain(secondPage.data[0].id);
+  });
+
+  it('caps limit at 100 even when a larger value is requested', async () => {
+    const patient = await makePatient(tenantId1, '4440000012');
+    await inTenant(tenantId1, () =>
+      ordersService.create({ patientId: patient.id, orderedBy: DOCTOR_ID, items: [{ itemType: 'Lab', itemDescription: 'CBC' }] }),
+    );
+
+    const result = await inTenant(tenantId1, () => ordersService.list(patient.id, 1, 500));
+    expect(result.limit).toBe(100);
+  });
+
   it('throws NotFoundException for an unknown order id', async () => {
     await expect(
       inTenant(tenantId1, () => ordersService.findOne('00000000-0000-0000-0000-000000000000')),

@@ -94,15 +94,16 @@ export class OrdersService {
     page = 1,
     limit = 20,
   ): Promise<{ data: Order[]; total: number; page: number; limit: number }> {
-    const skip = (page - 1) * limit;
+    const cappedLimit = Math.min(limit, 100);
+    const skip = (page - 1) * cappedLimit;
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const [data, total] = await manager.getRepository(Order).findAndCount({
         where: patientId ? { patientId } : {},
         order: { orderedAt: 'DESC' },
         skip,
-        take: limit,
+        take: cappedLimit,
       });
-      return { data, total, page, limit };
+      return { data, total, page, limit: cappedLimit };
     });
   }
 
