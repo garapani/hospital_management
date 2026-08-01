@@ -16,6 +16,7 @@ import { DepositsService } from '../billing/deposits.service.js';
 import { AuditRecord } from '../audit/entities/audit-record.entity.js';
 import { ReportingEvent } from './entities/reporting-event.entity.js';
 import { PersistingReportingEventPublisher } from './persisting-reporting-event-publisher.js';
+import { isAuditExcludedEntity } from '@hospital/audit-emitter';
 import {
   REPORTING_DATA_SOURCE,
   createReportingDataSource,
@@ -281,8 +282,17 @@ describe('PersistingReportingEventPublisher (integration)', () => {
   });
 
   it('does not feed reporting events back into the audit trail', async () => {
-    // ReportingEvent is @AuditExcludeEntity() — otherwise every archived event would also
-    // be written to audit_records, doubling writes and duplicating the payload.
+    // NOTE on why this passes: it is NOT currently because of @AuditExcludeEntity() on
+    // ReportingEvent. Reporting writes run through `REPORTING_DATA_SOURCE` (see
+    // persisting-reporting-event-publisher.ts), a separate TypeORM `DataSource` from the main one.
+    // Both `ReportingSubscriber` (reporting.subscriber.ts) and `AuditSubscriber`
+    // (audit-wiring.service.ts) register themselves only on the main, injected `DataSource`'s
+    // `subscribers` array — never on `REPORTING_DATA_SOURCE`. So no subscriber, audit or
+    // otherwise, is even attached to the connection a reporting write runs on; the audit
+    // subscriber has no opportunity to fire regardless of what any entity decorator says.
+    // @AuditExcludeEntity() on ReportingEvent is therefore redundant belt-and-braces defense today,
+    // not the active mechanism keeping this test green — see the decorator-presence guard below
+    // for a direct regression check on the decorator itself.
     const auditRows = await inTenant(TEST_TENANT_ID_1, () =>
       tenantConnection.runInTenantSchema((m) =>
         m
@@ -291,6 +301,16 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       ),
     );
     expect(auditRows).toBe(0);
+  });
+
+  it('keeps @AuditExcludeEntity() on ReportingEvent as defense-in-depth', () => {
+    // Direct regression guard on the decorator itself (unit-level, no subscriber/DB involved).
+    // The test above proves reporting writes never reach audit_records today because of pool
+    // separation, not this decorator — but if a future refactor ever routes reporting writes back
+    // through the main DataSource (or a subscriber gets attached to REPORTING_DATA_SOURCE), this
+    // decorator becomes the only thing standing between that write and a duplicated audit_records
+    // row. This pins that it's still present.
+    expect(isAuditExcludedEntity(ReportingEvent)).toBe(true);
   });
 
   it('enforces tenant isolation', async () => {
@@ -320,6 +340,43 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     // This pool never runs migrations and maps only the reporting entity.
     expect(reportingDataSource.options.migrations).toEqual([]);
     expect(reportingDataSource.options.entities).toEqual([ReportingEvent]);
+  });
+
+  it('routes reporting writes through REPORTING_DATA_SOURCE, not the main pool', async () => {
+    // Pins the second argument to `runInTenantSchema` in
+    // persisting-reporting-event-publisher.ts (`this.tenantConnectionService.runInTenantSchema(
+    // work, this.reportingDataSource)`). Every other test in this file exercises the publisher
+    // without inspecting which pool actually served the write, so silently dropping that second
+    // argument — reverting reporting writes to the shared main pool and reintroducing the
+    // pool-exhaustion deadlock this whole fix chain exists to prevent — would leave every existing
+    // test green. This is a real spy on the live TenantConnectionService instance (not a mock
+    // replacement), so the underlying reporting write still executes for real.
+    const reportingDataSource = app.get<DataSource>(REPORTING_DATA_SOURCE);
+    const spy = jest.spyOn(tenantConnection, 'runInTenantSchema');
+
+    try {
+      await inTenant(TEST_TENANT_ID_1, async () => {
+        const patient = await patientsService.create({
+          firstName: 'Routing',
+          lastName: 'Pin',
+          gender: 'Male',
+          phoneNumber: '9999999993',
+        });
+        await ordersService.create({
+          patientId: patient.id,
+          orderedBy: DOCTOR_ID,
+          items: [
+            { itemType: 'Lab', itemDescription: 'Routing', priority: 'Routine' },
+          ],
+        });
+      });
+
+      expect(
+        spy.mock.calls.some(([, dataSourceArg]) => dataSourceArg === reportingDataSource),
+      ).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('fails fast instead of hanging when the reporting pool is exhausted', async () => {
