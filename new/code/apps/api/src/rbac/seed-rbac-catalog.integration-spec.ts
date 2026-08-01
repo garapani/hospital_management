@@ -262,4 +262,32 @@ describe('seedRbacCatalog (integration)', () => {
       'Super Admin',
     ]);
   });
+
+  it('maps order.manage to Doctor, Nurse, Hospital Admin, Super Admin and order.read additionally to Receptionist', async () => {
+    await seedRbacCatalog(dataSource);
+
+    const managePermission = await dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'order.manage' },
+    });
+    const manageMappings = await dataSource.getRepository(RolePermission).find({
+      where: { permissionId: managePermission.id },
+    });
+    const manageRoles = await dataSource.getRepository(Role).find({ where: { id: In(manageMappings.map((m) => m.roleId)) } });
+    expect(manageRoles.map((r) => r.name).sort()).toEqual(['Doctor', 'Hospital Admin', 'Nurse', 'Super Admin']);
+
+    const readPermission = await dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'order.read' },
+    });
+    const readMappings = await dataSource.getRepository(RolePermission).find({
+      where: { permissionId: readPermission.id },
+    });
+    const readRoles = await dataSource.getRepository(Role).find({ where: { id: In(readMappings.map((m) => m.roleId)) } });
+    expect(readRoles.map((r) => r.name).sort()).toEqual([
+      'Doctor',
+      'Hospital Admin',
+      'Nurse',
+      'Receptionist / Front Desk',
+      'Super Admin',
+    ]);
+  });
 });
