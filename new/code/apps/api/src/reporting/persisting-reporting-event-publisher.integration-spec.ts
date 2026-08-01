@@ -383,7 +383,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     // Proves the *mechanism* the config above relies on: with a bounded `max` and a finite
     // `connectionTimeoutMillis`, an over-capacity acquisition rejects rather than waiting forever.
     // Run against a throwaway 1-connection / 200ms clone so the assertion is deterministic and
-    // costs a fraction of a second — the real pool's 3/5000s values are asserted separately above.
+    // costs a fraction of a second — the real pool's 3/2000ms values are asserted separately above.
     const tinyPool = new DataSource({
       ...createReportingDataSource().options,
       extra: { max: 1, connectionTimeoutMillis: 200 },

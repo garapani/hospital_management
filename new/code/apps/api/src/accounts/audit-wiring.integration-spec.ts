@@ -44,7 +44,8 @@ describe('Audit wiring (integration)', () => {
     expect(accountEvent?.diff.some((entry) => entry.field === 'username')).toBe(true);
 
     await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_audit_wiring" CASCADE`);
-    await dataSource.destroy();
+    // moduleRef.close() now runs DatabaseModule.onModuleDestroy(), which owns closing this
+    // DI-managed DataSource — an explicit dataSource.destroy() here would double-destroy it.
     await moduleRef.close();
   });
 });
