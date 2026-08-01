@@ -234,6 +234,9 @@ export class InvoicesService {
       if (!invoice) {
         throw new NotFoundException(`Invoice ${invoiceId} not found`);
       }
+      if (invoice.status === 'Cancelled') {
+        throw new ConflictException(`Invoice ${invoiceId} is cancelled and cannot accept payments`);
+      }
 
       const outstanding = roundMoney(invoice.totalAmount - invoice.paidAmount);
       if (input.amount > outstanding) {

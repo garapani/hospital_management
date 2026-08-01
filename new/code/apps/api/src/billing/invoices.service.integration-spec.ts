@@ -323,6 +323,17 @@ describe('InvoicesService (integration)', () => {
     await expect(inTenant(tenantId1, () => invoicesService.cancel(invoice.id))).rejects.toThrow(ConflictException);
   });
 
+  it('rejects recording a payment against a cancelled invoice', async () => {
+    const patient = await makePatient(tenantId1, '5550000034');
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await inTenant(tenantId1, () => invoicesService.cancel(invoice.id));
+    await expect(
+      inTenant(tenantId1, () => invoicesService.recordPayment(invoice.id, { amount: 400, paymentMode: 'Cash', receivedBy: STAFF_ID })),
+    ).rejects.toThrow(ConflictException);
+  });
+
   it('throws NotFoundException recording a payment against an unknown invoice', async () => {
     await expect(
       inTenant(tenantId1, () =>
