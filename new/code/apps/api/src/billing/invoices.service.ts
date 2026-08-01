@@ -214,6 +214,9 @@ export class InvoicesService {
       if (invoice.status === 'Cancelled') {
         throw new ConflictException(`Invoice ${id} is already cancelled`);
       }
+      if (invoice.status === 'Paid') {
+        throw new ConflictException(`Invoice ${id} is already paid and cannot be cancelled`);
+      }
       if (invoice.paidAmount > 0) {
         throw new ConflictException(`Invoice ${id} cannot be cancelled because it has recorded payments`);
       }

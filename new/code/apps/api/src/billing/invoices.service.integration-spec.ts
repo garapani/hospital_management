@@ -157,6 +157,19 @@ describe('InvoicesService (integration)', () => {
     expect(invoice.status).toBe('Paid');
   });
 
+  it('rejects cancelling a zero-total invoice that was auto-settled as Paid', async () => {
+    const patient = await makePatient(tenantId1, '5550000097');
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({
+        patientId: patient.id,
+        createdBy: STAFF_ID,
+        items: [{ description: 'Waived Item', unitPrice: 0 }],
+      }),
+    );
+    expect(invoice.status).toBe('Paid');
+    await expect(inTenant(tenantId1, () => invoicesService.cancel(invoice.id))).rejects.toThrow(ConflictException);
+  });
+
   it('fetches an invoice with its items via findOne', async () => {
     const patient = await makePatient(tenantId1, '5550000005');
     const created = await inTenant(tenantId1, () =>
