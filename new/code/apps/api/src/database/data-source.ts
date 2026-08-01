@@ -30,6 +30,7 @@ import { Invoice } from '../billing/entities/invoice.entity.js';
 import { InvoiceItem } from '../billing/entities/invoice-item.entity.js';
 import { Payment } from '../billing/entities/payment.entity.js';
 import { Deposit } from '../billing/entities/deposit.entity.js';
+import { ReportingEvent } from '../reporting/entities/reporting-event.entity.js';
 import { CreateRbacCatalogTables } from './migrations/0001-create-rbac-catalog-tables.js';
 import { AddRolePermissionsUniqueConstraint } from './migrations/0003-add-role-permissions-unique-constraint.js';
 import { CreateTenantsTable } from './migrations/0005-create-tenants-table.js';
@@ -40,6 +41,7 @@ import { CreateBedsTable0013 } from './migrations/0013-create-beds-table.js';
 import { CreateAdmissionsTables0014 } from './migrations/0014-create-admissions-tables.js';
 import { CreateOrdersTables0015 } from './migrations/0015-create-orders-tables.js';
 import { CreateBillingTables0016 } from './migrations/0016-create-billing-tables.js';
+import { CreateReportingTables0017 } from './migrations/0017-create-reporting-tables.js';
 
 export function createDataSource(): DataSource {
   return new DataSource({
@@ -49,8 +51,8 @@ export function createDataSource(): DataSource {
     username: process.env['DB_USERNAME'] ?? 'identity_access',
     password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
     database: process.env['DB_DATABASE'] ?? 'identity_access',
-    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit],
-    migrations: [CreateRbacCatalogTables, AddRolePermissionsUniqueConstraint, CreateTenantsTable, CreatePatientTables005, CreateVitalsTable0010, CreateTriageTable0012, CreateBedsTable0013, CreateAdmissionsTables0014, CreateOrdersTables0015, CreateBillingTables0016],
+    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, ReportingEvent],
+    migrations: [CreateRbacCatalogTables, AddRolePermissionsUniqueConstraint, CreateTenantsTable, CreatePatientTables005, CreateVitalsTable0010, CreateTriageTable0012, CreateBedsTable0013, CreateAdmissionsTables0014, CreateOrdersTables0015, CreateBillingTables0016, CreateReportingTables0017],
     synchronize: false,
   });
 }

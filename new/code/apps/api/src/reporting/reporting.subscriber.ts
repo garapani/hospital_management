@@ -8,7 +8,7 @@ import { Deposit } from '../billing/entities/deposit.entity.js';
 import { Admission } from '../admissions/entities/admission.entity.js';
 import { BedTransfer } from '../admissions/entities/bed-transfer.entity.js';
 import { PersistingReportingEventPublisher } from './persisting-reporting-event-publisher.js';
-import { TenantContextService } from '../tenant-context/tenant-context.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 
 @Injectable()
 export class ReportingSubscriber implements EntitySubscriberInterface {

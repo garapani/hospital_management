@@ -20,6 +20,7 @@ import { CreateBedsTable0013 } from '../database/migrations/0013-create-beds-tab
 import { CreateAdmissionsTables0014 } from '../database/migrations/0014-create-admissions-tables.js';
 import { CreateOrdersTables0015 } from '../database/migrations/0015-create-orders-tables.js';
 import { CreateBillingTables0016 } from '../database/migrations/0016-create-billing-tables.js';
+import { CreateReportingTables0017 } from '../database/migrations/0017-create-reporting-tables.js';
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
 const BCRYPT_SALT_ROUNDS = 12;
@@ -86,6 +87,8 @@ export class AccountsService {
       await ordersMigration.up(queryRunner);
       const billingMigration = new CreateBillingTables0016();
       await billingMigration.up(queryRunner);
+      const reportingMigration = new CreateReportingTables0017();
+      await reportingMigration.up(queryRunner);
     } finally {
       await queryRunner.release();
     }
