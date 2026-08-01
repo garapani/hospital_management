@@ -103,7 +103,9 @@ describe('DepositsService (integration)', () => {
     const deposit = await inTenant(tenantId1, () =>
       depositsService.create({ patientId: patient.id, amount: 5000, receivedBy: STAFF_ID }),
     );
-    const refunded = await inTenant(tenantId1, () => depositsService.refund(deposit.id, { amount: 2000 }));
+    const refunded = await inTenant(tenantId1, () =>
+      depositsService.refund(deposit.id, { amount: 2000, refundedBy: STAFF_ID }),
+    );
     expect(refunded.balance).toBe(3000);
   });
 
@@ -112,8 +114,24 @@ describe('DepositsService (integration)', () => {
     const deposit = await inTenant(tenantId1, () =>
       depositsService.create({ patientId: patient.id, amount: 1500, receivedBy: STAFF_ID }),
     );
-    const refunded = await inTenant(tenantId1, () => depositsService.refund(deposit.id, { amount: 1500 }));
+    const refunded = await inTenant(tenantId1, () =>
+      depositsService.refund(deposit.id, { amount: 1500, refundedBy: STAFF_ID }),
+    );
     expect(refunded.balance).toBe(0);
+  });
+
+  it('records the refunding actor and timestamp on refund', async () => {
+    const patient = await makePatient(tenantId1, '6660000010');
+    const deposit = await inTenant(tenantId1, () =>
+      depositsService.create({ patientId: patient.id, amount: 1000, receivedBy: STAFF_ID }),
+    );
+    const before = Date.now();
+    const refunded = await inTenant(tenantId1, () =>
+      depositsService.refund(deposit.id, { amount: 500, refundedBy: STAFF_ID }),
+    );
+    expect(refunded.refundedBy).toBe(STAFF_ID);
+    expect(refunded.refundedAt).not.toBeNull();
+    expect(new Date(refunded.refundedAt as Date).getTime()).toBeGreaterThanOrEqual(before - 1000);
   });
 
   it('rejects refunding more than the current balance', async () => {
@@ -121,9 +139,9 @@ describe('DepositsService (integration)', () => {
     const deposit = await inTenant(tenantId1, () =>
       depositsService.create({ patientId: patient.id, amount: 1000, receivedBy: STAFF_ID }),
     );
-    await expect(inTenant(tenantId1, () => depositsService.refund(deposit.id, { amount: 1500 }))).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      inTenant(tenantId1, () => depositsService.refund(deposit.id, { amount: 1500, refundedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('rejects refunding a zero or negative amount', async () => {
@@ -131,14 +149,16 @@ describe('DepositsService (integration)', () => {
     const deposit = await inTenant(tenantId1, () =>
       depositsService.create({ patientId: patient.id, amount: 1000, receivedBy: STAFF_ID }),
     );
-    await expect(inTenant(tenantId1, () => depositsService.refund(deposit.id, { amount: 0 }))).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      inTenant(tenantId1, () => depositsService.refund(deposit.id, { amount: 0, refundedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('throws NotFoundException refunding an unknown deposit id', async () => {
     await expect(
-      inTenant(tenantId1, () => depositsService.refund('00000000-0000-0000-0000-000000000000', { amount: 100 })),
+      inTenant(tenantId1, () =>
+        depositsService.refund('00000000-0000-0000-0000-000000000000', { amount: 100, refundedBy: STAFF_ID }),
+      ),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -147,8 +167,8 @@ describe('DepositsService (integration)', () => {
     const deposit = await inTenant(tenantId1, () =>
       depositsService.create({ patientId: patient.id, amount: 1000, receivedBy: STAFF_ID }),
     );
-    await expect(inTenant(tenantId2, () => depositsService.refund(deposit.id, { amount: 100 }))).rejects.toThrow(
-      NotFoundException,
-    );
+    await expect(
+      inTenant(tenantId2, () => depositsService.refund(deposit.id, { amount: 100, refundedBy: STAFF_ID })),
+    ).rejects.toThrow(NotFoundException);
   });
 });

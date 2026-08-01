@@ -54,6 +54,8 @@ export function formatFinancialYear(startYear: number): string {
 export class InvoicesService {
   constructor(private readonly tenantConnection: TenantConnectionService) {}
 
+  private static readonly PAYMENT_MODES = ['Cash', 'Card', 'UPI', 'Cheque', 'Deposit'] as const;
+
   private async generateInvoiceNumber(manager: EntityManager): Promise<{ invoiceNumber: number; financialYear: string }> {
     const startYear = getFinancialYearStart(new Date());
     const result = await manager.query(
@@ -151,7 +153,7 @@ export class InvoicesService {
           taxAmount,
           totalAmount,
           paidAmount: 0,
-          status: 'Unpaid',
+          status: totalAmount === 0 ? 'Paid' : 'Unpaid',
           notes: input.notes ?? null,
           createdBy: input.createdBy,
         }),
@@ -221,6 +223,9 @@ export class InvoicesService {
   }
 
   async recordPayment(invoiceId: string, input: RecordPaymentInput): Promise<Payment> {
+    if (!InvoicesService.PAYMENT_MODES.includes(input.paymentMode as (typeof InvoicesService.PAYMENT_MODES)[number])) {
+      throw new BadRequestException(`Unsupported paymentMode: ${input.paymentMode}`);
+    }
     if (input.amount <= 0) {
       throw new BadRequestException('Payment amount must be greater than zero');
     }

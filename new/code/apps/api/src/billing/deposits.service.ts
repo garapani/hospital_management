@@ -13,6 +13,7 @@ export interface CreateDepositInput {
 
 export interface RefundDepositInput {
   amount: number;
+  refundedBy: string;
 }
 
 @Injectable()
@@ -73,6 +74,8 @@ export class DepositsService {
         throw new BadRequestException(`Refund amount ${input.amount} exceeds deposit balance ${deposit.balance}`);
       }
       deposit.balance = roundMoney(deposit.balance - input.amount);
+      deposit.refundedBy = input.refundedBy;
+      deposit.refundedAt = new Date();
       return repository.save(deposit);
     });
   }

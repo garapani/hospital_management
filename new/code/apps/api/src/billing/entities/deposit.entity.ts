@@ -24,6 +24,12 @@ export class Deposit {
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
 
+  @Column({ type: 'uuid', nullable: true })
+  refundedBy!: string | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  refundedAt!: Date | null;
+
   @CreateDateColumn({ type: 'timestamp with time zone' })
   createdAt!: Date;
 

@@ -44,6 +44,9 @@ export class CreateBillingTables0016 implements MigrationInterface {
       )
     `);
     await queryRunner.query(`CREATE INDEX "IDX_invoices_patient_id" ON invoices ("patientId")`);
+    await queryRunner.query(
+      `ALTER TABLE invoices ADD CONSTRAINT "UQ_invoices_number_fy" UNIQUE ("financialYear", "invoiceNumber")`,
+    );
     await queryRunner.query(`
       CREATE TABLE invoice_items (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -84,6 +87,8 @@ export class CreateBillingTables0016 implements MigrationInterface {
         "receivedBy" uuid NOT NULL,
         "receivedAt" timestamptz NOT NULL DEFAULT now(),
         notes text NULL,
+        "refundedBy" uuid NULL,
+        "refundedAt" timestamptz NULL,
         "createdAt" timestamptz NOT NULL DEFAULT now(),
         "updatedAt" timestamptz NOT NULL DEFAULT now()
       )

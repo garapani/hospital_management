@@ -144,6 +144,19 @@ describe('InvoicesService (integration)', () => {
     expect(second.financialYear).toBe(first.financialYear);
   });
 
+  it('auto-settles a fully-waived invoice with zero total as Paid', async () => {
+    const patient = await makePatient(tenantId1, '5550000099');
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({
+        patientId: patient.id,
+        createdBy: STAFF_ID,
+        items: [{ description: 'Waived Item', unitPrice: 0 }],
+      }),
+    );
+    expect(invoice.totalAmount).toBe(0);
+    expect(invoice.status).toBe('Paid');
+  });
+
   it('fetches an invoice with its items via findOne', async () => {
     const patient = await makePatient(tenantId1, '5550000005');
     const created = await inTenant(tenantId1, () =>
@@ -311,6 +324,19 @@ describe('InvoicesService (integration)', () => {
     );
     await expect(
       inTenant(tenantId1, () => invoicesService.recordPayment(invoice.id, { amount: 0, paymentMode: 'Cash', receivedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects an unsupported paymentMode', async () => {
+    const patient = await makePatient(tenantId1, '5550000098');
+    const invoice = await inTenant(tenantId1, () =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await expect(
+      inTenant(tenantId1, () => invoicesService.recordPayment(invoice.id, { amount: 100, paymentMode: 'deposit', receivedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      inTenant(tenantId1, () => invoicesService.recordPayment(invoice.id, { amount: 100, paymentMode: 'Bogus', receivedBy: STAFF_ID })),
     ).rejects.toThrow(BadRequestException);
   });
 
