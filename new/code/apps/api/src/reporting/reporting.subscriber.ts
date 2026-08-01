@@ -122,15 +122,15 @@ export class ReportingSubscriber implements EntitySubscriberInterface {
       const payload = await handler.buildPayload(event.entity, event);
       const correlationId = this.tenantContextService.getCorrelationId();
 
-      await this.publisher.publish(
-        {
-          eventType: handler.eventType,
-          entityId: event.entity.id,
-          payload,
-          correlationId: correlationId ?? null,
-        },
-        event.manager,
-      );
+      // Deliberately does NOT pass `event.manager`: the publisher opens its own connection so a
+      // SQL-level reporting failure cannot abort this business transaction. Accepted tradeoff —
+      // a business transaction that rolls back after this point leaves an orphan reporting row.
+      await this.publisher.publish({
+        eventType: handler.eventType,
+        entityId: event.entity.id,
+        payload,
+        correlationId: correlationId ?? null,
+      });
     } catch (error) {
       this.logger.error(
         `Failed to build/publish reporting event for ${handler.eventType}: ${

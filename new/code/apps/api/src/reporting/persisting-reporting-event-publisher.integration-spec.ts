@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Logger } from '@nestjs/common';
 import { DataSource, ObjectLiteral, Repository } from 'typeorm';
 import { AppModule } from '../app/app.module.js';
 import { AccountsService } from '../accounts/accounts.service.js';
@@ -298,12 +298,94 @@ describe('PersistingReportingEventPublisher (integration)', () => {
   });
 
   // Global Constraint: "Failed reporting-archive write must never roll back or block the
-  // real business transaction." The first test drives the realistic path — the reporting_events
-  // insert itself blows up inside the publisher. The second removes the publisher from the
-  // equation entirely, pinning the subscriber's own guard.
+  // real business transaction." The first test is the definitive one — a genuine Postgres error
+  // on the reporting_events INSERT. The remaining two simulate failure above the SQL layer and
+  // pin the JS-level try/catch structure in the publisher and the subscriber respectively.
   describe('when the reporting-archive write fails', () => {
     afterEach(() => {
       jest.restoreAllMocks();
+    });
+
+    it('still commits the business insert when the reporting_events INSERT fails at the SQL level', async () => {
+      // Real SQL failure, not a JS mock: the reporting_events table is renamed out from under
+      // the publisher, so its INSERT raises Postgres 42P01 (undefined_table).
+      //
+      // This is the test that was impossible before the write moved off the business
+      // transaction's QueryRunner. Previously the publisher's save ran on the SAME connection as
+      // the `orders` INSERT, so a 42P01 aborted that transaction — Postgres then rejects every
+      // subsequent statement including COMMIT ("current transaction is aborted"), and the order
+      // would never have persisted no matter what the publisher's try/catch did. The order being
+      // readable afterwards is therefore proof the reporting write is on its own connection.
+      const schema = `tenant_${TEST_TENANT_ID_1}`;
+      const loggedErrors: unknown[] = [];
+      jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation((message: unknown) => {
+          loggedErrors.push(message);
+        });
+
+      const renameTable = async (from: string, to: string) => {
+        const queryRunner = dataSource.createQueryRunner();
+        await queryRunner.connect();
+        try {
+          await queryRunner.query(
+            `ALTER TABLE "${schema}"."${from}" RENAME TO "${to}"`,
+          );
+        } finally {
+          await queryRunner.release();
+        }
+      };
+
+      await renameTable('reporting_events', 'reporting_events_hidden');
+
+      let order: { id: string };
+      let patientId: string;
+      try {
+        const result = await inTenant(TEST_TENANT_ID_1, async () => {
+          const patient = await patientsService.create({
+            firstName: 'SqlLevel',
+            lastName: 'Failure',
+            gender: 'Male',
+            phoneNumber: '9999999995',
+          });
+          const created = await ordersService.create({
+            patientId: patient.id,
+            orderedBy: DOCTOR_ID,
+            items: [
+              { itemType: 'Lab', itemDescription: 'ESR', priority: 'Routine' },
+            ],
+          });
+          return { order: created, patientId: patient.id };
+        });
+        order = result.order;
+        patientId = result.patientId;
+      } finally {
+        await renameTable('reporting_events_hidden', 'reporting_events');
+      }
+
+      jest.restoreAllMocks();
+
+      // The reporting write really did blow up at the SQL layer — a vacuous pass (e.g. the
+      // subscriber never firing) would leave nothing logged.
+      expect(
+        loggedErrors.some(
+          (message) =>
+            typeof message === 'string' &&
+            message.includes('Failed to persist reporting event OrderPlaced'),
+        ),
+      ).toBe(true);
+
+      // ...and the business transaction still committed: order + items are readable.
+      const persisted = await inTenant(TEST_TENANT_ID_1, () =>
+        ordersService.findOne(order.id),
+      );
+      expect(persisted.id).toBe(order.id);
+      expect(persisted.patientId).toBe(patientId);
+      expect(persisted.items).toHaveLength(1);
+
+      // No reporting event was archived for it.
+      const orderEvents = await getEvents(TEST_TENANT_ID_1, 'OrderPlaced');
+      expect(orderEvents.map((e) => e.entityId)).not.toContain(order.id);
     });
 
     it('still commits the business insert when the reporting_events save throws', async () => {
