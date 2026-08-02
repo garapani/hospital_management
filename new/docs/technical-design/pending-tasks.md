@@ -12,9 +12,10 @@ follows the PRD's own phase order — no reason to re-litigate that).
 
 ## Phase 0 — Housekeeping
 
-- [ ] Commit `new-features.md`, `review-comments.md`, the `PRD.md` move, and the new ADR
-      (currently sitting uncommitted in the working tree)
-- [ ] Fix moved-path references (new-features.md #16) — bundle into the same commit
+- [x] Commit `new-features.md`, `review-comments.md`, the `PRD.md` move, and the new ADR
+      (`276d5ac`)
+- [x] Fix moved-path references (new-features.md #16) — bundled into the same commit
+      (`276d5ac`)
 - [ ] Manual cleanup left over from the reporting-archiver session: delete the stale
       `worktree-feat-reporting-archiver` branch, drop the `scratch_rep_check` schema in local dev
       Postgres (both blocked by `guard-destructive.sh`, need to be run by hand)
