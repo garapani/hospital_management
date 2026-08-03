@@ -1,57 +1,34 @@
 import { NotFoundException } from '@nestjs/common';
-import { createDataSource } from '../../database/data-source.js';
-import { TenantConnectionService } from '../../database/tenant-connection.service.js';
-import { TenantsService } from '../../tenants/tenants.service.js';
-import { TenantContextService } from '@hospital/tenant-context';
 import { VitalsService } from './vitals.service.js';
 import { PatientsService } from '../../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../../patients/patient-number-generator.service.js';
-import { AccountsService } from '../../accounts/accounts.service.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../../testing/tenant-test-context.js';
 
 describe('VitalsService (integration)', () => {
-  const dataSource = createDataSource();
-  let tenantConnection: TenantConnectionService;
-  let tenantContextService: TenantContextService;
+  let ctx: TenantTestContext;
+  let tenantB: TenantTestContext;
   let vitalsService: VitalsService;
-  let tenantsService: TenantsService;
   let patientsService: PatientsService;
-  
-  let tenantId1: string;
-  let tenantId2: string;
 
   beforeAll(async () => {
-    await dataSource.initialize();
-    
-    tenantContextService = new TenantContextService();
-    tenantConnection = new TenantConnectionService(dataSource, tenantContextService);
-    const accountsService = new AccountsService(tenantConnection, dataSource);
-    tenantsService = new TenantsService(dataSource);
-    const patientSequence = new PatientNumberGeneratorService(tenantConnection);
-    patientsService = new PatientsService(tenantConnection, patientSequence);
-    vitalsService = new VitalsService(tenantConnection);
+    ctx = await setupTenantTestContext({ namePrefix: 'vitals_svc' });
+    tenantB = await ctx.createTenant();
 
-    const uniqueId = Date.now().toString();
-    const t1 = await tenantsService.provisionTenant({
-      hospitalId: `vitals_1_${uniqueId}`,
-      hospitalName: 'Vitals Hospital 1',
-    });
-    tenantId1 = t1.hospitalId;
-    await accountsService.provisionTenantSchema(dataSource, tenantId1);
-
-    const t2 = await tenantsService.provisionTenant({
-      hospitalId: `vitals_2_${uniqueId}`,
-      hospitalName: 'Vitals Hospital 2',
-    });
-    tenantId2 = t2.hospitalId;
-    await accountsService.provisionTenantSchema(dataSource, tenantId2);
+    const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
+    patientsService = new PatientsService(ctx.tenantConnection, patientSequence);
+    vitalsService = new VitalsService(ctx.tenantConnection);
   });
 
   afterAll(async () => {
-    await dataSource.destroy();
+    await teardownTenantTestContext(ctx);
   });
 
   it('creates and lists vitals within a tenant boundary', async () => {
-    await tenantContextService.run({ tenantId: tenantId1, correlationId: 'c1' }, async () => {
+    await ctx.inTenant(async () => {
       const patient = await patientsService.create({
         firstName: 'John',
         lastName: 'Doe',
@@ -84,7 +61,7 @@ describe('VitalsService (integration)', () => {
   });
 
   it('calculates BMI correctly on update', async () => {
-    await tenantContextService.run({ tenantId: tenantId1, correlationId: 'c1' }, async () => {
+    await ctx.inTenant(async () => {
       const patient = await patientsService.create({
         firstName: 'Jane',
         lastName: 'Doe',
@@ -107,7 +84,7 @@ describe('VitalsService (integration)', () => {
   });
 
   it('voids vitals correctly', async () => {
-    await tenantContextService.run({ tenantId: tenantId2, correlationId: 'c1' }, async () => {
+    await tenantB.inTenant(async () => {
       const patient = await patientsService.create({
         firstName: 'Bob',
         lastName: 'Smith',
@@ -132,7 +109,7 @@ describe('VitalsService (integration)', () => {
   });
 
   it('throws NotFoundException when updating non-existent vital', async () => {
-    await tenantContextService.run({ tenantId: tenantId1, correlationId: 'c1' }, async () => {
+    await ctx.inTenant(async () => {
       await expect(vitalsService.update('00000000-0000-0000-0000-000000000000', { weight: 70 })).rejects.toThrow(
         NotFoundException,
       );
@@ -144,7 +121,7 @@ describe('VitalsService (integration)', () => {
     let sharedVitalId: string;
 
     // Create in tenant 1
-    await tenantContextService.run({ tenantId: tenantId1, correlationId: 'c1' }, async () => {
+    await ctx.inTenant(async () => {
       const patient = await patientsService.create({
         firstName: 'Isolated',
         lastName: 'Patient',
@@ -163,7 +140,7 @@ describe('VitalsService (integration)', () => {
     });
 
     // Verify not visible in tenant 2
-    await tenantContextService.run({ tenantId: tenantId2, correlationId: 'c1' }, async () => {
+    await tenantB.inTenant(async () => {
       const vitals = await vitalsService.listByPatient(sharedPatientId);
       expect(vitals).toHaveLength(0);
 

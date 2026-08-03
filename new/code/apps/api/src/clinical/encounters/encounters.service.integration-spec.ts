@@ -1,19 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EncountersService } from './encounters.service.js';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
-import { createDataSource } from '../../database/data-source.js';
-import { AccountsService } from '../../accounts/accounts.service.js';
-import { TenantContextService } from '@hospital/tenant-context';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../../testing/tenant-test-context.js';
 
 describe('EncountersService (integration)', () => {
   let service: EncountersService;
-  const dataSource = createDataSource();
-  const accountsService = new AccountsService(new TenantConnectionService(dataSource, new TenantContextService()), dataSource);
-  const tenantId = 'test_encounters_svc';
+  let ctx: TenantTestContext;
 
   beforeAll(async () => {
-    await dataSource.initialize();
-    await accountsService.provisionTenantSchema(dataSource, tenantId);
+    ctx = await setupTenantTestContext({ namePrefix: 'encounters_svc' });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -22,8 +21,8 @@ describe('EncountersService (integration)', () => {
           provide: TenantConnectionService,
           useValue: {
             runInTenantSchema: async (cb: any) => {
-              return dataSource.transaction(async (manager) => {
-                await manager.query(`SET search_path TO "tenant_${tenantId}", public`);
+              return ctx.dataSource.transaction(async (manager) => {
+                await manager.query(`SET search_path TO "tenant_${ctx.tenantId}", public`);
                 return cb(manager);
               });
             },
@@ -36,8 +35,7 @@ describe('EncountersService (integration)', () => {
   });
 
   afterAll(async () => {
-    await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${tenantId}" CASCADE`);
-    await dataSource.destroy();
+    await teardownTenantTestContext(ctx);
   });
 
   it('creates, retrieves and updates clinical notes', async () => {

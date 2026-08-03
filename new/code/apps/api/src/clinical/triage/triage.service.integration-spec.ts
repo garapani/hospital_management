@@ -1,57 +1,34 @@
 import { NotFoundException } from '@nestjs/common';
-import { createDataSource } from '../../database/data-source.js';
-import { TenantConnectionService } from '../../database/tenant-connection.service.js';
-import { TenantsService } from '../../tenants/tenants.service.js';
-import { TenantContextService } from '@hospital/tenant-context';
 import { TriageService } from './triage.service.js';
 import { PatientsService } from '../../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../../patients/patient-number-generator.service.js';
-import { AccountsService } from '../../accounts/accounts.service.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../../testing/tenant-test-context.js';
 
 describe('TriageService (integration)', () => {
-  const dataSource = createDataSource();
-  let tenantConnection: TenantConnectionService;
-  let tenantContextService: TenantContextService;
+  let ctx: TenantTestContext;
+  let tenantB: TenantTestContext;
   let triageService: TriageService;
-  let tenantsService: TenantsService;
   let patientsService: PatientsService;
 
-  let tenantId1: string;
-  let tenantId2: string;
-
   beforeAll(async () => {
-    await dataSource.initialize();
+    ctx = await setupTenantTestContext({ namePrefix: 'triage_svc' });
+    tenantB = await ctx.createTenant();
 
-    tenantContextService = new TenantContextService();
-    tenantConnection = new TenantConnectionService(dataSource, tenantContextService);
-    const accountsService = new AccountsService(tenantConnection, dataSource);
-    tenantsService = new TenantsService(dataSource);
-    const patientSequence = new PatientNumberGeneratorService(tenantConnection);
-    patientsService = new PatientsService(tenantConnection, patientSequence);
-    triageService = new TriageService(tenantConnection);
-
-    const uniqueId = Date.now().toString();
-    const t1 = await tenantsService.provisionTenant({
-      hospitalId: `triage_1_${uniqueId}`,
-      hospitalName: 'Triage Hospital 1',
-    });
-    tenantId1 = t1.hospitalId;
-    await accountsService.provisionTenantSchema(dataSource, tenantId1);
-
-    const t2 = await tenantsService.provisionTenant({
-      hospitalId: `triage_2_${uniqueId}`,
-      hospitalName: 'Triage Hospital 2',
-    });
-    tenantId2 = t2.hospitalId;
-    await accountsService.provisionTenantSchema(dataSource, tenantId2);
+    const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
+    patientsService = new PatientsService(ctx.tenantConnection, patientSequence);
+    triageService = new TriageService(ctx.tenantConnection);
   });
 
   afterAll(async () => {
-    await dataSource.destroy();
+    await teardownTenantTestContext(ctx);
   });
 
   it('registers an ER arrival for a known patient', async () => {
-    await tenantContextService.run({ tenantId: tenantId1, correlationId: 'c1' }, async () => {
+    await ctx.inTenant(async () => {
       const patient = await patientsService.create({
         firstName: 'John',
         lastName: 'Doe',
@@ -74,7 +51,7 @@ describe('TriageService (integration)', () => {
   });
 
   it('registers an anonymous ER arrival with temporary demographics', async () => {
-    await tenantContextService.run({ tenantId: tenantId1, correlationId: 'c1' }, async () => {
+    await ctx.inTenant(async () => {
       const entry = await triageService.create({
         firstName: 'Unknown',
         lastName: 'Male',
@@ -92,7 +69,7 @@ describe('TriageService (integration)', () => {
   });
 
   it('assigns acuity and updates status via update()', async () => {
-    await tenantContextService.run({ tenantId: tenantId2, correlationId: 'c1' }, async () => {
+    await tenantB.inTenant(async () => {
       const entry = await triageService.create({ chiefComplaint: 'Fever' });
 
       const triagedAt = new Date();
@@ -111,7 +88,7 @@ describe('TriageService (integration)', () => {
   });
 
   it('links an anonymous entry to a newly registered patient', async () => {
-    await tenantContextService.run({ tenantId: tenantId2, correlationId: 'c1' }, async () => {
+    await tenantB.inTenant(async () => {
       const entry = await triageService.create({ firstName: 'Jane', lastName: 'Roe' });
       expect(entry.patientId).toBeNull();
 
@@ -129,7 +106,7 @@ describe('TriageService (integration)', () => {
   });
 
   it('lists active entries ordered by acuity then triagedAt, excluding closed entries', async () => {
-    await tenantContextService.run({ tenantId: tenantId1, correlationId: 'c2' }, async () => {
+    await ctx.inTenant(async () => {
       const low = await triageService.create({ chiefComplaint: 'Low priority' });
       const high = await triageService.create({ chiefComplaint: 'High priority' });
       const closed = await triageService.create({ chiefComplaint: 'Already handled' });
@@ -147,7 +124,7 @@ describe('TriageService (integration)', () => {
   });
 
   it('throws NotFoundException when updating a non-existent entry', async () => {
-    await tenantContextService.run({ tenantId: tenantId1, correlationId: 'c1' }, async () => {
+    await ctx.inTenant(async () => {
       await expect(
         triageService.update('00000000-0000-0000-0000-000000000000', { status: 'Triaged' }),
       ).rejects.toThrow(NotFoundException);
@@ -157,12 +134,12 @@ describe('TriageService (integration)', () => {
   it('enforces tenant isolation for triage entries', async () => {
     let sharedEntryId: string;
 
-    await tenantContextService.run({ tenantId: tenantId1, correlationId: 'c1' }, async () => {
+    await ctx.inTenant(async () => {
       const entry = await triageService.create({ chiefComplaint: 'Isolated case' });
       sharedEntryId = entry.id;
     });
 
-    await tenantContextService.run({ tenantId: tenantId2, correlationId: 'c1' }, async () => {
+    await tenantB.inTenant(async () => {
       await expect(triageService.findOne(sharedEntryId)).rejects.toThrow(NotFoundException);
     });
   });
