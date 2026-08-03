@@ -27,5 +27,38 @@ To keep the primary business operations fast and resilient, cross-cutting concer
 
 ## 5. Testing
 We enforce a high standard of integration testing against real databases rather than mocking out Repositories.
-- **`inTenant()` Helper**: Wrap your integration tests in the `inTenant(TEST_TENANT_ID, async () => { ... })` utility. This automatically provisions a test schema and runs your assertions inside a transacted sandbox that rolls back on completion.
+
+### Tenant-scoped integration tests
+
+Every integration spec provisions a real tenant schema and runs against it — there is no
+transaction-rollback isolation anywhere in this codebase. Use the shared helper in
+`apps/api/src/testing/tenant-test-context.ts`:
+
+```ts
+let ctx: TenantTestContext;
+
+beforeAll(async () => {
+  ctx = await setupTenantTestContext({ namePrefix: 'my-feature', seedRbac: true });
+});
+
+afterAll(() => teardownTenantTestContext(ctx));
+
+it('...', async () => {
+  await ctx.inTenant(() => ctx.someService.doSomething());
+});
+```
+
+Tenant IDs are sequential and deterministic (`my-feature_1`, `my-feature_2`, ...) — never a
+timestamp or random suffix. `setupTenantTestContext()` drops any same-named schema before
+provisioning, so a schema left behind by a crashed prior run never collides with the next one.
+
+For tests needing more than one tenant (e.g. isolation tests), call `await ctx.createTenant()` —
+it shares the same connection and returns the next sequential tenant ID.
+
+**Audit and reporting subscribers in tests:** both fire on any tracked entity insert regardless
+of a test's isolation model, and write into the *same* tenant schema under test — audit via the
+main connection pool, reporting via its own dedicated pool (see
+`new/docs/superpowers/plans/2026-08-01-reporting-archiver.md`). Both get cleaned up by the same
+`teardownTenantTestContext()` call, since they're schema-scoped, not transaction-scoped.
+
 - **Zero-Pollution**: Tests must not leave residual data. Always use the built-in Jest hooks to clean up connections (`app.close()`).

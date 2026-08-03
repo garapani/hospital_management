@@ -22,7 +22,7 @@ follows the PRD's own phase order — no reason to re-litigate that).
 
 ## Phase 1 — Close the security gaps
 
-1. **Shared `inTenant()` test helper** (new-features.md #5) — build *before* item 3. Proving
+1. [x] **Shared `inTenant()` test helper** (new-features.md #5) — done: `apps/api/src/testing/tenant-test-context.ts`, all ~40 integration specs migrated. Build *before* item 3. Proving
    tenant isolation requires reliable, consistent test infrastructure; building the helper after
    item 3 lands would mean rewriting its isolation tests.
 2. **JWT-backed request auth** (new-features.md #1) — root cause. Every protected route
