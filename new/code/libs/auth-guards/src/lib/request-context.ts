@@ -9,6 +9,12 @@ export interface RequestContext {
   patientId?: string;
 }
 
+declare module 'express' {
+  interface Request {
+    authContext?: RequestContext;
+  }
+}
+
 function parseCsvHeader(value: string | undefined): string[] {
   return (value ?? '')
     .split(',')
