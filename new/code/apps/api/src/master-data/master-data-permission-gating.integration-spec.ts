@@ -29,6 +29,11 @@ describe('MasterDataController permission gating (integration)', () => {
     const tenantContext = moduleRef.get(TenantContextService);
     const masterDataService = moduleRef.get(MasterDataService);
 
+    // Do NOT replace this with ctx.inTenant(): masterDataService is resolved from the
+    // MasterDataModule DI graph, which holds its own TenantContextService instance
+    // (TenantContextModule is @Global()). ctx.inTenant() runs on ctx's own separate, standalone
+    // TenantContextService — a different AsyncLocalStorage entirely — so the DI-resolved service
+    // would see "No tenant context set". The same DI instance also backs the middleware below.
     const department = await tenantContext.run(
       { tenantId: ctx.tenantId, correlationId: 'setup' },
       () =>

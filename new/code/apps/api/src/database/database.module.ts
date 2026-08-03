@@ -26,12 +26,11 @@ export class DatabaseModule implements OnModuleDestroy {
   constructor(private readonly dataSource: DataSource) {}
 
   async onModuleDestroy(): Promise<void> {
-    // This guard is load-bearing, not defensive: most integration specs create their own
-    // separate DataSource via createDataSource() (a different object — no conflict), but at
-    // least one (accounts/audit-wiring.integration-spec.ts) resolves this exact DI-managed
-    // instance via moduleRef.get(DataSource). TypeORM throws CannotExecuteNotConnectedError on
-    // a second destroy() of the same instance, so this check is what prevents that from
-    // crashing teardown, not just belt-and-braces.
+    // This guard is load-bearing, not defensive: several integration specs override this
+    // provider with their own DataSource (`.overrideProvider(DataSource).useValue(ctx.dataSource)`)
+    // and destroy it themselves via teardownTenantTestContext() before calling close(). TypeORM
+    // throws CannotExecuteNotConnectedError on a second destroy() of the same instance, so this
+    // check is what prevents that from crashing teardown, not just belt-and-braces.
     if (this.dataSource.isInitialized) {
       await this.dataSource.destroy();
     }

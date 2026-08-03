@@ -40,8 +40,10 @@ async function provisionTenant(
   // Idempotent: drops any schema left behind by a crashed prior run before creating a fresh one,
   // so deterministic sequential IDs (namePrefix_1, namePrefix_2, ...) never collide across runs.
   await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${tenantId}" CASCADE`);
-  await accountsService.provisionTenantSchema(dataSource, tenantId);
+  // Register before provisioning, not after: if provisionTenantSchema() throws partway through,
+  // the partially-created schema is still registered for teardown to drop.
   registerTenant(dataSource, tenantId);
+  await accountsService.provisionTenantSchema(dataSource, tenantId);
 }
 
 function buildContext(
@@ -82,6 +84,13 @@ function buildContext(
 export async function setupTenantTestContext(
   options: TenantTestContextOptions,
 ): Promise<TenantTestContext> {
+  // Validate before anything else: the tenant id derived from namePrefix is interpolated straight
+  // into a DROP SCHEMA statement in provisionTenant(), which runs before AccountsService's own
+  // safety check would ever see it.
+  if (!/^[a-z0-9_]+$/.test(options.namePrefix)) {
+    throw new Error(`namePrefix must match /^[a-z0-9_]+$/ (got: ${options.namePrefix})`);
+  }
+
   const dataSource = createDataSource();
   await dataSource.initialize();
 
@@ -108,12 +117,14 @@ export async function setupTenantTestContext(
 }
 
 export async function teardownTenantTestContext(ctx: TenantTestContext): Promise<void> {
-  const tenantIds = tenantRegistry.get(ctx.dataSource) ?? [ctx.tenantId];
-  for (const tenantId of tenantIds) {
-    await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${tenantId}" CASCADE`);
-  }
-  tenantRegistry.delete(ctx.dataSource);
+  // Guard the whole body, not just destroy(): a second teardown call on an already-torn-down
+  // context must no-op rather than throw on .query() against a destroyed DataSource.
   if (ctx.dataSource.isInitialized) {
+    const tenantIds = tenantRegistry.get(ctx.dataSource) ?? [ctx.tenantId];
+    for (const tenantId of tenantIds) {
+      await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${tenantId}" CASCADE`);
+    }
+    tenantRegistry.delete(ctx.dataSource);
     await ctx.dataSource.destroy();
   }
 }

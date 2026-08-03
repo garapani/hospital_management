@@ -38,17 +38,25 @@ transaction-rollback isolation anywhere in this codebase. Use the shared helper 
 let ctx: TenantTestContext;
 
 beforeAll(async () => {
-  ctx = await setupTenantTestContext({ namePrefix: 'my-feature', seedRbac: true });
+  ctx = await setupTenantTestContext({ namePrefix: 'my_feature', seedRbac: true });
 });
 
 afterAll(() => teardownTenantTestContext(ctx));
 
 it('...', async () => {
-  await ctx.inTenant(() => ctx.someService.doSomething());
+  const myService = new MyService(ctx.tenantConnection);
+  await ctx.inTenant(() => myService.doSomething());
 });
 ```
 
-Tenant IDs are sequential and deterministic (`my-feature_1`, `my-feature_2`, ...) — never a
+`namePrefix` must match `[a-z0-9_]+` (lowercase letters, digits, underscore only — no hyphens):
+it becomes part of a real Postgres schema name and is rejected by the tenant-id safety check.
+
+`ctx` exposes `dataSource`, `tenantContext`, `tenantConnection`, `accountsService`, `tenantId`,
+`inTenant()` and `createTenant()` — construct any other service under test yourself (as above)
+and call it inside `ctx.inTenant()`.
+
+Tenant IDs are sequential and deterministic (`my_feature_1`, `my_feature_2`, ...) — never a
 timestamp or random suffix. `setupTenantTestContext()` drops any same-named schema before
 provisioning, so a schema left behind by a crashed prior run never collides with the next one.
 
@@ -62,3 +70,35 @@ main connection pool, reporting via its own dedicated pool (see
 `teardownTenantTestContext()` call, since they're schema-scoped, not transaction-scoped.
 
 - **Zero-Pollution**: Tests must not leave residual data. Always use the built-in Jest hooks to clean up connections (`app.close()`).
+
+### Specs that resolve services via Nest DI
+
+If your spec boots a module with `Test.createTestingModule(...)` and resolves the service under
+test via `moduleRef.get(...)`, wrapping its calls in `ctx.inTenant(...)` does **not** set tenant
+context that service can see — you get "No tenant context set". `TenantContextModule` is
+`@Global()` and each `TenantContextService` instance owns a *private* `AsyncLocalStorage`, so
+`ctx`'s standalone instance and the DI graph's instance are two different stores.
+
+**Default fix — make them the same instance.** When building the `TestingModule`, override the
+providers with `ctx`'s objects; `ctx.inTenant()` then works normally for every DI-resolved service:
+
+```ts
+const moduleRef = await Test.createTestingModule({ imports: [MyModule] })
+  .overrideProvider(DataSource)
+  .useValue(ctx.dataSource)
+  .overrideProvider(TenantContextService)
+  .useValue(ctx.tenantContext)
+  .compile();
+```
+
+See `apps/api/src/auth/auth.controller.integration-spec.ts` and
+`apps/api/src/accounts/audit-wiring.integration-spec.ts`.
+
+**Fallback — only when overriding isn't practical** (the spec genuinely needs the real DI-managed
+instances, e.g. it asserts on wiring inside the full `AppModule`): keep the DI-resolved
+`TenantContextService`/`TenantConnectionService` and pass only `ctx.tenantId` (or
+`<childCtx>.tenantId`) as a plain value into your own `tenantContext.run(...)` calls. See
+`apps/api/src/reporting/persisting-reporting-event-publisher.integration-spec.ts`. This is the
+exception, not the default — annotate the call site so nobody "simplifies" it back to
+`ctx.inTenant()`.
+
