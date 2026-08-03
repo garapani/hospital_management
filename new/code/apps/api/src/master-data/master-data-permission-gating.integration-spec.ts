@@ -3,38 +3,34 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { TenantContextMiddleware, TenantContextService } from '@hospital/tenant-context';
 import { DataSource } from 'typeorm';
-import { createDataSource } from '../database/data-source.js';
-import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
-import { AccountsService } from '../accounts/accounts.service.js';
-import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { MasterDataModule } from './master-data.module.js';
 import { MasterDataService } from './master-data.service.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('MasterDataController permission gating (integration)', () => {
   let app: INestApplication;
-  let dataSource: DataSource;
+  let ctx: TenantTestContext;
   let departmentId: string;
-
-  const noPermissionHeaders = { 'x-tenant-id': 'test_masterdata_permgate' };
+  let noPermissionHeaders: Record<string, string>;
 
   beforeAll(async () => {
-    dataSource = createDataSource();
-    await dataSource.initialize();
-    await seedRbacCatalog(dataSource);
+    ctx = await setupTenantTestContext({ namePrefix: 'masterdata_permgate', seedRbac: true });
+    noPermissionHeaders = { 'x-tenant-id': ctx.tenantId };
 
     const moduleRef = await Test.createTestingModule({ imports: [MasterDataModule] })
       .overrideProvider(DataSource)
-      .useValue(dataSource)
+      .useValue(ctx.dataSource)
       .compile();
 
     const tenantContext = moduleRef.get(TenantContextService);
-    const tenantConnection = moduleRef.get(TenantConnectionService);
     const masterDataService = moduleRef.get(MasterDataService);
-    const accountsService = new AccountsService(tenantConnection, dataSource);
-    await accountsService.provisionTenantSchema(dataSource, 'test_masterdata_permgate');
 
     const department = await tenantContext.run(
-      { tenantId: 'test_masterdata_permgate', correlationId: 'setup' },
+      { tenantId: ctx.tenantId, correlationId: 'setup' },
       () =>
         masterDataService.createDepartment({
           departmentCode: 'PERMGATE',
@@ -51,8 +47,7 @@ describe('MasterDataController permission gating (integration)', () => {
   });
 
   afterAll(async () => {
-    await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_masterdata_permgate" CASCADE`);
-    await dataSource.destroy();
+    await teardownTenantTestContext(ctx);
     await app.close();
   });
 

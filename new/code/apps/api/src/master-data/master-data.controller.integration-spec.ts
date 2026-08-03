@@ -3,35 +3,31 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { TenantContextMiddleware, TenantContextService } from '@hospital/tenant-context';
 import { DataSource } from 'typeorm';
-import { createDataSource } from '../database/data-source.js';
-import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
-import { AccountsService } from '../accounts/accounts.service.js';
-import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { MasterDataModule } from './master-data.module.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('MasterDataController (integration)', () => {
   let app: INestApplication;
-  let dataSource: DataSource;
-
-  const adminHeaders = {
-    'x-tenant-id': 'test_masterdata_ctrl',
-    'x-permissions': 'master-data.manage',
-  };
+  let ctx: TenantTestContext;
+  let adminHeaders: Record<string, string>;
 
   beforeAll(async () => {
-    dataSource = createDataSource();
-    await dataSource.initialize();
-    await seedRbacCatalog(dataSource);
+    ctx = await setupTenantTestContext({ namePrefix: 'masterdata_ctrl', seedRbac: true });
+    adminHeaders = {
+      'x-tenant-id': ctx.tenantId,
+      'x-permissions': 'master-data.manage',
+    };
 
     const moduleRef = await Test.createTestingModule({ imports: [MasterDataModule] })
       .overrideProvider(DataSource)
-      .useValue(dataSource)
+      .useValue(ctx.dataSource)
       .compile();
 
     const tenantContext = moduleRef.get(TenantContextService);
-    const tenantConnection = moduleRef.get(TenantConnectionService);
-    const accountsService = new AccountsService(tenantConnection, dataSource);
-    await accountsService.provisionTenantSchema(dataSource, 'test_masterdata_ctrl');
 
     app = moduleRef.createNestApplication();
     app.use(
@@ -41,8 +37,7 @@ describe('MasterDataController (integration)', () => {
   });
 
   afterAll(async () => {
-    await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_masterdata_ctrl" CASCADE`);
-    await dataSource.destroy();
+    await teardownTenantTestContext(ctx);
     await app.close();
   });
 
