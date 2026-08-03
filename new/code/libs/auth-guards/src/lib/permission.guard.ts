@@ -22,11 +22,7 @@ export class PermissionGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
-    const permissionsHeader: string = request.header('x-permissions') ?? '';
-    const grantedPermissions = permissionsHeader
-      .split(',')
-      .map((p: string) => p.trim())
-      .filter(Boolean);
+    const grantedPermissions: string[] = request.authContext?.permissions ?? [];
 
     if (!grantedPermissions.includes(requiredPermission)) {
       throw new ForbiddenException(

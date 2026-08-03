@@ -25,6 +25,11 @@ function parseCsvHeader(value: string | undefined): string[] {
 @Injectable()
 export class RequestContextFactory {
   fromRequest(req: Request): RequestContext {
+    if (req.authContext) {
+      return req.authContext;
+    }
+    // Only reachable on POST /auth/login and POST /auth/refresh, which never populate
+    // req.authContext (see AuthContextMiddleware / TenantContextMiddleware).
     return {
       accountId: req.header('x-account-id') || undefined,
       hospitalId: req.header('x-tenant-id') || undefined,

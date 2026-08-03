@@ -1,7 +1,31 @@
 import { RequestContextFactory } from './request-context.js';
 
 describe('RequestContextFactory', () => {
-  it('builds a request context from forwarded headers', () => {
+  it('returns req.authContext directly when present, ignoring headers', () => {
+    const factory = new RequestContextFactory();
+    const req = {
+      header: () => {
+        throw new Error('should not read headers when authContext is present');
+      },
+      authContext: {
+        accountId: 'acc-1',
+        hospitalId: 'h1',
+        roles: ['Doctor'],
+        permissions: ['clinical.notes.write'],
+        patientId: undefined,
+      },
+    } as any;
+
+    expect(factory.fromRequest(req)).toEqual({
+      accountId: 'acc-1',
+      hospitalId: 'h1',
+      roles: ['Doctor'],
+      permissions: ['clinical.notes.write'],
+      patientId: undefined,
+    });
+  });
+
+  it('falls back to forwarded headers when authContext is absent (login/refresh routes)', () => {
     const factory = new RequestContextFactory();
     const headers: Record<string, string | undefined> = {
       'x-account-id': 'acc-1',
@@ -20,7 +44,7 @@ describe('RequestContextFactory', () => {
     });
   });
 
-  it('defaults to empty arrays and undefined fields when no headers are present', () => {
+  it('defaults to empty arrays and undefined fields when authContext is absent and no headers are present', () => {
     const factory = new RequestContextFactory();
     const req = { header: () => undefined } as any;
 
