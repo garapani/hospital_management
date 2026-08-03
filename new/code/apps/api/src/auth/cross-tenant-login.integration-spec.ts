@@ -3,31 +3,24 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { TenantContextMiddleware, TenantContextService } from '@hospital/tenant-context';
 import { DataSource } from 'typeorm';
-import { createDataSource } from '../database/data-source.js';
-import { TenantConnectionService } from '../database/tenant-connection.service.js';
-import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
-import { AccountsService } from '../accounts/accounts.service.js';
 import { AuthModule } from './auth.module.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('Cross-tenant login isolation (integration)', () => {
   let app: INestApplication;
-  let dataSource: DataSource;
+  let ctx: TenantTestContext;
+  let tenantB: TenantTestContext;
 
   beforeAll(async () => {
-    dataSource = createDataSource();
-    await dataSource.initialize();
-    await seedRbacCatalog(dataSource);
+    ctx = await setupTenantTestContext({ namePrefix: 'cross_tenant_login', seedRbac: true });
+    tenantB = await ctx.createTenant();
 
-    const tenantContext = new TenantContextService();
-    const tenantConnection = new TenantConnectionService(dataSource, tenantContext);
-    const accountsService = new AccountsService(tenantConnection, dataSource);
-
-    for (const tenantId of ['test_xtenant_a', 'test_xtenant_b']) {
-      await accountsService.provisionTenantSchema(dataSource, tenantId);
-    }
-
-    await tenantContext.run({ tenantId: 'test_xtenant_a', correlationId: 'setup' }, () =>
-      accountsService.createStaffAccount({
+    await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
         username: 'shared.username',
         email: 'a@example.com',
         displayName: 'Tenant A User',
@@ -35,8 +28,8 @@ describe('Cross-tenant login isolation (integration)', () => {
         roleName: 'Doctor',
       }),
     );
-    await tenantContext.run({ tenantId: 'test_xtenant_b', correlationId: 'setup' }, () =>
-      accountsService.createStaffAccount({
+    await tenantB.inTenant(() =>
+      tenantB.accountsService.createStaffAccount({
         username: 'shared.username',
         email: 'b@example.com',
         displayName: 'Tenant B User',
@@ -47,35 +40,33 @@ describe('Cross-tenant login isolation (integration)', () => {
 
     const moduleRef = await Test.createTestingModule({ imports: [AuthModule] })
       .overrideProvider(DataSource)
-      .useValue(dataSource)
+      .useValue(ctx.dataSource)
       .overrideProvider(TenantContextService)
-      .useValue(tenantContext)
+      .useValue(ctx.tenantContext)
       .compile();
 
     app = moduleRef.createNestApplication();
     app.use(
-      new TenantContextMiddleware(tenantContext).use.bind(new TenantContextMiddleware(tenantContext)),
+      new TenantContextMiddleware(ctx.tenantContext).use.bind(new TenantContextMiddleware(ctx.tenantContext)),
     );
     await app.init();
   });
 
   afterAll(async () => {
-    await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_xtenant_a" CASCADE`);
-    await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_xtenant_b" CASCADE`);
-    await dataSource.destroy();
+    await teardownTenantTestContext(ctx);
     await app.close();
   });
 
   it('the same username in two tenants authenticates independently with different passwords', async () => {
     const resA = await request(app.getHttpServer())
       .post('/auth/login')
-      .set('x-tenant-id', 'test_xtenant_a')
+      .set('x-tenant-id', ctx.tenantId)
       .send({ username: 'shared.username', password: 'tenant-a-password' });
     expect(resA.status).toBe(200);
 
     const resB = await request(app.getHttpServer())
       .post('/auth/login')
-      .set('x-tenant-id', 'test_xtenant_b')
+      .set('x-tenant-id', tenantB.tenantId)
       .send({ username: 'shared.username', password: 'tenant-b-password' });
     expect(resB.status).toBe(200);
   });
@@ -83,7 +74,7 @@ describe('Cross-tenant login isolation (integration)', () => {
   it("tenant A's password never authenticates against tenant B's account of the same username", async () => {
     const response = await request(app.getHttpServer())
       .post('/auth/login')
-      .set('x-tenant-id', 'test_xtenant_b')
+      .set('x-tenant-id', tenantB.tenantId)
       .send({ username: 'shared.username', password: 'tenant-a-password' });
 
     expect(response.status).toBe(401);
@@ -92,13 +83,13 @@ describe('Cross-tenant login isolation (integration)', () => {
   it("a JWT's hospitalId claim reflects only the tenant it was issued under", async () => {
     const response = await request(app.getHttpServer())
       .post('/auth/login')
-      .set('x-tenant-id', 'test_xtenant_a')
+      .set('x-tenant-id', ctx.tenantId)
       .send({ username: 'shared.username', password: 'tenant-a-password' });
 
     const payload = JSON.parse(
       Buffer.from(response.body.accessToken.split('.')[1], 'base64url').toString('utf8'),
     );
-    expect(payload.hospitalId).toBe('test_xtenant_a');
+    expect(payload.hospitalId).toBe(ctx.tenantId);
     expect(payload.roles).toEqual(['Doctor']);
   });
 });

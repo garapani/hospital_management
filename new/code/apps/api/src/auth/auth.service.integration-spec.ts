@@ -1,25 +1,22 @@
 import { JwtService } from '@nestjs/jwt';
-import { TenantContextService } from '@hospital/tenant-context';
-import { createDataSource } from '../database/data-source.js';
-import { TenantConnectionService } from '../database/tenant-connection.service.js';
-import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
-import { AccountsService } from '../accounts/accounts.service.js';
 import { AuthService } from './auth.service.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('AuthService (integration)', () => {
-  const dataSource = createDataSource();
-  const tenantContext = new TenantContextService();
-  const tenantConnection = new TenantConnectionService(dataSource, tenantContext);
-  const accountsService = new AccountsService(tenantConnection, dataSource);
+  let ctx: TenantTestContext;
   const jwtService = new JwtService({ secret: 'test-secret' });
-  const authService = new AuthService(accountsService, jwtService, tenantContext);
+  let authService: AuthService;
 
   beforeAll(async () => {
-    await dataSource.initialize();
-    await seedRbacCatalog(dataSource);
-    await accountsService.provisionTenantSchema(dataSource, 'test_auth');
-    await tenantContext.run({ tenantId: 'test_auth', correlationId: 'setup' }, () =>
-      accountsService.createStaffAccount({
+    ctx = await setupTenantTestContext({ namePrefix: 'auth_service', seedRbac: true });
+    authService = new AuthService(ctx.accountsService, jwtService, ctx.tenantContext);
+
+    await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
         username: 'dr.carol',
         email: 'carol@example.com',
         displayName: 'Dr. Carol',
@@ -27,8 +24,8 @@ describe('AuthService (integration)', () => {
         roleName: 'Doctor',
       }),
     );
-    await tenantContext.run({ tenantId: 'test_auth', correlationId: 'setup' }, () =>
-      accountsService.createStaffAccount({
+    await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
         username: 'admin.amy',
         email: 'amy@example.com',
         displayName: 'Admin Amy',
@@ -38,17 +35,10 @@ describe('AuthService (integration)', () => {
     );
   });
 
-  afterAll(async () => {
-    await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_auth" CASCADE`);
-    await dataSource.destroy();
-  });
-
-  function inTenant<T>(work: () => Promise<T>): Promise<T> {
-    return tenantContext.run({ tenantId: 'test_auth', correlationId: 'test' }, work);
-  }
+  afterAll(() => teardownTenantTestContext(ctx));
 
   it('issues an access and refresh token for correct credentials', async () => {
-    const result = await inTenant(() =>
+    const result = await ctx.inTenant(() =>
       authService.login({ username: 'dr.carol', password: 'correct-password-123' }),
     );
 
@@ -58,27 +48,27 @@ describe('AuthService (integration)', () => {
       unknown
     >;
     expect(decoded['roles']).toEqual(['Doctor']);
-    expect(decoded['hospitalId']).toBe('test_auth');
+    expect(decoded['hospitalId']).toBe(ctx.tenantId);
   });
 
   it('returns invalidCredentials for a wrong password without revealing which field was wrong', async () => {
-    const result = await inTenant(() =>
+    const result = await ctx.inTenant(() =>
       authService.login({ username: 'dr.carol', password: 'wrong-password' }),
     );
     expect(result).toEqual({ invalidCredentials: true });
   });
 
   it('returns invalidCredentials for a username that does not exist', async () => {
-    const result = await inTenant(() => authService.login({ username: 'nobody', password: 'x' }));
+    const result = await ctx.inTenant(() => authService.login({ username: 'nobody', password: 'x' }));
     expect(result).toEqual({ invalidCredentials: true });
   });
 
   it('locks the account after 5 failed attempts and reports the remaining lock time', async () => {
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      await inTenant(() => authService.login({ username: 'dr.carol', password: 'wrong-password' }));
+      await ctx.inTenant(() => authService.login({ username: 'dr.carol', password: 'wrong-password' }));
     }
 
-    const result = await inTenant(() =>
+    const result = await ctx.inTenant(() =>
       authService.login({ username: 'dr.carol', password: 'correct-password-123' }),
     );
 
@@ -87,7 +77,7 @@ describe('AuthService (integration)', () => {
   });
 
   it("includes the account's real permissions in the JWT, not an empty placeholder", async () => {
-    const result = await inTenant(() =>
+    const result = await ctx.inTenant(() =>
       authService.login({ username: 'admin.amy', password: 'correct-password-123' }),
     );
 

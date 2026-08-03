@@ -2,24 +2,25 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { createDataSource } from '../database/data-source.js';
-import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
 import { TenantsModule } from './tenants.module.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('TenantsController (integration)', () => {
   let app: INestApplication;
-  let dataSource: DataSource;
+  let ctx: TenantTestContext;
 
   const adminHeaders = { 'x-permissions': 'system-admin.tenants.manage' };
 
   beforeAll(async () => {
-    dataSource = createDataSource();
-    await dataSource.initialize();
-    await seedRbacCatalog(dataSource);
+    ctx = await setupTenantTestContext({ namePrefix: 'tenant_ctrl', seedRbac: true });
 
     const moduleRef = await Test.createTestingModule({ imports: [TenantsModule] })
       .overrideProvider(DataSource)
-      .useValue(dataSource)
+      .useValue(ctx.dataSource)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -27,8 +28,8 @@ describe('TenantsController (integration)', () => {
   });
 
   afterAll(async () => {
-    await dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_ctrl_%'`);
-    await dataSource.destroy();
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_ctrl_%'`);
+    await teardownTenantTestContext(ctx);
     await app.close();
   });
 

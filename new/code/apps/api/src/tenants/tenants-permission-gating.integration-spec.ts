@@ -2,25 +2,26 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { createDataSource } from '../database/data-source.js';
-import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
 import { TenantsModule } from './tenants.module.js';
 import { TenantsService } from './tenants.service.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('TenantsController permission gating (integration)', () => {
   let app: INestApplication;
-  let dataSource: DataSource;
+  let ctx: TenantTestContext;
 
   const noPermissionHeaders = {};
 
   beforeAll(async () => {
-    dataSource = createDataSource();
-    await dataSource.initialize();
-    await seedRbacCatalog(dataSource);
+    ctx = await setupTenantTestContext({ namePrefix: 'tenant_permgate', seedRbac: true });
 
     const moduleRef = await Test.createTestingModule({ imports: [TenantsModule] })
       .overrideProvider(DataSource)
-      .useValue(dataSource)
+      .useValue(ctx.dataSource)
       .compile();
 
     const tenantsService = moduleRef.get(TenantsService);
@@ -34,8 +35,8 @@ describe('TenantsController permission gating (integration)', () => {
   });
 
   afterAll(async () => {
-    await dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = 'test_tenant_permgate'`);
-    await dataSource.destroy();
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = 'test_tenant_permgate'`);
+    await teardownTenantTestContext(ctx);
     await app.close();
   });
 

@@ -1,18 +1,23 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { createDataSource } from '../database/data-source.js';
 import { TenantsService } from './tenants.service.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('TenantsService (integration)', () => {
-  const dataSource = createDataSource();
-  const tenantsService = new TenantsService(dataSource);
+  let ctx: TenantTestContext;
+  let tenantsService: TenantsService;
 
   beforeAll(async () => {
-    await dataSource.initialize();
+    ctx = await setupTenantTestContext({ namePrefix: 'tenant_svc' });
+    tenantsService = new TenantsService(ctx.dataSource);
   });
 
   afterAll(async () => {
-    await dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_svc_%'`);
-    await dataSource.destroy();
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_svc_%'`);
+    await teardownTenantTestContext(ctx);
   });
 
   it('provisions a tenant as active with an activatedAt timestamp', async () => {
