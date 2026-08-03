@@ -27,6 +27,9 @@ describe('TenantConnectionService (integration)', () => {
     await teardownTenantTestContext(ctx);
   });
 
+  // This file intentionally uses ctx.tenantContext.run(...) directly, not ctx.inTenant(...), in
+  // every test below: ctx.inTenant() is hardcoded to ctx.tenantId, but these tests need arbitrary
+  // literal tenant ids (test_a/test_b, and a SQL-injection probe string) that don't match it.
   it('only sees the current tenant context schema\'s data', async () => {
     const rowsForA = await ctx.tenantContext.run(
       { tenantId: 'test_a', correlationId: 'c1' },
