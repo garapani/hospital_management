@@ -68,6 +68,11 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     await app.close();
   });
 
+  // Do NOT replace this with ctx.inTenant(): every domain service in this file (patientsService,
+  // ordersService, etc.) is resolved from the AppModule DI graph, which holds exactly one
+  // TenantContextService instance (TenantContextModule is @Global()). ctx.inTenant() runs on
+  // ctx's own separate, standalone TenantContextService (a different AsyncLocalStorage entirely)
+  // — using it here would make every DI-resolved service see "No tenant context set".
   function inTenant<T>(tenantId: string, work: () => Promise<T>): Promise<T> {
     return tenantContextService.run(
       { tenantId, correlationId: 'test-correlation' },
