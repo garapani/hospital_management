@@ -3,43 +3,39 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { TenantContextMiddleware, TenantContextService } from '@hospital/tenant-context';
 import { DataSource } from 'typeorm';
-import { createDataSource } from '../database/data-source.js';
-import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
-import { AccountsService } from '../accounts/accounts.service.js';
-import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { PatientsModule } from './patients.module.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('PatientsController (integration)', () => {
   let app: INestApplication;
-  let dataSource: DataSource;
-  let tenantContext: TenantContextService;
+  let ctx: TenantTestContext;
 
-  const tenantId = 'test_patients_ctrl';
-
-  const fullPermHeaders = {
-    'x-tenant-id': tenantId,
-    'x-permissions': 'patients.create,patients.read,patients.update,patients.manage',
-  };
-
-  const readOnlyHeaders = {
-    'x-tenant-id': tenantId,
-    'x-permissions': 'patients.read',
-  };
+  let fullPermHeaders: { 'x-tenant-id': string; 'x-permissions': string };
+  let readOnlyHeaders: { 'x-tenant-id': string; 'x-permissions': string };
 
   beforeAll(async () => {
-    dataSource = createDataSource();
-    await dataSource.initialize();
-    await seedRbacCatalog(dataSource);
+    ctx = await setupTenantTestContext({ namePrefix: 'patients_ctrl', seedRbac: true });
+
+    fullPermHeaders = {
+      'x-tenant-id': ctx.tenantId,
+      'x-permissions': 'patients.create,patients.read,patients.update,patients.manage',
+    };
+
+    readOnlyHeaders = {
+      'x-tenant-id': ctx.tenantId,
+      'x-permissions': 'patients.read',
+    };
 
     const moduleRef = await Test.createTestingModule({ imports: [PatientsModule] })
       .overrideProvider(DataSource)
-      .useValue(dataSource)
+      .useValue(ctx.dataSource)
       .compile();
 
-    tenantContext = moduleRef.get(TenantContextService);
-    const tenantConnection = moduleRef.get(TenantConnectionService);
-    const accountsService = new AccountsService(tenantConnection, dataSource);
-    await accountsService.provisionTenantSchema(dataSource, tenantId);
+    const tenantContext = moduleRef.get(TenantContextService);
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
@@ -50,8 +46,7 @@ describe('PatientsController (integration)', () => {
   });
 
   afterAll(async () => {
-    await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${tenantId}" CASCADE`);
-    await dataSource.destroy();
+    await teardownTenantTestContext(ctx);
     await app.close();
   });
 

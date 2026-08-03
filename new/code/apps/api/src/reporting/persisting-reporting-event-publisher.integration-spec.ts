@@ -3,8 +3,6 @@ import { INestApplication, Logger } from '@nestjs/common';
 import { DataSource, ObjectLiteral, Repository } from 'typeorm';
 import type { DataSourceOptions } from 'typeorm';
 import { AppModule } from '../app/app.module.js';
-import { AccountsService } from '../accounts/accounts.service.js';
-import { dataSource as globalDataSource } from '../database/data-source.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { PatientsService } from '../patients/patients.service.js';
@@ -21,13 +19,18 @@ import {
   REPORTING_DATA_SOURCE,
   createReportingDataSource,
 } from '../database/reporting-data-source.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('PersistingReportingEventPublisher (integration)', () => {
   let app: INestApplication;
-  let dataSource: DataSource;
+  let ctx: TenantTestContext;
+  let tenantB: TenantTestContext;
   let tenantConnection: TenantConnectionService;
   let tenantContextService: TenantContextService;
-  let accountsService: AccountsService;
 
   let patientsService: PatientsService;
   let masterDataService: MasterDataService;
@@ -36,8 +39,6 @@ describe('PersistingReportingEventPublisher (integration)', () => {
   let invoicesService: InvoicesService;
   let depositsService: DepositsService;
 
-  const TEST_TENANT_ID_1 = `test_reporting_${Date.now()}`;
-  const TEST_TENANT_ID_2 = `test_reporting_iso_${Date.now()}`;
   const DOCTOR_ID = '00000000-0000-0000-0000-000000000001';
 
   beforeAll(async () => {
@@ -48,12 +49,10 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     app = moduleFixture.createNestApplication();
     await app.init();
 
-    dataSource = globalDataSource;
-    if (!dataSource.isInitialized) {
-      await dataSource.initialize();
-    }
+    // Provision tenant schemas directly — no central Tenant row is needed for schema/table setup.
+    ctx = await setupTenantTestContext({ namePrefix: 'reporting' });
+    tenantB = await ctx.createTenant();
 
-    accountsService = moduleFixture.get(AccountsService);
     tenantConnection = moduleFixture.get(TenantConnectionService);
     tenantContextService = moduleFixture.get(TenantContextService);
     patientsService = moduleFixture.get(PatientsService);
@@ -62,25 +61,10 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     ordersService = moduleFixture.get(OrdersService);
     invoicesService = moduleFixture.get(InvoicesService);
     depositsService = moduleFixture.get(DepositsService);
-
-    // Provision tenant schemas directly — no central Tenant row is needed for schema/table setup.
-    await accountsService.provisionTenantSchema(dataSource, TEST_TENANT_ID_1);
-    await accountsService.provisionTenantSchema(dataSource, TEST_TENANT_ID_2);
   });
 
   afterAll(async () => {
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.connect();
-    try {
-      await queryRunner.query(
-        `DROP SCHEMA IF EXISTS "tenant_${TEST_TENANT_ID_1}" CASCADE`,
-      );
-      await queryRunner.query(
-        `DROP SCHEMA IF EXISTS "tenant_${TEST_TENANT_ID_2}" CASCADE`,
-      );
-    } finally {
-      await queryRunner.release();
-    }
+    await teardownTenantTestContext(ctx);
     await app.close();
   });
 
@@ -102,7 +86,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
   }
 
   it('does not create a reporting event for unmapped entities (Patient)', async () => {
-    await inTenant(TEST_TENANT_ID_1, async () => {
+    await inTenant(ctx.tenantId, async () => {
       const beforeCount = await tenantConnection.runInTenantSchema((m) =>
         m.getRepository(ReportingEvent).count(),
       );
@@ -122,7 +106,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
   });
 
   it('captures all 6 mapped business events successfully', async () => {
-    await inTenant(TEST_TENANT_ID_1, async () => {
+    await inTenant(ctx.tenantId, async () => {
       const patient = await patientsService.create({
         firstName: 'Report',
         lastName: 'Patient',
@@ -192,7 +176,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
 
       // Verify PatientAdmitted
       const admittedEvents = await getEvents(
-        TEST_TENANT_ID_1,
+        ctx.tenantId,
         'PatientAdmitted',
       );
       expect(admittedEvents).toHaveLength(1);
@@ -206,7 +190,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
 
       // Verify BedTransferred
       const transferEvents = await getEvents(
-        TEST_TENANT_ID_1,
+        ctx.tenantId,
         'BedTransferred',
       );
       expect(transferEvents).toHaveLength(2);
@@ -231,7 +215,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       // Verify OrderPlaced.
       // Only Order-native columns are captured: afterInsert fires on the `orders` row before
       // OrdersService saves its OrderItem rows, so item data is deliberately not in the payload.
-      const orderEvents = await getEvents(TEST_TENANT_ID_1, 'OrderPlaced');
+      const orderEvents = await getEvents(ctx.tenantId, 'OrderPlaced');
       expect(orderEvents).toHaveLength(1);
       expect(orderEvents[0].entityId).toBe(order.id);
       expect(orderEvents[0].payload).toMatchObject({
@@ -245,7 +229,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       expect(orderEvents[0].payload).not.toHaveProperty('itemTypes');
 
       // Verify InvoiceCreated
-      const invoiceEvents = await getEvents(TEST_TENANT_ID_1, 'InvoiceCreated');
+      const invoiceEvents = await getEvents(ctx.tenantId, 'InvoiceCreated');
       expect(invoiceEvents).toHaveLength(1);
       expect(invoiceEvents[0].entityId).toBe(invoice.id);
       expect(invoiceEvents[0].payload).toMatchObject({
@@ -256,7 +240,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
 
       // Verify PaymentRecorded
       const paymentEvents = await getEvents(
-        TEST_TENANT_ID_1,
+        ctx.tenantId,
         'PaymentRecorded',
       );
       expect(paymentEvents).toHaveLength(1);
@@ -269,7 +253,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
 
       // Verify DepositReceived
       const depositEvents = await getEvents(
-        TEST_TENANT_ID_1,
+        ctx.tenantId,
         'DepositReceived',
       );
       expect(depositEvents).toHaveLength(1);
@@ -293,7 +277,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     // @AuditExcludeEntity() on ReportingEvent is therefore redundant belt-and-braces defense today,
     // not the active mechanism keeping this test green — see the decorator-presence guard below
     // for a direct regression check on the decorator itself.
-    const auditRows = await inTenant(TEST_TENANT_ID_1, () =>
+    const auditRows = await inTenant(ctx.tenantId, () =>
       tenantConnection.runInTenantSchema((m) =>
         m
           .getRepository(AuditRecord)
@@ -314,11 +298,11 @@ describe('PersistingReportingEventPublisher (integration)', () => {
   });
 
   it('enforces tenant isolation', async () => {
-    await inTenant(TEST_TENANT_ID_2, async () => {
+    await inTenant(tenantB.tenantId, async () => {
       const events = await tenantConnection.runInTenantSchema((m) =>
         m.getRepository(ReportingEvent).count(),
       );
-      expect(events).toBe(0); // Should be 0 because all previous events were in TEST_TENANT_ID_1
+      expect(events).toBe(0); // Should be 0 because all previous events were in ctx.tenantId
     });
   });
 
@@ -355,7 +339,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     const spy = jest.spyOn(tenantConnection, 'runInTenantSchema');
 
     try {
-      await inTenant(TEST_TENANT_ID_1, async () => {
+      await inTenant(ctx.tenantId, async () => {
         const patient = await patientsService.create({
           firstName: 'Routing',
           lastName: 'Pin',
@@ -422,7 +406,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       // subsequent statement including COMMIT ("current transaction is aborted"), and the order
       // would never have persisted no matter what the publisher's try/catch did. The order being
       // readable afterwards is therefore proof the reporting write is on its own connection.
-      const schema = `tenant_${TEST_TENANT_ID_1}`;
+      const schema = `tenant_${ctx.tenantId}`;
       const loggedErrors: unknown[] = [];
       jest
         .spyOn(Logger.prototype, 'error')
@@ -431,7 +415,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
         });
 
       const renameTable = async (from: string, to: string) => {
-        const queryRunner = dataSource.createQueryRunner();
+        const queryRunner = ctx.dataSource.createQueryRunner();
         await queryRunner.connect();
         try {
           await queryRunner.query(
@@ -447,7 +431,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       let order: { id: string };
       let patientId: string;
       try {
-        const result = await inTenant(TEST_TENANT_ID_1, async () => {
+        const result = await inTenant(ctx.tenantId, async () => {
           const patient = await patientsService.create({
             firstName: 'SqlLevel',
             lastName: 'Failure',
@@ -485,7 +469,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       ).toBe(true);
 
       // ...and the business transaction still committed: order + items are readable.
-      const persisted = await inTenant(TEST_TENANT_ID_1, () =>
+      const persisted = await inTenant(ctx.tenantId, () =>
         ordersService.findOne(order.id),
       );
       expect(persisted.id).toBe(order.id);
@@ -493,7 +477,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       expect(persisted.items).toHaveLength(1);
 
       // No reporting event was archived for it.
-      const orderEvents = await getEvents(TEST_TENANT_ID_1, 'OrderPlaced');
+      const orderEvents = await getEvents(ctx.tenantId, 'OrderPlaced');
       expect(orderEvents.map((e) => e.entityId)).not.toContain(order.id);
     });
 
@@ -515,7 +499,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       } as typeof Repository.prototype.save);
 
       const { order, patientId } = await inTenant(
-        TEST_TENANT_ID_1,
+        ctx.tenantId,
         async () => {
           const patient = await patientsService.create({
             firstName: 'Archive',
@@ -537,7 +521,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       jest.restoreAllMocks();
 
       // The business transaction committed: the order and its items are readable.
-      const persisted = await inTenant(TEST_TENANT_ID_1, () =>
+      const persisted = await inTenant(ctx.tenantId, () =>
         ordersService.findOne(order.id),
       );
       expect(persisted.id).toBe(order.id);
@@ -545,7 +529,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       expect(persisted.items).toHaveLength(1);
 
       // ...and no reporting event was archived for it.
-      const orderEvents = await getEvents(TEST_TENANT_ID_1, 'OrderPlaced');
+      const orderEvents = await getEvents(ctx.tenantId, 'OrderPlaced');
       expect(orderEvents.map((e) => e.entityId)).not.toContain(order.id);
     });
 
@@ -555,7 +539,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
         .spyOn(publisher, 'publish')
         .mockRejectedValue(new Error('simulated reporting publisher failure'));
 
-      const order = await inTenant(TEST_TENANT_ID_1, async () => {
+      const order = await inTenant(ctx.tenantId, async () => {
         const patient = await patientsService.create({
           firstName: 'Publisher',
           lastName: 'Failure',
@@ -577,12 +561,12 @@ describe('PersistingReportingEventPublisher (integration)', () => {
 
       jest.restoreAllMocks();
 
-      const persisted = await inTenant(TEST_TENANT_ID_1, () =>
+      const persisted = await inTenant(ctx.tenantId, () =>
         ordersService.findOne(order.id),
       );
       expect(persisted.id).toBe(order.id);
 
-      const orderEvents = await getEvents(TEST_TENANT_ID_1, 'OrderPlaced');
+      const orderEvents = await getEvents(ctx.tenantId, 'OrderPlaced');
       expect(orderEvents.map((e) => e.entityId)).not.toContain(order.id);
     });
   });

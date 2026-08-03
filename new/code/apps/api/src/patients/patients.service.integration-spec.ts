@@ -1,42 +1,26 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { TenantContextService } from '@hospital/tenant-context';
-import { dataSource } from '../database/data-source.js';
-import { TenantConnectionService } from '../database/tenant-connection.service.js';
-import { CreatePatientTables005 } from '../database/migrations/005_create_patient_tables.js';
 import { PatientNumberGeneratorService } from './patient-number-generator.service.js';
 import { PatientsService } from './patients.service.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('PatientsService (integration)', () => {
-  let tenantContext: TenantContextService;
-  let tenantConnection: TenantConnectionService;
-  let generatorService: PatientNumberGeneratorService;
+  let ctx: TenantTestContext;
   let service: PatientsService;
-  const schema = 'tenant_patients_service_test';
 
   beforeAll(async () => {
-    if (!dataSource.isInitialized) {
-      await dataSource.initialize();
-    }
-    tenantContext = new TenantContextService();
-    tenantConnection = new TenantConnectionService(dataSource, tenantContext);
-    generatorService = new PatientNumberGeneratorService(tenantConnection);
-    service = new PatientsService(tenantConnection, generatorService);
-
-    await dataSource.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-    await dataSource.query(`CREATE SCHEMA "${schema}"`);
-
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.query(`SET search_path TO "${schema}"`);
-    await new CreatePatientTables005().up(queryRunner);
-    await queryRunner.release();
+    ctx = await setupTenantTestContext({ namePrefix: 'patients_svc' });
+    const generatorService = new PatientNumberGeneratorService(ctx.tenantConnection);
+    service = new PatientsService(ctx.tenantConnection, generatorService);
   });
 
-  afterAll(async () => {
-    await dataSource.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-  });
+  afterAll(() => teardownTenantTestContext(ctx));
 
   it('registers patient and triggers conflict exception on duplicate phone without override', async () => {
-    await tenantContext.run({ tenantId: 'patients_service_test', correlationId: 'c1' }, async () => {
+    await ctx.inTenant(async () => {
       const p1 = await service.create({
         firstName: 'Alice',
         lastName: 'Smith',
@@ -67,7 +51,7 @@ describe('PatientsService (integration)', () => {
   });
 
   it('searches and updates patient record', async () => {
-    await tenantContext.run({ tenantId: 'patients_service_test', correlationId: 'c2' }, async () => {
+    await ctx.inTenant(async () => {
       const created = await service.create({
         firstName: 'Robert',
         lastName: 'Brown',
@@ -85,7 +69,7 @@ describe('PatientsService (integration)', () => {
   });
 
   it('finds patient by id and handles not found and deactivation', async () => {
-    await tenantContext.run({ tenantId: 'patients_service_test', correlationId: 'c3' }, async () => {
+    await ctx.inTenant(async () => {
       const created = await service.create({
         firstName: 'Jane',
         lastName: 'Doe',
