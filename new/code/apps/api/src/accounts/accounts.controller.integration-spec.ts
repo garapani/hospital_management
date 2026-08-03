@@ -3,30 +3,31 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { TenantContextMiddleware, TenantContextService } from '@hospital/tenant-context';
 import { DataSource } from 'typeorm';
-import { createDataSource } from '../database/data-source.js';
-import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
 import { AccountsModule } from './accounts.module.js';
-import { AccountsService } from './accounts.service.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('AccountsController (integration)', () => {
   let app: INestApplication;
-  let dataSource: DataSource;
-  let tenantContext: TenantContextService;
-  let accountsService: AccountsService;
+  let ctx: TenantTestContext;
+  let adminHeaders: Record<string, string>;
 
   beforeAll(async () => {
-    dataSource = createDataSource();
-    await dataSource.initialize();
-    await seedRbacCatalog(dataSource);
+    ctx = await setupTenantTestContext({ namePrefix: 'accounts_controller', seedRbac: true });
+    adminHeaders = {
+      'x-tenant-id': ctx.tenantId,
+      'x-permissions': 'identity.accounts.manage',
+    };
 
     const moduleRef = await Test.createTestingModule({ imports: [AccountsModule] })
       .overrideProvider(DataSource)
-      .useValue(dataSource)
+      .useValue(ctx.dataSource)
       .compile();
 
-    tenantContext = moduleRef.get(TenantContextService);
-    accountsService = moduleRef.get(AccountsService);
-    await accountsService.provisionTenantSchema(dataSource, 'test_accounts_controller');
+    const tenantContext = moduleRef.get(TenantContextService);
 
     app = moduleRef.createNestApplication();
     app.use(
@@ -36,15 +37,9 @@ describe('AccountsController (integration)', () => {
   });
 
   afterAll(async () => {
-    await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_accounts_controller" CASCADE`);
-    await dataSource.destroy();
+    await teardownTenantTestContext(ctx);
     await app.close();
   });
-
-  const adminHeaders = {
-    'x-tenant-id': 'test_accounts_controller',
-    'x-permissions': 'identity.accounts.manage',
-  };
 
   it('creates a staff account with needsPasswordUpdate set, and never returns passwordHash', async () => {
     const response = await request(app.getHttpServer())

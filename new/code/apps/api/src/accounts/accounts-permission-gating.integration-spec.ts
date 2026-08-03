@@ -3,43 +3,39 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { TenantContextMiddleware, TenantContextService } from '@hospital/tenant-context';
 import { DataSource } from 'typeorm';
-import { createDataSource } from '../database/data-source.js';
-import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
 import { AccountsModule } from './accounts.module.js';
-import { AccountsService } from './accounts.service.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('AccountsController permission gating (integration)', () => {
   let app: INestApplication;
-  let dataSource: DataSource;
+  let ctx: TenantTestContext;
   let accountId: string;
-
-  const noPermissionHeaders = {
-    'x-tenant-id': 'test_permission_gating',
-  };
+  let noPermissionHeaders: Record<string, string>;
 
   beforeAll(async () => {
-    dataSource = createDataSource();
-    await dataSource.initialize();
-    await seedRbacCatalog(dataSource);
+    ctx = await setupTenantTestContext({ namePrefix: 'permission_gating', seedRbac: true });
+    noPermissionHeaders = {
+      'x-tenant-id': ctx.tenantId,
+    };
 
     const moduleRef = await Test.createTestingModule({ imports: [AccountsModule] })
       .overrideProvider(DataSource)
-      .useValue(dataSource)
+      .useValue(ctx.dataSource)
       .compile();
 
     const tenantContext = moduleRef.get(TenantContextService);
-    const accountsService = moduleRef.get(AccountsService);
-    await accountsService.provisionTenantSchema(dataSource, 'test_permission_gating');
-    const account = await tenantContext.run(
-      { tenantId: 'test_permission_gating', correlationId: 'setup' },
-      () =>
-        accountsService.createStaffAccount({
-          username: 'no.permission.doctor',
-          email: 'noperm@example.com',
-          displayName: 'No Permission Doctor',
-          password: 'a-doctor-password',
-          roleName: 'Doctor',
-        }),
+    const account = await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
+        username: 'no.permission.doctor',
+        email: 'noperm@example.com',
+        displayName: 'No Permission Doctor',
+        password: 'a-doctor-password',
+        roleName: 'Doctor',
+      }),
     );
     accountId = account.id;
 
@@ -51,8 +47,7 @@ describe('AccountsController permission gating (integration)', () => {
   });
 
   afterAll(async () => {
-    await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_permission_gating" CASCADE`);
-    await dataSource.destroy();
+    await teardownTenantTestContext(ctx);
     await app.close();
   });
 

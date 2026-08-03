@@ -1,33 +1,24 @@
-import { TenantContextService } from '@hospital/tenant-context';
-import { createDataSource } from '../database/data-source.js';
-import { TenantConnectionService } from '../database/tenant-connection.service.js';
-import { AccountsService } from '../accounts/accounts.service.js';
 import { AuditRecord } from './entities/audit-record.entity.js';
 import { PersistingAuditEventPublisher } from './persisting-audit-event-publisher.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('PersistingAuditEventPublisher (integration)', () => {
-  const dataSource = createDataSource();
-  const tenantContext = new TenantContextService();
-  const tenantConnection = new TenantConnectionService(dataSource, tenantContext);
-  const accountsService = new AccountsService(tenantConnection, dataSource);
-  const publisher = new PersistingAuditEventPublisher(tenantConnection);
+  let ctx: TenantTestContext;
+  let publisher: PersistingAuditEventPublisher;
 
   beforeAll(async () => {
-    await dataSource.initialize();
-    await accountsService.provisionTenantSchema(dataSource, 'test_audit_persist');
+    ctx = await setupTenantTestContext({ namePrefix: 'audit_persist' });
+    publisher = new PersistingAuditEventPublisher(ctx.tenantConnection);
   });
 
-  afterAll(async () => {
-    await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_audit_persist" CASCADE`);
-    await dataSource.destroy();
-  });
-
-  function inTenant<T>(work: () => Promise<T>): Promise<T> {
-    return tenantContext.run({ tenantId: 'test_audit_persist', correlationId: 'test-correlation' }, work);
-  }
+  afterAll(() => teardownTenantTestContext(ctx));
 
   it('persists an audit record into the current tenant schema', async () => {
-    await inTenant(() =>
+    await ctx.inTenant(() =>
       publisher.publish({
         tableName: 'accounts',
         recordId: '11111111-1111-1111-1111-111111111111',
@@ -40,8 +31,8 @@ describe('PersistingAuditEventPublisher (integration)', () => {
       }),
     );
 
-    const records = await inTenant(() =>
-      tenantConnection.runInTenantSchema((manager) =>
+    const records = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
         manager.getRepository(AuditRecord).find({ where: { tableName: 'accounts' } }),
       ),
     );
