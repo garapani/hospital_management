@@ -1,43 +1,30 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { DataSource } from 'typeorm';
 import { AppModule } from '../app/app.module.js';
-import { AccountsService } from '../accounts/accounts.service.js';
-import { dataSource as globalDataSource } from '../database/data-source.js';
+import {
+  setupTenantTestContext,
+  teardownTenantTestContext,
+  TenantTestContext,
+} from '../testing/tenant-test-context.js';
 
 describe('BillingSettingsController (e2e)', () => {
   let app: INestApplication;
-  let dataSource: DataSource;
-  let accountsService: AccountsService;
-  const TEST_TENANT_ID = 'test_billing_settings_e2e';
+  let ctx: TenantTestContext;
 
   beforeAll(async () => {
+    ctx = await setupTenantTestContext({ namePrefix: 'billing_settings_ctrl' });
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
 
     app = moduleFixture.createNestApplication();
     await app.init();
-
-    dataSource = globalDataSource;
-    accountsService = moduleFixture.get(AccountsService);
-
-    if (!dataSource.isInitialized) {
-      await dataSource.initialize();
-    }
-
-    await accountsService.provisionTenantSchema(dataSource, TEST_TENANT_ID);
   });
 
   afterAll(async () => {
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.connect();
-    try {
-      await queryRunner.query(`DROP SCHEMA IF EXISTS "tenant_${TEST_TENANT_ID}" CASCADE`);
-    } finally {
-      await queryRunner.release();
-    }
+    await teardownTenantTestContext(ctx);
     await app.close();
   });
 
