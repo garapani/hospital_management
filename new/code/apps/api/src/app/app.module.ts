@@ -1,4 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
+import { ObservabilityLoggerModule } from '@hospital/observability';
 import { TenantContextModule, TenantContextMiddleware } from '@hospital/tenant-context';
 import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { AuthModule } from '../auth/auth.module.js';
@@ -16,7 +17,7 @@ import { BillingModule } from '../billing/billing.module.js';
 import { ReportingModule } from '../reporting/reporting.module.js';
 
 @Module({
-  imports: [TenantContextModule, AuthModule, TenantsModule, AuditModule, MasterDataModule, PatientsModule, AppointmentsModule, VitalsModule, EncountersModule, TriageModule, AdmissionsModule, OrdersModule, BillingModule, ReportingModule],
+  imports: [ObservabilityLoggerModule, TenantContextModule, AuthModule, TenantsModule, AuditModule, MasterDataModule, PatientsModule, AppointmentsModule, VitalsModule, EncountersModule, TriageModule, AdmissionsModule, OrdersModule, BillingModule, ReportingModule],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

@@ -25,6 +25,9 @@
       "path": "../../libs/tenant-context/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/observability/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/auth-guards/tsconfig.lib.json"
     },
     {

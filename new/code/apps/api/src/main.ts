@@ -7,9 +7,11 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app/app.module.js';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { Logger as PinoLogger } from 'nestjs-pino';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(PinoLogger));
   // Without this, OnModuleDestroy hooks (e.g. closing the database connection pools) never run
   // on SIGTERM/SIGINT — only when something explicitly calls app.close() (as tests do).
   app.enableShutdownHooks();
