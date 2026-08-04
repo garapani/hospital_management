@@ -40,6 +40,14 @@ describe('TenantsController (integration)', () => {
   });
 
   afterAll(async () => {
+    const hospitalIds: { hospitalId: string }[] = await ctx.dataSource.query(
+      `SELECT "hospitalId" FROM tenants WHERE "hospitalId" LIKE 'test_tenant_ctrl_%'`,
+    );
+    for (const { hospitalId } of hospitalIds) {
+      const name = `tenant_${hospitalId}`;
+      await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "${name}" CASCADE`);
+      await ctx.dataSource.query(`DROP ROLE IF EXISTS "${name}"`);
+    }
     await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_ctrl_%'`);
     await teardownTenantTestContext(ctx);
     await app.close();

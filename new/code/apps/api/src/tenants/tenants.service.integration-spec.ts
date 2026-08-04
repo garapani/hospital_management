@@ -1,5 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { TenantsService } from './tenants.service.js';
+import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -12,10 +13,18 @@ describe('TenantsService (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'tenant_svc' });
-    tenantsService = new TenantsService(ctx.dataSource);
+    tenantsService = new TenantsService(ctx.dataSource, new TenantProvisioningService(ctx.dataSource));
   });
 
   afterAll(async () => {
+    const hospitalIds: { hospitalId: string }[] = await ctx.dataSource.query(
+      `SELECT "hospitalId" FROM tenants WHERE "hospitalId" LIKE 'test_tenant_svc_%'`,
+    );
+    for (const { hospitalId } of hospitalIds) {
+      const name = `tenant_${hospitalId}`;
+      await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "${name}" CASCADE`);
+      await ctx.dataSource.query(`DROP ROLE IF EXISTS "${name}"`);
+    }
     await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_svc_%'`);
     await teardownTenantTestContext(ctx);
   });

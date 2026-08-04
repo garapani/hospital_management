@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { Tenant } from './entities/tenant.entity.js';
+import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
 
 const SAFE_HOSPITAL_ID = /^[a-z0-9_]+$/;
 
@@ -12,7 +13,10 @@ export interface ProvisionTenantInput {
 
 @Injectable()
 export class TenantsService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly tenantProvisioning: TenantProvisioningService,
+  ) {}
 
   async provisionTenant(input: ProvisionTenantInput): Promise<Tenant> {
     if (!SAFE_HOSPITAL_ID.test(input.hospitalId)) {
@@ -24,6 +28,10 @@ export class TenantsService {
     if (existing) {
       throw new ConflictException(`Tenant ${input.hospitalId} already exists`);
     }
+
+    // Schema/role/migrations before the registry row: if provisioning fails partway through, no
+    // registry row exists to make the tenant look ready when it isn't.
+    await this.tenantProvisioning.provisionTenantSchema(input.hospitalId);
 
     return repository.save(
       repository.create({

@@ -7,22 +7,7 @@ import { Role } from '../rbac/entities/role.entity.js';
 import { Permission } from '../rbac/entities/permission.entity.js';
 import { RolePermission } from '../rbac/entities/role-permission.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
-import { CreateTenantAccountTables } from '../database/migrations/0002-create-tenant-account-tables.js';
-import { AddAccountRolesUniqueActiveAssignment } from '../database/migrations/0004-add-account-roles-unique-active-assignment.js';
-import { CreateAuditRecordsTable } from '../database/migrations/0006-create-audit-records-table.js';
-import { CreateMasterDataTables } from '../database/migrations/0007-create-master-data-tables.js';
-import { CreatePatientTables005 } from '../database/migrations/005_create_patient_tables.js';
-import { CreateAppointmentsTable0009 } from '../database/migrations/0009-create-appointments-table.js';
-import { CreateVitalsTable0010 } from '../database/migrations/0010-create-vitals-table.js';
-import { CreateEncounterTables011 } from '../database/migrations/0011_create_encounter_tables.js';
-import { CreateTriageTable0012 } from '../database/migrations/0012-create-triage-table.js';
-import { CreateBedsTable0013 } from '../database/migrations/0013-create-beds-table.js';
-import { CreateAdmissionsTables0014 } from '../database/migrations/0014-create-admissions-tables.js';
-import { CreateOrdersTables0015 } from '../database/migrations/0015-create-orders-tables.js';
-import { CreateBillingTables0016 } from '../database/migrations/0016-create-billing-tables.js';
-import { CreateReportingTables0017 } from '../database/migrations/0017-create-reporting-tables.js';
 
-const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
 const BCRYPT_SALT_ROUNDS = 12;
 
 export interface CreateStaffAccountInput {
@@ -46,53 +31,6 @@ export class AccountsService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly dataSource: DataSource,
   ) {}
-
-  /**
-   * Test/dev-only stand-in for the deferred `tenant.provisioned` event consumer:
-   * creates the tenant schema and runs the account-tables migration against it directly.
-   */
-  async provisionTenantSchema(dataSource: DataSource, tenantId: string): Promise<void> {
-    if (!SAFE_TENANT_ID.test(tenantId)) {
-      throw new Error(`Refusing to provision unsafe tenant id: ${tenantId}`);
-    }
-    const schemaName = `tenant_${tenantId}`;
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.connect();
-    try {
-      await queryRunner.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
-      await queryRunner.query(`SET search_path TO "${schemaName}", public`);
-      const migration = new CreateTenantAccountTables();
-      await migration.up(queryRunner);
-      const uniqueActiveAssignmentMigration = new AddAccountRolesUniqueActiveAssignment();
-      await uniqueActiveAssignmentMigration.up(queryRunner);
-      const auditRecordsMigration = new CreateAuditRecordsTable();
-      await auditRecordsMigration.up(queryRunner);
-      const masterDataMigration = new CreateMasterDataTables();
-      await masterDataMigration.up(queryRunner);
-      const patientTablesMigration = new CreatePatientTables005();
-      await patientTablesMigration.up(queryRunner);
-      const appointmentsMigration = new CreateAppointmentsTable0009();
-      await appointmentsMigration.up(queryRunner);
-      const vitalsMigration = new CreateVitalsTable0010();
-      await vitalsMigration.up(queryRunner);
-      const encountersMigration = new CreateEncounterTables011();
-      await encountersMigration.up(queryRunner);
-      const triageMigration = new CreateTriageTable0012();
-      await triageMigration.up(queryRunner);
-      const bedsMigration = new CreateBedsTable0013();
-      await bedsMigration.up(queryRunner);
-      const admissionsMigration = new CreateAdmissionsTables0014();
-      await admissionsMigration.up(queryRunner);
-      const ordersMigration = new CreateOrdersTables0015();
-      await ordersMigration.up(queryRunner);
-      const billingMigration = new CreateBillingTables0016();
-      await billingMigration.up(queryRunner);
-      const reportingMigration = new CreateReportingTables0017();
-      await reportingMigration.up(queryRunner);
-    } finally {
-      await queryRunner.release();
-    }
-  }
 
   async createStaffAccount(input: CreateStaffAccountInput): Promise<Account> {
     const role = await this.dataSource

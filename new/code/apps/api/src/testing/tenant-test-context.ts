@@ -2,6 +2,7 @@ import { DataSource } from 'typeorm';
 import { TenantContextService } from '@hospital/tenant-context';
 import { createDataSource } from '../database/data-source.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
 
@@ -20,10 +21,6 @@ export interface TenantTestContextOptions {
   seedRbac?: boolean;
 }
 
-// Keyed by the shared DataSource instance (identical across a root context and every context it
-// produces via createTenant()) — this is what lets teardownTenantTestContext() drop every tenant
-// schema created in a multi-tenant test with a single call, and destroy the connection exactly
-// once regardless of how many tenants were created.
 const tenantRegistry = new WeakMap<DataSource, string[]>();
 
 function registerTenant(dataSource: DataSource, tenantId: string): void {
@@ -34,22 +31,22 @@ function registerTenant(dataSource: DataSource, tenantId: string): void {
 
 async function provisionTenant(
   dataSource: DataSource,
-  accountsService: AccountsService,
+  tenantProvisioning: TenantProvisioningService,
   tenantId: string,
 ): Promise<void> {
-  // Idempotent: drops any schema left behind by a crashed prior run before creating a fresh one,
-  // so deterministic sequential IDs (namePrefix_1, namePrefix_2, ...) never collide across runs.
+  // Idempotent: drops any schema/role left behind by a crashed prior run before creating a fresh
+  // one, so deterministic sequential IDs (namePrefix_1, namePrefix_2, ...) never collide.
   await dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${tenantId}" CASCADE`);
-  // Register before provisioning, not after: if provisionTenantSchema() throws partway through,
-  // the partially-created schema is still registered for teardown to drop.
+  await dataSource.query(`DROP ROLE IF EXISTS "tenant_${tenantId}"`);
   registerTenant(dataSource, tenantId);
-  await accountsService.provisionTenantSchema(dataSource, tenantId);
+  await tenantProvisioning.provisionTenantSchema(tenantId);
 }
 
 function buildContext(
   dataSource: DataSource,
   tenantContext: TenantContextService,
   tenantConnection: TenantConnectionService,
+  tenantProvisioning: TenantProvisioningService,
   accountsService: AccountsService,
   namePrefix: string,
   sequence: { next: number },
@@ -71,11 +68,12 @@ function buildContext(
         dataSource,
         tenantContext,
         tenantConnection,
+        tenantProvisioning,
         accountsService,
         namePrefix,
         sequence,
       );
-      await provisionTenant(dataSource, accountsService, nextCtx.tenantId);
+      await provisionTenant(dataSource, tenantProvisioning, nextCtx.tenantId);
       return nextCtx;
     },
   };
@@ -84,9 +82,6 @@ function buildContext(
 export async function setupTenantTestContext(
   options: TenantTestContextOptions,
 ): Promise<TenantTestContext> {
-  // Validate before anything else: the tenant id derived from namePrefix is interpolated straight
-  // into a DROP SCHEMA statement in provisionTenant(), which runs before AccountsService's own
-  // safety check would ever see it.
   if (!/^[a-z0-9_]+$/.test(options.namePrefix)) {
     throw new Error(`namePrefix must match /^[a-z0-9_]+$/ (got: ${options.namePrefix})`);
   }
@@ -100,6 +95,7 @@ export async function setupTenantTestContext(
 
   const tenantContext = new TenantContextService();
   const tenantConnection = new TenantConnectionService(dataSource, tenantContext);
+  const tenantProvisioning = new TenantProvisioningService(dataSource);
   const accountsService = new AccountsService(tenantConnection, dataSource);
   const sequence = { next: 1 };
 
@@ -107,22 +103,22 @@ export async function setupTenantTestContext(
     dataSource,
     tenantContext,
     tenantConnection,
+    tenantProvisioning,
     accountsService,
     options.namePrefix,
     sequence,
   );
-  await provisionTenant(dataSource, accountsService, ctx.tenantId);
+  await provisionTenant(dataSource, tenantProvisioning, ctx.tenantId);
 
   return ctx;
 }
 
 export async function teardownTenantTestContext(ctx: TenantTestContext): Promise<void> {
-  // Guard the whole body, not just destroy(): a second teardown call on an already-torn-down
-  // context must no-op rather than throw on .query() against a destroyed DataSource.
   if (ctx.dataSource.isInitialized) {
     const tenantIds = tenantRegistry.get(ctx.dataSource) ?? [ctx.tenantId];
     for (const tenantId of tenantIds) {
       await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${tenantId}" CASCADE`);
+      await ctx.dataSource.query(`DROP ROLE IF EXISTS "tenant_${tenantId}"`);
     }
     tenantRegistry.delete(ctx.dataSource);
     await ctx.dataSource.destroy();
