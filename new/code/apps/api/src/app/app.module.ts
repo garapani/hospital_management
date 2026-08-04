@@ -1,5 +1,6 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { TenantContextModule, TenantContextMiddleware } from '@hospital/tenant-context';
+import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { AuthModule } from '../auth/auth.module.js';
 import { TenantsModule } from '../tenants/tenants.module.js';
 import { AuditModule } from '../audit/audit.module.js';
@@ -19,6 +20,13 @@ import { ReportingModule } from '../reporting/reporting.module.js';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(AuthContextMiddleware)
+      .exclude(
+        { path: 'auth/login', method: RequestMethod.POST },
+        { path: 'auth/refresh', method: RequestMethod.POST },
+      )
+      .forRoutes('*');
     consumer.apply(TenantContextMiddleware).forRoutes('*');
   }
 }
