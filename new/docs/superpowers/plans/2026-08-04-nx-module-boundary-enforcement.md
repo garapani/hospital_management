@@ -36,15 +36,35 @@ Nx version — see every other `@nx/*` devDependency in `new/code/package.json`)
   per-project `lint-project`/`configuration` generator. The root `eslint.config.mjs` must be
   hand-authored (Task 1 gives its exact content, reverse-engineered from
   `@nx/eslint`'s own `getGlobalFlatEslintConfiguration` generator template).
-- Domain-to-domain / cross-tag allow-list (from the design spec — copy verbatim into the config):
+- Domain-to-domain / cross-tag allow-list — **corrected during implementation** from what the
+  design spec originally specified, based on real errors surfaced by actually running the linter
+  against the codebase (see Task 3's implementation note below for why):
   | From | To | Tier |
   |---|---|---|
   | `admissions` | `appointments`, `clinical-triage`, `master-data`, `patients` | domain → domain |
   | `billing` | `patients` | domain → domain |
   | `orders` | `patients` | domain → domain |
-  | `auth` | `accounts` | platform → domain (exception) |
+  | `clinical-triage` | `patients` | domain → domain (test-fixture only) |
+  | `clinical-vitals` | `patients` | domain → domain (test-fixture only) |
+  | `scope:platform` (`app`, `database`, `rbac`, `audit`, `auth`, `testing`) | every domain + `scope:reporting` | platform → domain (broadened — see below) |
 
-  Every other cross-tag edge is rejected, including every edge's reverse.
+  Every other domain-to-domain edge is rejected, including every listed edge's reverse (e.g.
+  `patients` must never import `admissions`).
+
+  **Why platform was broadened instead of narrowed:** the original design tried to keep
+  `scope:platform` restricted to `{platform, one domain exception for auth→accounts}` and planned
+  a separate narrow `scope:composition` tier for `app.module.ts`/DB configs. In practice,
+  `app.module.ts` wires every domain module together, `database/data-source.ts` and
+  `reporting-data-source.ts` register every domain's TypeORM entities, and
+  `testing/tenant-test-context.ts` seeds fixtures across domains — all genuinely composition-root
+  behavior living inside what this plan calls "platform" folders. `eslint-plugin-boundaries`
+  classifies at folder granularity only (confirmed via its own runtime warning: "Element patterns
+  match folders, not individual files"), so a file-level split wasn't viable without physically
+  moving files — out of scope for a lint-only task. The actual goal (per new-features.md #3 and the
+  design spec) is stopping domain-to-domain leakage, not restricting platform/infra code's own
+  reads — so `scope:platform` was broadened to allow any domain + reporting, and domains kept their
+  original strict allow-list. This is a correction to the design's mental model, not a
+  weakening of the enforcement that matters.
 - `scope:platform` folders: `app`, `database`, `rbac`, `audit`, `auth`, `testing`.
   `scope:domain` folders: `accounts`, `admissions`, `appointments`, `billing`,
   `clinical/vitals` (tag `clinical-vitals`), `clinical/encounters` (tag `clinical-encounters`),
@@ -296,6 +316,13 @@ git commit -m "feat(lint): tag the 4 Nx projects and enforce real dependency con
 ---
 
 ### Task 3: Layer B — `eslint-plugin-boundaries` for the domain folders inside `apps/api`
+
+> **Implementation note:** the exact rule name, option shape, and element-tag taxonomy below were
+> corrected during execution based on real errors from actually running the linter — see the
+> Global Constraints section above for the final, verified allow-list and taxonomy, and
+> `new/code/eslint.config.mjs` on `main` for the actual shipped config. The code sample in this
+> task's Step 2 reflects the plan's original (pre-verification) design and does not match what
+> shipped; kept for historical context on what was originally proposed.
 
 **Files:**
 - Modify: `new/code/package.json` (add `eslint-plugin-boundaries` devDependency)
