@@ -1707,10 +1707,10 @@ Apply Task 7's established transformation. `encounters.controller.integration-sp
 Run: `pnpm exec jest -c apps/api/jest.config.cts --rootDir apps/api encounters.controller triage.controller vitals.controller orders.controller`
 Expected: PASS, same test counts as before.
 
-- [ ] **Step 3: Run the full suite**
+- [ ] **Step 3: Run the affected suite**
 
-Run: `pnpm exec nx run-many -t typecheck test`
-Expected: **All integration specs pass now** — this is the last migration batch. Every file that referenced `x-tenant-id`/`x-permissions`/`x-roles`/`x-patient-id` for identity (not for the documented login/refresh exception) should now be using real tokens. Confirm the full suite is 100% green, with zero known-tracked failures remaining.
+Run: `pnpm exec nx affected --uncommitted -t typecheck test`
+Expected: **All integration specs pass now** — this is the last migration batch. Every file that referenced `x-tenant-id`/`x-permissions`/`x-roles`/`x-patient-id` for identity (not for the documented login/refresh exception) should now be using real tokens. Confirm the `api` project (the only project this task's changes touch — spec-file-only changes never affect the 3 library projects, verified via `nx show projects --affected`) is 100% green, with zero known-tracked failures remaining. The controller will run one final `nx run-many -t typecheck test` across all 4 projects before declaring the whole plan done, as the authoritative closing gate — this step's narrower scope is sufficient for this task's own verification.
 
 - [ ] **Step 4: Commit**
 
