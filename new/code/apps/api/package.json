@@ -5,6 +5,7 @@
   "type": "module",
   "nx": {
     "name": "api",
+    "tags": ["type:app"],
     "targets": {
       "build": {
         "executor": "nx:run-commands",

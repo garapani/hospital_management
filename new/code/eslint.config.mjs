@@ -20,8 +20,14 @@ export default [
             '^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$',
           ],
           depConstraints: [
-            // Task 2 replaces this permissive placeholder with the real constraints.
-            { sourceTag: '*', onlyDependOnLibsWithTags: ['*'] },
+            {
+              sourceTag: 'type:platform-lib',
+              onlyDependOnLibsWithTags: ['type:platform-lib'],
+            },
+            {
+              sourceTag: 'type:app',
+              onlyDependOnLibsWithTags: ['type:platform-lib', 'type:app'],
+            },
           ],
         },
       ],
