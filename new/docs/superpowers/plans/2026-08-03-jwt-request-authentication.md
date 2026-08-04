@@ -979,7 +979,7 @@ Expected: PASS, no type errors.
 - [ ] **Step 3: Run full suite**
 
 Run: `pnpm exec nx run-many -t test`
-Expected: Same integration-spec failure set as Task 3, Step 8 (no new failures introduced by this task specifically — this task only changes routing/middleware order at the `AppModule` level, which affects the real app but not the ~18 integration specs that each construct their own isolated `Test.createTestingModule` rather than booting the full `AppModule`). Confirm no NEW failures beyond what Task 3 already reported.
+**Corrected expectation (discovered during Task 4's actual execution — the plan's original assumption below was wrong for one file):** most of the ~18 integration specs construct their own isolated `Test.createTestingModule`, so `AppModule`'s own middleware wiring doesn't affect them and they stay on the same failure set as Task 3. But `apps/api/src/clinical/encounters/encounters.controller.integration-spec.ts` boots the **real** `AppModule` directly (only overriding `PermissionGuard`, not auth) — of the 10 specs that boot `AppModule` directly, this is the only one whose assertions hit an exact success path rather than a loose 401-403 range, so it's the only one that newly regresses here. Expected result at this step: **5 failed suites / 32 failed tests** — the 4 files / 25 tests already failing after Task 3 (`accounts.controller`, `patients.controller`, `tenants.controller`, `master-data.controller`, all 403s) **plus** `encounters.controller.integration-spec.ts` (7 tests, now 401 instead of their expected success/403 codes). This is not a defect — `encounters.controller.integration-spec.ts` is already in this plan's Task 11 batch (migrated onto real JWTs there); it simply joins the "not yet migrated" set two tasks earlier than originally expected, because of the AppModule-vs-isolated-module distinction above. Do not attempt to fix it now — confirm the count is exactly 5 suites / 32 tests (no other new failures) and proceed.
 
 - [ ] **Step 4: Commit**
 
@@ -1336,7 +1336,7 @@ Expected: PASS, previous test counts plus 3 (service) + 2 (controller) new tests
 - [ ] **Step 7: Run full suite**
 
 Run: `pnpm exec nx run-many -t typecheck test`
-Expected: Same pre-existing integration-spec failure set as Task 4 (unrelated controller specs still not yet migrated), no new failures beyond that, auth-specific specs green.
+Expected: Same pre-existing integration-spec failure set as Task 4 — **5 failed suites / 32 failed tests** (`accounts.controller`, `patients.controller`, `tenants.controller`, `master-data.controller`, `encounters.controller` — the last one joined this set at Task 4, not a new regression here; see Task 4's corrected expectation) — no new failures beyond that, auth-specific specs green.
 
 - [ ] **Step 8: Commit**
 
@@ -1563,7 +1563,7 @@ Run: `pnpm exec jest -c apps/api/jest.config.cts --rootDir apps/api accounts.con
 Expected: PASS, same test counts as before.
 
 Run: `pnpm exec nx run-many -t typecheck test`
-Expected: These two files' tests now pass; every other not-yet-migrated controller-style spec still fails the same way it did after Task 3 (expected, tracked, fixed in later tasks).
+Expected: These two files' tests now pass; every other not-yet-migrated controller-style spec still fails the same way (expected, tracked, fixed in later tasks) — baseline is 5 failed suites / 32 failed tests as of Task 4 (`accounts.controller`, `patients.controller`, `tenants.controller`, `master-data.controller`, `encounters.controller` — the last fixed in Task 11).
 
 - [ ] **Step 5: Commit**
 
@@ -1601,7 +1601,7 @@ Expected: PASS, same test counts as before.
 - [ ] **Step 3: Run the full suite**
 
 Run: `pnpm exec nx run-many -t typecheck test`
-Expected: These 4 files now pass; unrelated not-yet-migrated files still fail the same tracked way.
+Expected: These 4 files now pass, including `tenants.controller.integration-spec.ts` (one of the 5 files in the known failure baseline since Task 4). Remaining known failures after this task: `patients.controller`, `master-data.controller`, `encounters.controller` (3 suites) — fixed in Tasks 9 and 11.
 
 - [ ] **Step 4: Commit**
 
@@ -1640,7 +1640,7 @@ Expected: PASS, same test counts as before (with the possible 403→401 assertio
 - [ ] **Step 3: Run the full suite**
 
 Run: `pnpm exec nx run-many -t typecheck test`
-Expected: These 5 files now pass; unrelated not-yet-migrated files still fail the same tracked way.
+Expected: These 5 files now pass, including `master-data.controller.integration-spec.ts` and `patients.controller.integration-spec.ts` (two of the 5 files in the known failure baseline since Task 4). Remaining known failure after this task: `encounters.controller` only (1 suite) — fixed in Task 11.
 
 - [ ] **Step 4: Commit**
 
@@ -1673,7 +1673,7 @@ Expected: PASS, same test counts as before.
 - [ ] **Step 3: Run the full suite**
 
 Run: `pnpm exec nx run-many -t typecheck test`
-Expected: These 3 files now pass; unrelated not-yet-migrated files still fail the same tracked way.
+Expected: These 3 files now pass. These were never part of the known failure baseline (billing files didn't regress at Task 4). Remaining known failure after this task, unchanged: `encounters.controller` only (1 suite) — fixed in Task 11.
 
 - [ ] **Step 4: Commit**
 
