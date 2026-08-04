@@ -71,6 +71,30 @@ describe('TenantContextMiddleware', () => {
     expect(observedCorrelationId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
+  it('never consults x-tenant-id/x-account-id headers when req.authContext is present, even if its fields are falsy', () => {
+    const service = new TenantContextService();
+    const middleware = new TenantContextMiddleware(service);
+    const req = buildRequest(
+      { 'x-tenant-id': 'header-tenant', 'x-account-id': 'header-account', 'x-correlation-id': 'corr-1' },
+      { hospitalId: undefined, accountId: undefined },
+    );
+
+    let observed: unknown;
+    middleware.use(req, {} as any, () => {
+      observed = {
+        tenantId: service.getTenantId(),
+        accountId: service.getAccountId(),
+        correlationId: service.getCorrelationId(),
+      };
+    });
+
+    expect(observed).toEqual({
+      tenantId: undefined,
+      accountId: undefined,
+      correlationId: 'corr-1',
+    });
+  });
+
   it('calls next() even when tenant id and account id are absent from both authContext and headers', () => {
     const service = new TenantContextService();
     const middleware = new TenantContextMiddleware(service);
