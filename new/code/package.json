@@ -26,6 +26,7 @@
     "@types/pg": "^8.20.0",
     "@types/supertest": "^7.2.1",
     "eslint": "^9.8.0",
+    "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-boundaries": "^7.1.0",
     "jest": "~30.3.0",
     "jest-environment-node": "~30.3.0",

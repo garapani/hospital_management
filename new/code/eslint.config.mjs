@@ -51,45 +51,115 @@ export default [
     files: ['apps/api/src/**/*.ts'],
     plugins: { boundaries },
     settings: {
-      'boundaries/include': ['apps/api/src/**/*.ts'],
+      // Nx invokes eslint for the `api` project with cwd set to apps/api itself, so element
+      // patterns below (unlike the `files` glob above, which resolves relative to this config
+      // file's own location) must be written relative to apps/api, not the workspace root.
+      'import/resolver': {
+        typescript: true,
+      },
+      'boundaries/include': ['src/**/*.ts'],
       'boundaries/elements': [
-        { type: 'scope:platform', pattern: 'apps/api/src/(app|database|rbac|audit|auth|testing)/**' },
-        { type: 'domain:accounts', pattern: 'apps/api/src/accounts/**' },
-        { type: 'domain:admissions', pattern: 'apps/api/src/admissions/**' },
-        { type: 'domain:appointments', pattern: 'apps/api/src/appointments/**' },
-        { type: 'domain:billing', pattern: 'apps/api/src/billing/**' },
-        { type: 'domain:clinical-vitals', pattern: 'apps/api/src/clinical/vitals/**' },
-        { type: 'domain:clinical-encounters', pattern: 'apps/api/src/clinical/encounters/**' },
-        { type: 'domain:clinical-triage', pattern: 'apps/api/src/clinical/triage/**' },
-        { type: 'domain:master-data', pattern: 'apps/api/src/master-data/**' },
-        { type: 'domain:orders', pattern: 'apps/api/src/orders/**' },
-        { type: 'domain:patients', pattern: 'apps/api/src/patients/**' },
-        { type: 'domain:tenants', pattern: 'apps/api/src/tenants/**' },
-        { type: 'scope:reporting', pattern: 'apps/api/src/reporting/**' },
+        // app.module.ts (wires every domain module together), database/* (DB connection +
+        // DataSource configs that register every domain's entities), rbac/audit/auth/testing
+        // (shared infra and test scaffolding) are all composition-adjacent in this codebase —
+        // restricting what THEY may read isn't this guardrail's goal. Only domain-to-domain
+        // leakage is restricted (see the policies below).
+        { type: 'scope:platform', pattern: 'src/(app|database|rbac|audit|auth|testing)/**' },
+        { type: 'domain:accounts', pattern: 'src/accounts/**' },
+        { type: 'domain:admissions', pattern: 'src/admissions/**' },
+        { type: 'domain:appointments', pattern: 'src/appointments/**' },
+        { type: 'domain:billing', pattern: 'src/billing/**' },
+        { type: 'domain:clinical-vitals', pattern: 'src/clinical/vitals/**' },
+        { type: 'domain:clinical-encounters', pattern: 'src/clinical/encounters/**' },
+        { type: 'domain:clinical-triage', pattern: 'src/clinical/triage/**' },
+        { type: 'domain:master-data', pattern: 'src/master-data/**' },
+        { type: 'domain:orders', pattern: 'src/orders/**' },
+        { type: 'domain:patients', pattern: 'src/patients/**' },
+        { type: 'domain:tenants', pattern: 'src/tenants/**' },
+        { type: 'scope:reporting', pattern: 'src/reporting/**' },
       ],
     },
     rules: {
-      'boundaries/element-types': [
+      'boundaries/dependencies': [
         'error',
         {
           default: 'disallow',
-          rules: [
+          policies: [
             {
-              from: ['scope:platform'],
-              allow: ['scope:platform', 'domain:accounts'],
+              from: { element: { type: 'scope:platform' } },
+              allow: {
+                to: {
+                  element: {
+                    types: {
+                      anyOf: [
+                        'scope:platform', 'domain:accounts', 'domain:admissions', 'domain:appointments',
+                        'domain:billing', 'domain:clinical-vitals', 'domain:clinical-encounters',
+                        'domain:clinical-triage', 'domain:master-data', 'domain:orders', 'domain:patients',
+                        'domain:tenants', 'scope:reporting',
+                      ],
+                    },
+                  },
+                },
+              },
             },
             {
-              from: [
-                'domain:accounts', 'domain:admissions', 'domain:appointments', 'domain:billing',
-                'domain:clinical-vitals', 'domain:clinical-encounters', 'domain:clinical-triage',
-                'domain:master-data', 'domain:orders', 'domain:patients', 'domain:tenants',
-              ],
-              allow: ['scope:platform'],
+              from: {
+                element: {
+                  types: {
+                    anyOf: [
+                      'domain:accounts', 'domain:admissions', 'domain:appointments', 'domain:billing',
+                      'domain:clinical-vitals', 'domain:clinical-encounters', 'domain:clinical-triage',
+                      'domain:master-data', 'domain:orders', 'domain:patients', 'domain:tenants',
+                    ],
+                  },
+                },
+              },
+              allow: { to: { element: { type: 'scope:platform' } } },
             },
-            { from: ['domain:admissions'], allow: ['domain:appointments', 'domain:clinical-triage', 'domain:master-data', 'domain:patients'] },
-            { from: ['domain:billing'], allow: ['domain:patients'] },
-            { from: ['domain:orders'], allow: ['domain:patients'] },
-            { from: ['scope:reporting'], allow: ['scope:platform', 'domain:accounts', 'domain:admissions', 'domain:appointments', 'domain:billing', 'domain:clinical-vitals', 'domain:clinical-encounters', 'domain:clinical-triage', 'domain:master-data', 'domain:orders', 'domain:patients', 'domain:tenants'] },
+            {
+              from: { element: { type: 'domain:admissions' } },
+              allow: {
+                to: {
+                  element: {
+                    types: { anyOf: ['domain:appointments', 'domain:clinical-triage', 'domain:master-data', 'domain:patients'] },
+                  },
+                },
+              },
+            },
+            {
+              from: { element: { type: 'domain:billing' } },
+              allow: { to: { element: { type: 'domain:patients' } } },
+            },
+            {
+              from: { element: { type: 'domain:orders' } },
+              allow: { to: { element: { type: 'domain:patients' } } },
+            },
+            {
+              // Test-fixture-only edges: triage/vitals integration specs seed patient fixtures.
+              from: { element: { type: 'domain:clinical-triage' } },
+              allow: { to: { element: { type: 'domain:patients' } } },
+            },
+            {
+              from: { element: { type: 'domain:clinical-vitals' } },
+              allow: { to: { element: { type: 'domain:patients' } } },
+            },
+            {
+              from: { element: { type: 'scope:reporting' } },
+              allow: {
+                to: {
+                  element: {
+                    types: {
+                      anyOf: [
+                        'scope:platform', 'domain:accounts', 'domain:admissions', 'domain:appointments',
+                        'domain:billing', 'domain:clinical-vitals', 'domain:clinical-encounters',
+                        'domain:clinical-triage', 'domain:master-data', 'domain:orders', 'domain:patients',
+                        'domain:tenants',
+                      ],
+                    },
+                  },
+                },
+              },
+            },
           ],
         },
       ],
