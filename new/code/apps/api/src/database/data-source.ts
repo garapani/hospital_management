@@ -47,8 +47,16 @@ export function createDataSource(): DataSource {
     // Bounds connection acquisition so pool exhaustion fails fast (a thrown, catchable error)
     // instead of queuing forever — node-postgres defaults to connectionTimeoutMillis: 0 (wait
     // indefinitely), which turns sustained overload into a silent, unbounded stall.
+    //
+    // max/statement_timeout are both first-class `pg` Pool/Client options — pg issues
+    // `SET statement_timeout` itself right after connecting, no raw-SQL workaround needed (unlike
+    // search_path, which pg has no first-class option for — see tenant-migration-data-source.ts).
+    // Defaults here are a placeholder pending the real load test PRD.md §12 open question #1
+    // still calls for; both are env-tunable without a code change once that number is known.
     extra: {
       connectionTimeoutMillis: 5000,
+      max: Number(process.env['DB_POOL_MAX'] ?? 20),
+      statement_timeout: Number(process.env['DB_STATEMENT_TIMEOUT_MS'] ?? 30000),
     },
   });
 }
