@@ -1543,10 +1543,11 @@ describe('AccountsController (integration)', () => {
 import { resolveJwtSecret } from '../auth/jwt-secret.js';
 // ...
 const jwtService = new JwtService({ secret: resolveJwtSecret() });
-app.use(new AuthContextMiddleware(jwtService).use.bind(new AuthContextMiddleware(jwtService)));
+const authContextMiddleware = new AuthContextMiddleware(jwtService);
+app.use(authContextMiddleware.use.bind(authContextMiddleware));
 ```
 
-This guarantees the middleware verifies with the exact same secret `signTestToken()` signs with, with no DI dependency on `AccountsModule` having `JwtModule` imported. Use this corrected pattern, not the placeholder shown first.
+This guarantees the middleware verifies with the exact same secret `signTestToken()` signs with, with no DI dependency on `AccountsModule` having `JwtModule` imported. Use this corrected pattern, not the placeholder shown first. Note the single `authContextMiddleware` instance reused for both the `.use` property lookup and the `.bind()` receiver — do NOT write `new AuthContextMiddleware(jwtService).use.bind(new AuthContextMiddleware(jwtService))` (two throwaway instances); it's harmless but wasteful, and this exact block is the template for every remaining batch (Tasks 8-11, ~16 more files), so get it right here once.
 
 - [ ] **Step 2: Run the migrated file's test**
 
