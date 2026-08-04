@@ -14,7 +14,7 @@ export class ReportingSubscriber implements EntitySubscriberInterface {
   private readonly logger = new Logger(ReportingSubscriber.name);
 
   private readonly eventCatalog = new Map<
-    Function,
+    new (...args: any[]) => object,
     {
       eventType: string;
       buildPayload: (
@@ -113,7 +113,9 @@ export class ReportingSubscriber implements EntitySubscriberInterface {
   async afterInsert(event: InsertEvent<any>) {
     if (!event.metadata || typeof event.metadata.target !== 'function') return;
 
-    const handler = this.eventCatalog.get(event.metadata.target);
+    const handler = this.eventCatalog.get(
+      event.metadata.target as new (...args: any[]) => object,
+    );
     if (!handler) {
       return;
     }
