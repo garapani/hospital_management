@@ -112,7 +112,7 @@ this becomes the single source of truth for identity, tenant ID, and permissions
 `req.authContext` is read by:
 - `TenantContextMiddleware` — derives the active tenant schema from `req.authContext.hospitalId`
 - `RequestContextFactory` — exposes identity and permissions to business logic
-- `PermissionGuard` — checks route-level and resource-level permissions against `req.authContext.permissions`
+- `PermissionGuard` — checks route-level permissions against `req.authContext.permissions`
 
 **Why login and refresh are the exception:**
 - `POST /auth/login` has no token yet (it mints one); the middleware accepts an unauthenticated request and allows the controller to read an optional `x-tenant-id` header as a hint for which tenant to authenticate against.

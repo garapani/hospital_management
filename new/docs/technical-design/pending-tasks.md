@@ -27,7 +27,7 @@ follows the PRD's own phase order — no reason to re-litigate that).
    item 3 lands would mean rewriting its isolation tests.
 2. [x] **JWT-backed request auth** (new-features.md #1) — done: `AuthContextMiddleware`
    (`libs/auth-guards`), `POST /auth/refresh`, all controller-style integration specs migrated
-   onto real tokens via `signTestToken()`. Root cause. Every protected route
+   onto real tokens via `signTestToken()`.
 3. **Database-enforced tenant isolation** (new-features.md #2) — defense-in-depth: catches
    tenant-resolution bugs even after item 2 lands. **Blocked on the parked tenant-migration-runner
    gap** (see Dependencies below) — new schema grants can't be rolled out to already-provisioned
