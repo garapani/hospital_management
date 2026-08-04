@@ -32,6 +32,11 @@ describe('TenantsController permission gating (integration)', () => {
       .compile();
 
     const tenantsService = moduleRef.get(TenantsService);
+    // Defensive: clean up any schema/role left behind by a prior crashed/pre-fix run before this
+    // afterAll started dropping them.
+    await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_tenant_permgate" CASCADE`);
+    await ctx.dataSource.query(`DROP ROLE IF EXISTS "tenant_test_tenant_permgate"`);
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = 'test_tenant_permgate'`);
     await tenantsService.provisionTenant({
       hospitalId: 'test_tenant_permgate',
       hospitalName: 'Permission Gate Hospital',
@@ -46,6 +51,8 @@ describe('TenantsController permission gating (integration)', () => {
   });
 
   afterAll(async () => {
+    await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_tenant_permgate" CASCADE`);
+    await ctx.dataSource.query(`DROP ROLE IF EXISTS "tenant_test_tenant_permgate"`);
     await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = 'test_tenant_permgate'`);
     await teardownTenantTestContext(ctx);
     await app.close();

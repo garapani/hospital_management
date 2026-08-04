@@ -82,6 +82,13 @@
         "options": {
           "passWithNoTests": true
         }
+      },
+      "migrate-tenants": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "tsx src/database/migrate-tenants.ts",
+          "cwd": "apps/api"
+        }
       }
     }
   },
