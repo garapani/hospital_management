@@ -28,7 +28,7 @@ describe('AdmissionsController (e2e)', () => {
     await app.close();
   });
 
-  it('fails with 403 when admitting without proper permissions', async () => {
+  it('fails with 401 when admitting without an Authorization header', async () => {
     const res = await request(app.getHttpServer())
       .post('/admissions')
       .send({
@@ -38,14 +38,14 @@ describe('AdmissionsController (e2e)', () => {
         bedId: '00000000-0000-0000-0000-000000000000',
       });
 
-    expect(res.status).toBeGreaterThanOrEqual(401);
-    expect(res.status).toBeLessThanOrEqual(403);
+    // No Authorization header is sent, so AuthContextMiddleware rejects the request
+    // before it ever reaches PermissionGuard — this is always 401, never 403.
+    expect(res.status).toBe(401);
   });
 
-  it('fails with 403 when listing admissions', async () => {
+  it('fails with 401 when listing admissions without an Authorization header', async () => {
     const res = await request(app.getHttpServer()).get('/admissions');
 
-    expect(res.status).toBeGreaterThanOrEqual(401);
-    expect(res.status).toBeLessThanOrEqual(403);
+    expect(res.status).toBe(401);
   });
 });

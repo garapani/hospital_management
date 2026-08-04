@@ -28,10 +28,9 @@ describe('AppointmentsController (e2e)', () => {
     await app.close();
   });
 
-  it('fails with 403 when creating without proper permissions', async () => {
-    // Missing correlation logic/auth headers since we do not inject a valid JWT in this simple E2E,
-    // it should fail at the AuthGuard layer or return 401/403.
-    // In our app, we expect 401 Unauthorized or 403 Forbidden.
+  it('fails with 401 when creating without an Authorization header', async () => {
+    // No Authorization header is sent, so AuthContextMiddleware rejects the request
+    // before it ever reaches PermissionGuard — this is always 401, never 403.
     const res = await request(app.getHttpServer())
       .post('/appointments')
       .send({
@@ -43,6 +42,6 @@ describe('AppointmentsController (e2e)', () => {
         appointmentType: 'Consultation',
       });
 
-    expect([HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN]).toContain(res.status);
+    expect(res.status).toBe(HttpStatus.UNAUTHORIZED);
   });
 });

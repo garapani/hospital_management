@@ -1,8 +1,10 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { TenantContextMiddleware, TenantContextService } from '@hospital/tenant-context';
 import { DataSource } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
 import { MasterDataModule } from './master-data.module.js';
 import { MasterDataService } from './master-data.service.js';
 import {
@@ -10,16 +12,21 @@ import {
   teardownTenantTestContext,
   TenantTestContext,
 } from '../testing/tenant-test-context.js';
+import { signTestToken } from '../testing/test-jwt.js';
+import { resolveJwtSecret } from '../auth/jwt-secret.js';
 
 describe('MasterDataController permission gating (integration)', () => {
   let app: INestApplication;
   let ctx: TenantTestContext;
   let departmentId: string;
-  let noPermissionHeaders: Record<string, string>;
+  let noPermissionToken: string;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'masterdata_permgate', seedRbac: true });
-    noPermissionHeaders = { 'x-tenant-id': ctx.tenantId };
+    noPermissionToken = await signTestToken({
+      sub: 'master-data-permgate-user',
+      hospitalId: ctx.tenantId,
+    });
 
     const moduleRef = await Test.createTestingModule({ imports: [MasterDataModule] })
       .overrideProvider(DataSource)
@@ -45,6 +52,9 @@ describe('MasterDataController permission gating (integration)', () => {
     departmentId = department.id;
 
     app = moduleRef.createNestApplication();
+    const jwtService = new JwtService({ secret: resolveJwtSecret() });
+    const authContextMiddleware = new AuthContextMiddleware(jwtService);
+    app.use(authContextMiddleware.use.bind(authContextMiddleware));
     app.use(
       new TenantContextMiddleware(tenantContext).use.bind(new TenantContextMiddleware(tenantContext)),
     );
@@ -59,43 +69,43 @@ describe('MasterDataController permission gating (integration)', () => {
   it('rejects creating a department with 403 when no master-data.manage permission is granted', async () => {
     const response = await request(app.getHttpServer())
       .post('/departments')
-      .set(noPermissionHeaders)
+      .set('Authorization', `Bearer ${noPermissionToken}`)
       .send({ departmentCode: 'BLOCKED', departmentName: 'Blocked Department' });
     expect(response.status).toBe(403);
   });
 
   it('rejects listing departments with 403 when no master-data.manage permission is granted', async () => {
-    const response = await request(app.getHttpServer()).get('/departments').set(noPermissionHeaders);
+    const response = await request(app.getHttpServer()).get('/departments').set('Authorization', `Bearer ${noPermissionToken}`);
     expect(response.status).toBe(403);
   });
 
   it('rejects getting a single department with 403 when no master-data.manage permission is granted', async () => {
     const response = await request(app.getHttpServer())
       .get(`/departments/${departmentId}`)
-      .set(noPermissionHeaders);
+      .set('Authorization', `Bearer ${noPermissionToken}`);
     expect(response.status).toBe(403);
   });
 
   it('rejects department deactivate/reactivate with 403 when no master-data.manage permission is granted', async () => {
     const deactivateResponse = await request(app.getHttpServer())
       .patch(`/departments/${departmentId}/deactivate`)
-      .set(noPermissionHeaders);
+      .set('Authorization', `Bearer ${noPermissionToken}`);
     expect(deactivateResponse.status).toBe(403);
 
     const reactivateResponse = await request(app.getHttpServer())
       .patch(`/departments/${departmentId}/reactivate`)
-      .set(noPermissionHeaders);
+      .set('Authorization', `Bearer ${noPermissionToken}`);
     expect(reactivateResponse.status).toBe(403);
   });
 
   it('rejects creating and listing wards with 403 when no master-data.manage permission is granted', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/wards')
-      .set(noPermissionHeaders)
+      .set('Authorization', `Bearer ${noPermissionToken}`)
       .send({ wardCode: 'BLOCKED', wardName: 'Blocked Ward' });
     expect(createResponse.status).toBe(403);
 
-    const listResponse = await request(app.getHttpServer()).get('/wards').set(noPermissionHeaders);
+    const listResponse = await request(app.getHttpServer()).get('/wards').set('Authorization', `Bearer ${noPermissionToken}`);
     expect(listResponse.status).toBe(403);
   });
 });

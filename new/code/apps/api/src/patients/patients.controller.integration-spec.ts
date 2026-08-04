@@ -1,34 +1,40 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { TenantContextMiddleware, TenantContextService } from '@hospital/tenant-context';
 import { DataSource } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
 import { PatientsModule } from './patients.module.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
   TenantTestContext,
 } from '../testing/tenant-test-context.js';
+import { signTestToken } from '../testing/test-jwt.js';
+import { resolveJwtSecret } from '../auth/jwt-secret.js';
 
 describe('PatientsController (integration)', () => {
   let app: INestApplication;
   let ctx: TenantTestContext;
 
-  let fullPermHeaders: { 'x-tenant-id': string; 'x-permissions': string };
-  let readOnlyHeaders: { 'x-tenant-id': string; 'x-permissions': string };
+  let fullPermToken: string;
+  let readOnlyToken: string;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'patients_ctrl', seedRbac: true });
 
-    fullPermHeaders = {
-      'x-tenant-id': ctx.tenantId,
-      'x-permissions': 'patients.create,patients.read,patients.update,patients.manage',
-    };
+    fullPermToken = await signTestToken({
+      sub: 'patients-controller-full',
+      hospitalId: ctx.tenantId,
+      permissions: ['patients.create', 'patients.read', 'patients.update', 'patients.manage'],
+    });
 
-    readOnlyHeaders = {
-      'x-tenant-id': ctx.tenantId,
-      'x-permissions': 'patients.read',
-    };
+    readOnlyToken = await signTestToken({
+      sub: 'patients-controller-readonly',
+      hospitalId: ctx.tenantId,
+      permissions: ['patients.read'],
+    });
 
     const moduleRef = await Test.createTestingModule({ imports: [PatientsModule] })
       .overrideProvider(DataSource)
@@ -36,9 +42,12 @@ describe('PatientsController (integration)', () => {
       .compile();
 
     const tenantContext = moduleRef.get(TenantContextService);
+    const jwtService = new JwtService({ secret: resolveJwtSecret() });
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
+    const authContextMiddleware = new AuthContextMiddleware(jwtService);
+    app.use(authContextMiddleware.use.bind(authContextMiddleware));
     app.use(
       new TenantContextMiddleware(tenantContext).use.bind(new TenantContextMiddleware(tenantContext)),
     );
@@ -54,7 +63,7 @@ describe('PatientsController (integration)', () => {
     it('creates a patient and assigns a generated patient number', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/patients')
-        .set(fullPermHeaders)
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           firstName: 'John',
           lastName: 'Doe',
@@ -74,7 +83,7 @@ describe('PatientsController (integration)', () => {
     it('rejects creation with 403 Forbidden when patients.create permission is missing', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/patients')
-        .set(readOnlyHeaders)
+        .set('Authorization', `Bearer ${readOnlyToken}`)
         .send({
           firstName: 'Unauthorized',
           lastName: 'User',
@@ -89,7 +98,7 @@ describe('PatientsController (integration)', () => {
 
       const firstResponse = await request(app.getHttpServer())
         .post('/api/patients')
-        .set(fullPermHeaders)
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           firstName: 'Jane',
           lastName: 'Smith',
@@ -100,7 +109,7 @@ describe('PatientsController (integration)', () => {
 
       const duplicateResponse = await request(app.getHttpServer())
         .post('/api/patients')
-        .set(fullPermHeaders)
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           firstName: 'Jane',
           lastName: 'Smith',
@@ -118,7 +127,7 @@ describe('PatientsController (integration)', () => {
     it('returns matching patients for potential duplicate check', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/patients/check-duplicates')
-        .set(readOnlyHeaders)
+        .set('Authorization', `Bearer ${readOnlyToken}`)
         .send({
           phoneNumber: '9998887776',
         });
@@ -133,7 +142,7 @@ describe('PatientsController (integration)', () => {
     it('retrieves patient by id', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/api/patients')
-        .set(fullPermHeaders)
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           firstName: 'Alice',
           lastName: 'Wonderland',
@@ -143,7 +152,7 @@ describe('PatientsController (integration)', () => {
 
       const getRes = await request(app.getHttpServer())
         .get(`/api/patients/${patientId}`)
-        .set(readOnlyHeaders);
+        .set('Authorization', `Bearer ${readOnlyToken}`);
 
       expect(getRes.status).toBe(200);
       expect(getRes.body.id).toBe(patientId);
@@ -153,7 +162,7 @@ describe('PatientsController (integration)', () => {
     it('returns 404 for non-existent patient id', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/patients/00000000-0000-0000-0000-000000000000')
-        .set(readOnlyHeaders);
+        .set('Authorization', `Bearer ${readOnlyToken}`);
 
       expect(response.status).toBe(404);
     });
@@ -161,7 +170,7 @@ describe('PatientsController (integration)', () => {
     it('lists patients with search query', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/patients?q=Wonderland')
-        .set(readOnlyHeaders);
+        .set('Authorization', `Bearer ${readOnlyToken}`);
 
       expect(response.status).toBe(200);
       expect(response.body.data).toBeDefined();
@@ -174,7 +183,7 @@ describe('PatientsController (integration)', () => {
     it('updates patient details', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/api/patients')
-        .set(fullPermHeaders)
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           firstName: 'Bob',
           lastName: 'Marley',
@@ -184,7 +193,7 @@ describe('PatientsController (integration)', () => {
 
       const patchRes = await request(app.getHttpServer())
         .patch(`/api/patients/${patientId}`)
-        .set(fullPermHeaders)
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           email: 'bob.marley@example.com',
           bloodGroup: 'O+',
@@ -200,7 +209,7 @@ describe('PatientsController (integration)', () => {
     it('deactivates patient and makes subsequent GET return 404', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/api/patients')
-        .set(fullPermHeaders)
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           firstName: 'Charlie',
           lastName: 'Brown',
@@ -210,14 +219,14 @@ describe('PatientsController (integration)', () => {
 
       const deleteRes = await request(app.getHttpServer())
         .delete(`/api/patients/${patientId}`)
-        .set(fullPermHeaders);
+        .set('Authorization', `Bearer ${fullPermToken}`);
 
       expect(deleteRes.status).toBe(200);
       expect(deleteRes.body).toEqual({ success: true });
 
       const getRes = await request(app.getHttpServer())
         .get(`/api/patients/${patientId}`)
-        .set(readOnlyHeaders);
+        .set('Authorization', `Bearer ${readOnlyToken}`);
 
       expect(getRes.status).toBe(404);
     });
@@ -225,7 +234,7 @@ describe('PatientsController (integration)', () => {
     it('rejects deactivation with 403 Forbidden without patients.manage permission', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/api/patients')
-        .set(fullPermHeaders)
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           firstName: 'David',
           lastName: 'Miller',
@@ -235,7 +244,7 @@ describe('PatientsController (integration)', () => {
 
       const deleteRes = await request(app.getHttpServer())
         .delete(`/api/patients/${patientId}`)
-        .set(readOnlyHeaders);
+        .set('Authorization', `Bearer ${readOnlyToken}`);
 
       expect(deleteRes.status).toBe(403);
     });
