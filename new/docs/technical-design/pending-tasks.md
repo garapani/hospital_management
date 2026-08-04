@@ -41,8 +41,14 @@ follows the PRD's own phase order — no reason to re-litigate that).
 4. [x] **Nx module-boundary lint** (new-features.md #3) — done: `@nx/enforce-module-boundaries`
    tags the 4 real Nx projects, `eslint-plugin-boundaries` tags the domain folders inside
    `apps/api`, both wired into CI via the `lint` target.
-5. **Deployment path + runbook fixes** (new-features.md #4 + #17) — mechanical, low-risk, same
-   underlying facts from two angles (code vs. docs). Do together.
+5. [x] **Deployment path + runbook fixes** (new-features.md #4 + #17) — done: `Deployment-Guide.md`
+   and `Runbook.md` now match the real env var names, build output path, start command, and
+   migration behavior (not automatic; platform vs. tenant migrations; `migrate-tenants` target);
+   also documents that `migrate.ts`/`migrate-tenants.ts` currently can't be invoked outside Jest
+   (tsx/ts-node decorator-parsing issue through `libs/audit-emitter` — a new, previously-unknown
+   tooling gap, not just a doc-wording fix) and that no production Dockerfile/`docker-compose.yml`
+   exists yet. Also fixed the Runbook's `afterTransactionCommit`/rollback-sandbox claims, which
+   don't exist anywhere in the codebase.
 
 ## Phase 3 — Production-readiness ops
 
@@ -84,3 +90,9 @@ Follow the PRD's own phase ordering as-is:
 ## Dependencies worth calling out explicitly
 
 - **Phase 3, item 9** (load test) should follow items 6–7, not precede them.
+- **New gap, not yet its own item**: neither `apps/api/src/database/migrate.ts` (platform
+  migrations) nor `migrate-tenants.ts` (tenant migrations) can currently be invoked outside Jest —
+  both fail under `tsx` and `node --loader ts-node/esm` with a decorator-parsing error surfacing
+  through `libs/audit-emitter`. The underlying migration logic is proven correct (passes under
+  Jest), so this is a standalone-script tooling fix (decorator-safe runner or a build step), not a
+  logic fix. Should land before any real deployment — bundle with Phase 3 ops-readiness work.

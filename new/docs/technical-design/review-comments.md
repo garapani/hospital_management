@@ -69,6 +69,13 @@ Until ESLint/project tags are wired and CI runs the lint target, the docs should
 
 ### High: Deployment guide has commands and environment variables that do not match the repo
 
+**Resolved:** `Deployment-Guide.md` now uses `DB_USERNAME`/`DB_DATABASE`, the real `apps/api/dist`
+build output path and `node apps/api/dist/main.js` start command, and an accurate migrations
+section (not automatic on startup; platform vs. tenant migrations; the `migrate-tenants` Nx target;
+and the known tooling gap that `migrate.ts`/`migrate-tenants.ts` currently can't be invoked outside
+Jest). Also notes no production Dockerfile/`docker-compose.yml` exists yet, rather than describing
+one that isn't there.
+
 The guide documents `DB_USER` and `DB_NAME`, but the app reads `DB_USERNAME` and `DB_DATABASE`:
 
 - `new/docs/technical-design/Deployment-Guide.md:28`
@@ -91,6 +98,13 @@ It also points production execution at `dist/apps/api/main.js`, while the curren
 These are operator-facing instructions and should be corrected before anyone follows the guide.
 
 ### Medium: Runbook and testing standards describe a transaction-backed `inTenant()` helper that does not exist
+
+**Resolved (Runbook):** `Runbook.md` §3 now describes the real `inTenant()` behavior —
+`TenantContextService.run()`-scoped `AsyncLocalStorage` context over a really-provisioned
+schema/role, no rollback wrapper, no `afterTransactionCommit` anywhere in the codebase — and lists
+the actual flakiness sources (schema/role collisions and teardown leaks). `Development-Standards.md`
+§5 already states this correctly ("there is no transaction-rollback isolation anywhere in this
+codebase") — no change needed there.
 
 The runbook and standards say `inTenant()` provisions a schema, runs tests in a rollback sandbox, and interacts with `afterTransactionCommit`:
 
