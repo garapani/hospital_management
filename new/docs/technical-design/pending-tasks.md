@@ -35,8 +35,9 @@ follows the PRD's own phase order — no reason to re-litigate that).
 
 ## Phase 2 — Guardrails while the backlog grows
 
-4. **Nx module-boundary lint** (new-features.md #3) — cheap (ESLint config + Nx project tags +
-   CI target). Land it before the Phase 6 backlog adds ~15 more modules, not after.
+4. [x] **Nx module-boundary lint** (new-features.md #3) — done: `@nx/enforce-module-boundaries`
+   tags the 4 real Nx projects, `eslint-plugin-boundaries` tags the domain folders inside
+   `apps/api`, both wired into CI via the `lint` target.
 5. **Deployment path + runbook fixes** (new-features.md #4 + #17) — mechanical, low-risk, same
    underlying facts from two angles (code vs. docs). Do together.
 

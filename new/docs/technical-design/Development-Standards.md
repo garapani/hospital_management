@@ -122,3 +122,54 @@ this becomes the single source of truth for identity, tenant ID, and permissions
 `signTestToken()` in `apps/api/src/testing/test-jwt.ts`. This ensures tests exercise the same
 auth flow as production — no header-mocking shortcuts.
 
+## 7. Module Boundaries
+
+Two independent, CI-enforced ESLint rules stop cross-module leakage, wired via the `lint` Nx
+target (see `.github/workflows/ci.yml`) and configured in one root `eslint.config.mjs`:
+
+**Layer A — real Nx project boundaries.** `@nx/enforce-module-boundaries` governs the 4 actual
+Nx projects: `api` (tagged `type:app`) and the 3 shared libraries `@hospital/tenant-context`,
+`@hospital/auth-guards`, `@hospital/audit-emitter` (tagged `type:platform-lib`). A platform lib
+may depend only on other platform libs — never on `api` — the dangerous direction that would let
+shared code reach back into application internals.
+
+**Layer B — domain folders inside `apps/api`.** `apps/api` is a single Nx project containing all
+domain modules (`accounts`, `admissions`, `billing`, `patients`, etc.) as plain subdirectories, not
+separate Nx projects — Layer A's project-graph-based rule can't see inside it. `eslint-plugin-boundaries`
+fills that gap, tagging folders under `apps/api/src` into three tiers:
+
+- `scope:platform` (`app`, `database`, `rbac`, `audit`, `auth`, `testing`) — composition-adjacent
+  code (DI wiring, DB/DataSource config, shared test fixtures) that legitimately reads across every
+  domain. Restricting what this tier can read isn't the goal; stopping domain-to-domain leakage is.
+- `domain:<name>` — one tag per business module. May depend on `scope:platform` and on a short,
+  explicit allow-list of sanctioned domain-to-domain edges (see below) — nothing else.
+- `scope:reporting` (`reporting`) — the cross-domain read-side event archiver, allowed to depend on
+  any domain by design. No domain may depend back on it.
+
+**The sanctioned domain-to-domain allow-list** (every other edge, including each one's reverse, is
+rejected):
+
+| From | To |
+|---|---|
+| `admissions` | `appointments`, `clinical-triage`, `master-data`, `patients` |
+| `billing` | `patients` |
+| `orders` | `patients` |
+| `clinical-triage` | `patients` (test-fixture seeding only) |
+| `clinical-vitals` | `patients` (test-fixture seeding only) |
+
+A new domain module added in a future phase must either reuse one of these existing edges or have
+the allow-list explicitly extended in code review — that friction is deliberate, not an oversight.
+
+**Verified negative example** (a real, captured `nx lint api` run — a `patients` module file was
+temporarily made to import from `admissions`, the reverse of the one sanctioned edge):
+
+```
+apps/api/src/patients/patients.service.ts
+  1:10  warning  'AdmissionsService' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  1:35  error    There is no policy allowing dependencies from elements of type "domain:patients" to elements of type "domain:admissions"  boundaries/dependencies
+```
+
+See `new/docs/superpowers/plans/2026-08-04-nx-module-boundary-enforcement.md` for the full
+implementation history, including why the design's original `scope:composition` tier and stricter
+platform allow-list were corrected once actually run against the codebase.
+

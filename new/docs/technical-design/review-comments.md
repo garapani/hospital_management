@@ -38,6 +38,10 @@ That is materially weaker than the documented guarantee. A bug in tenant resolut
 
 ### High: Module-boundary linting is presented as active enforcement, but lint is not configured or run
 
+**Resolved:** `@nx/enforce-module-boundaries` (Nx project tags) and `eslint-plugin-boundaries`
+(domain-folder tags inside `apps/api`) are both wired and running in CI via the `lint` target; see
+`new/docs/superpowers/plans/2026-08-04-nx-module-boundary-enforcement.md`.
+
 The docs repeatedly say `@nx/enforce-module-boundaries` is the hard enforcement mechanism:
 
 - `new/docs/technical-design/Development-Standards.md:10`
