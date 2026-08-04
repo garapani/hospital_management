@@ -187,7 +187,11 @@ importers:
 
   libs/auth-guards: {}
 
-  libs/tenant-context: {}
+  libs/tenant-context:
+    dependencies:
+      '@hospital/auth-guards':
+        specifier: workspace:*
+        version: link:../auth-guards
 
 packages:
 
