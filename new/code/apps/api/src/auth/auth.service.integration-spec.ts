@@ -143,4 +143,27 @@ describe('AuthService (integration)', () => {
     const refreshResult = await authService.refresh({ refreshToken: 'not-a-real-token' });
     expect(refreshResult).toEqual({ invalidToken: true });
   });
+
+  it('rejects refresh for a deactivated account even with a still-valid refresh token', async () => {
+    const account = await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
+        username: 'refresh.deactivated',
+        email: 'refreshdeactivated@example.com',
+        displayName: 'Refresh Deactivated',
+        password: 'a-deactivated-password',
+        roleName: 'Nurse',
+      }),
+    );
+    const loginResult = await ctx.inTenant(() =>
+      authService.login({ username: 'refresh.deactivated', password: 'a-deactivated-password' }),
+    );
+    if (!('refreshToken' in loginResult)) {
+      throw new Error('expected a successful login');
+    }
+
+    await ctx.inTenant(() => ctx.accountsService.deactivateAccount(account.id));
+
+    const refreshResult = await authService.refresh({ refreshToken: loginResult.refreshToken });
+    expect(refreshResult).toEqual({ invalidToken: true });
+  });
 });

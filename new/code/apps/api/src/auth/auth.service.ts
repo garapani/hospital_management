@@ -30,7 +30,7 @@ export type RefreshResult =
 interface RefreshTokenPayload {
   sub: string;
   hospitalId: string;
-  type: string;
+  type: 'access' | 'refresh';
 }
 
 @Injectable()
@@ -70,13 +70,7 @@ export class AuthService {
 
     const hospitalId = this.tenantContext.getTenantId();
     const permissions = await this.accountsService.getPermissionNamesForRoles(roleIds);
-    const payload = {
-      sub: account.id,
-      roles: roleNames,
-      permissions,
-      hospitalId,
-      type: 'access' as const,
-    };
+    const payload = this.buildAccessPayload(account.id, roleNames, permissions, hospitalId);
 
     const accessToken = await this.jwtService.signAsync(payload, { expiresIn: ACCESS_TOKEN_TTL });
     const refreshToken = await this.jwtService.signAsync(
@@ -107,14 +101,17 @@ export class AuthService {
       return { invalidToken: true };
     }
 
+    if (!found.account.isActive || (found.account.lockedUntil && found.account.lockedUntil.getTime() > Date.now())) {
+      return { invalidToken: true };
+    }
+
     const permissions = await this.accountsService.getPermissionNamesForRoles(found.roleIds);
-    const accessPayload = {
-      sub: found.account.id,
-      roles: found.roleNames,
+    const accessPayload = this.buildAccessPayload(
+      found.account.id,
+      found.roleNames,
       permissions,
-      hospitalId: payload.hospitalId,
-      type: 'access' as const,
-    };
+      payload.hospitalId,
+    );
 
     const accessToken = await this.jwtService.signAsync(accessPayload, { expiresIn: ACCESS_TOKEN_TTL });
     // Rotate: issue a new refresh token instead of letting the caller reuse the old one. This is
@@ -126,5 +123,20 @@ export class AuthService {
       { expiresIn: REFRESH_TOKEN_TTL },
     );
     return { accessToken, refreshToken: newRefreshToken };
+  }
+
+  private buildAccessPayload(
+    accountId: string,
+    roles: string[],
+    permissions: string[],
+    hospitalId: string | undefined,
+  ) {
+    return {
+      sub: accountId,
+      roles,
+      permissions,
+      hospitalId,
+      type: 'access' as const,
+    };
   }
 }
