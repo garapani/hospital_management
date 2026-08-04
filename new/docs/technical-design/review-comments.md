@@ -23,6 +23,13 @@ This overstates the current security model. Either implement JWT validation on p
 
 ### High: Tenant isolation is described as Postgres role-enforced, but implementation uses one DB user plus search_path
 
+**Resolved:** per-tenant `NOLOGIN` Postgres roles + schema grants now exist, with `SET LOCAL ROLE`
+inside a real transaction in `TenantConnectionService`. See
+`new/docs/superpowers/plans/2026-08-04-database-enforced-tenant-isolation.md`. Note: the dedicated
+DB-level cross-tenant proof test (Postgres itself rejecting a cross-schema query under the wrong
+role) was deferred at the human partner's request to prioritize a prototype demo — test coverage
+for this item is still outstanding.
+
 The PRD says tenant schemas are isolated by Postgres role-level schema grants:
 
 - `new/docs/technical-design/PRD.md:240`

@@ -28,10 +28,13 @@ follows the PRD's own phase order — no reason to re-litigate that).
 2. [x] **JWT-backed request auth** (new-features.md #1) — done: `AuthContextMiddleware`
    (`libs/auth-guards`), `POST /auth/refresh`, all controller-style integration specs migrated
    onto real tokens via `signTestToken()`.
-3. **Database-enforced tenant isolation** (new-features.md #2) — defense-in-depth: catches
-   tenant-resolution bugs even after item 2 lands. **Blocked on the parked tenant-migration-runner
-   gap** (see Dependencies below) — new schema grants can't be rolled out to already-provisioned
-   tenants without one.
+3. [x] **Database-enforced tenant isolation** (new-features.md #2) — done: per-tenant `NOLOGIN`
+   Postgres roles + schema grants, `SET LOCAL ROLE` inside a real transaction in
+   `TenantConnectionService`, a real production tenant-provisioning path (didn't exist before this
+   item), and the `migrate-tenants` backfill runner that closed the dependency below. Note: the
+   dedicated cross-role DB-level isolation test (proving Postgres itself rejects a cross-tenant
+   query) was deferred — the human partner is prioritizing a prototype demo and will add test
+   coverage for this item afterward.
 
 ## Phase 2 — Guardrails while the backlog grows
 
@@ -80,10 +83,4 @@ Follow the PRD's own phase ordering as-is:
 
 ## Dependencies worth calling out explicitly
 
-- **Phase 1, item 3** (DB-enforced tenant isolation) depends on solving the tenant-migration-runner
-  gap first: no runner in this codebase applies migrations across already-provisioned tenant
-  schemas, for any of the 17 migrations that exist today (confirmed during the reporting-archiver
-  session — `apps/api/src/database/migrate.ts` only runs migrations against the default search
-  path). Adding schema grants via a new migration inherits this same gap.
-- **Phase 1, item 1** must precede item 3, not follow it (see above).
 - **Phase 3, item 9** (load test) should follow items 6–7, not precede them.

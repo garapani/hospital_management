@@ -173,3 +173,57 @@ See `new/docs/superpowers/plans/2026-08-04-nx-module-boundary-enforcement.md` fo
 implementation history, including why the design's original `scope:composition` tier and stricter
 platform allow-list were corrected once actually run against the codebase.
 
+## 8. Database-Enforced Tenant Isolation
+
+Every tenant has its own `NOLOGIN` Postgres role, named identically to its schema
+(`tenant_<hospitalId>` for both). The app's single DB role (`identity_access`) is granted
+membership in every tenant role and uses `SET LOCAL ROLE` — inside a real transaction, not just a
+bare query — to scope each request's actual database privileges to one tenant. `SET LOCAL` is a
+silent no-op outside an explicit transaction, which is why `TenantConnectionService.runInTenantSchema()`
+wraps its work in `startTransaction()`/`commitTransaction()`/`rollbackTransaction()`, not just a
+`SET LOCAL ROLE` query tacked onto the previous non-transactional flow.
+
+**Why a role, not just `search_path`:** the old model (one shared role, `SET search_path` only)
+could never prove isolation independent of the application — the DB role always had standing
+access to every schema, so a bug that set the wrong `search_path` would silently read the wrong
+tenant's data instead of failing. With a per-tenant role, the same bug fails closed: the active
+role at that point in the transaction only has grants on one schema, so a mismatched `search_path`
+just can't find any tables.
+
+**Grant durability — two parts, not one:** `ALTER DEFAULT PRIVILEGES` is set once per tenant role
+at provisioning time and covers every table/sequence a *future* migration creates — but it does
+NOT retroactively grant the tables the very first migration run just created, since default
+privileges only apply to objects created after the `ALTER DEFAULT PRIVILEGES` statement runs. Both
+`TenantProvisioningService` (new tenants) and any future one-off backfill need the explicit
+`GRANT ALL ON ALL TABLES/SEQUENCES IN SCHEMA ... TO ...` immediately after `runMigrations()`
+completes, in addition to the `ALTER DEFAULT PRIVILEGES` setup.
+
+**Real production tenant provisioning didn't exist before this** — `TenantsService.provisionTenant()`
+used to only insert a registry row; the actual `CREATE SCHEMA`/migration logic lived only in a
+test-only stand-in. `TenantProvisioningService` (`apps/api/src/database/tenant-provisioning.service.ts`)
+is now the single shared implementation: create schema → create role → grant USAGE + default
+privileges → run every `TENANT_MIGRATIONS` entry via `dataSource.runMigrations()` scoped to that
+schema (via a Postgres `-c search_path=...` connection option — TypeORM's own `schema`
+DataSourceOption does NOT set the real session search_path for raw migration SQL, only for
+generated entity queries) → explicit grant on what the migrations just created → grant
+`identity_access` membership in the new role. Both `TenantsService.provisionTenant()` and the test
+helper (`apps/api/src/testing/tenant-test-context.ts`) call this one service.
+
+**Migrations split into two tracked sets**, exported from `apps/api/src/database/migrations/index.ts`:
+`PLATFORM_MIGRATIONS` (rbac catalog + tenant registry — shared/public-schema tables, run once by
+`migrate.ts`) and `TENANT_MIGRATIONS` (everything else — run per-tenant-schema). Every migration
+class name needs a 13-digit timestamp suffix for TypeORM's tracked-migration runner to accept it
+(`ClassName1234567890123`) — this wasn't true of the original migration files, which only ever ran
+via an untracked manual `.up()` replay that bypassed the check entirely.
+
+**Rolling out a new tenant-scoped migration to already-provisioned tenants:**
+`pnpm exec nx run api:migrate-tenants` loops every row in the `tenants` registry table and runs
+`TENANT_MIGRATIONS` against each schema — TypeORM's per-schema migration tracking means it only
+applies what that specific tenant hasn't already seen, so it's safe to run repeatedly and against
+every tenant at once. This is what closes the tenant-migration-runner gap `pending-tasks.md`
+tracked: before this, nothing in the codebase could apply a new migration to an already-provisioned
+tenant schema at all.
+
+See `new/docs/superpowers/plans/2026-08-04-database-enforced-tenant-isolation.md` for the full
+implementation history.
+
