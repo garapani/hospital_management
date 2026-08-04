@@ -1,26 +1,31 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { TenantContextMiddleware, TenantContextService } from '@hospital/tenant-context';
 import { DataSource } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
 import { AccountsModule } from './accounts.module.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
   TenantTestContext,
 } from '../testing/tenant-test-context.js';
+import { signTestToken } from '../testing/test-jwt.js';
+import { resolveJwtSecret } from '../auth/jwt-secret.js';
 
 describe('AccountsController (integration)', () => {
   let app: INestApplication;
   let ctx: TenantTestContext;
-  let adminHeaders: Record<string, string>;
+  let adminToken: string;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'accounts_controller', seedRbac: true });
-    adminHeaders = {
-      'x-tenant-id': ctx.tenantId,
-      'x-permissions': 'identity.accounts.manage',
-    };
+    adminToken = await signTestToken({
+      sub: 'accounts-controller-admin',
+      hospitalId: ctx.tenantId,
+      permissions: ['identity.accounts.manage'],
+    });
 
     const moduleRef = await Test.createTestingModule({ imports: [AccountsModule] })
       .overrideProvider(DataSource)
@@ -28,8 +33,12 @@ describe('AccountsController (integration)', () => {
       .compile();
 
     const tenantContext = moduleRef.get(TenantContextService);
+    const jwtService = new JwtService({ secret: resolveJwtSecret() });
 
     app = moduleRef.createNestApplication();
+    app.use(
+      new AuthContextMiddleware(jwtService).use.bind(new AuthContextMiddleware(jwtService)),
+    );
     app.use(
       new TenantContextMiddleware(tenantContext).use.bind(new TenantContextMiddleware(tenantContext)),
     );
@@ -44,7 +53,7 @@ describe('AccountsController (integration)', () => {
   it('creates a staff account with needsPasswordUpdate set, and never returns passwordHash', async () => {
     const response = await request(app.getHttpServer())
       .post('/accounts')
-      .set(adminHeaders)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({
         username: 'ctrl.create.user',
         email: 'ctrlcreate@example.com',
@@ -60,7 +69,7 @@ describe('AccountsController (integration)', () => {
   });
 
   it('lists accounts in the tenant', async () => {
-    const response = await request(app.getHttpServer()).get('/accounts').set(adminHeaders);
+    const response = await request(app.getHttpServer()).get('/accounts').set('Authorization', `Bearer ${adminToken}`);
     expect(response.status).toBe(200);
     expect(response.body.some((a: { username: string }) => a.username === 'ctrl.create.user')).toBe(true);
   });
@@ -68,7 +77,7 @@ describe('AccountsController (integration)', () => {
   it('gets, deactivates, reactivates, and unlocks a single account', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/accounts')
-      .set(adminHeaders)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({
         username: 'ctrl.lifecycle.user',
         email: 'ctrllifecycle@example.com',
@@ -78,25 +87,25 @@ describe('AccountsController (integration)', () => {
       });
     const accountId = createResponse.body.id;
 
-    const getResponse = await request(app.getHttpServer()).get(`/accounts/${accountId}`).set(adminHeaders);
+    const getResponse = await request(app.getHttpServer()).get(`/accounts/${accountId}`).set('Authorization', `Bearer ${adminToken}`);
     expect(getResponse.status).toBe(200);
     expect(getResponse.body.roleNames).toEqual(['Doctor']);
 
     const deactivateResponse = await request(app.getHttpServer())
       .patch(`/accounts/${accountId}/deactivate`)
-      .set(adminHeaders);
+      .set('Authorization', `Bearer ${adminToken}`);
     expect(deactivateResponse.status).toBe(200);
     expect(deactivateResponse.body.isActive).toBe(false);
 
     const reactivateResponse = await request(app.getHttpServer())
       .patch(`/accounts/${accountId}/reactivate`)
-      .set(adminHeaders);
+      .set('Authorization', `Bearer ${adminToken}`);
     expect(reactivateResponse.status).toBe(200);
     expect(reactivateResponse.body.isActive).toBe(true);
 
     const unlockResponse = await request(app.getHttpServer())
       .patch(`/accounts/${accountId}/unlock`)
-      .set(adminHeaders);
+      .set('Authorization', `Bearer ${adminToken}`);
     expect(unlockResponse.status).toBe(200);
     expect(unlockResponse.body.failedLoginAttempts).toBe(0);
   });
@@ -104,14 +113,14 @@ describe('AccountsController (integration)', () => {
   it('returns 404 for an unknown account id', async () => {
     const response = await request(app.getHttpServer())
       .patch('/accounts/00000000-0000-0000-0000-000000000000/deactivate')
-      .set(adminHeaders);
+      .set('Authorization', `Bearer ${adminToken}`);
     expect(response.status).toBe(404);
   });
 
   it('returns 404 when assigning a role to an unknown account id', async () => {
     const response = await request(app.getHttpServer())
       .post('/accounts/00000000-0000-0000-0000-000000000000/roles')
-      .set(adminHeaders)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ roleName: 'Doctor' });
     expect(response.status).toBe(404);
   });
@@ -119,7 +128,7 @@ describe('AccountsController (integration)', () => {
   it('assigns and revokes a role assignment', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/accounts')
-      .set(adminHeaders)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({
         username: 'ctrl.roles.user',
         email: 'ctrlroles@example.com',
@@ -131,23 +140,23 @@ describe('AccountsController (integration)', () => {
 
     const assignResponse = await request(app.getHttpServer())
       .post(`/accounts/${accountId}/roles`)
-      .set(adminHeaders)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ roleName: 'Doctor' });
     expect(assignResponse.status).toBe(201);
     const accountRoleId = assignResponse.body.id;
 
     const duplicateResponse = await request(app.getHttpServer())
       .post(`/accounts/${accountId}/roles`)
-      .set(adminHeaders)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ roleName: 'Doctor' });
     expect(duplicateResponse.status).toBe(409);
 
     const revokeResponse = await request(app.getHttpServer())
       .delete(`/accounts/${accountId}/roles/${accountRoleId}`)
-      .set(adminHeaders);
+      .set('Authorization', `Bearer ${adminToken}`);
     expect(revokeResponse.status).toBe(200);
 
-    const getResponse = await request(app.getHttpServer()).get(`/accounts/${accountId}`).set(adminHeaders);
+    const getResponse = await request(app.getHttpServer()).get(`/accounts/${accountId}`).set('Authorization', `Bearer ${adminToken}`);
     expect(getResponse.body.roleNames).toEqual(['Nurse']);
   });
 });

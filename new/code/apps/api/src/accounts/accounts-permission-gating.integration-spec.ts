@@ -1,26 +1,31 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { TenantContextMiddleware, TenantContextService } from '@hospital/tenant-context';
 import { DataSource } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
 import { AccountsModule } from './accounts.module.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
   TenantTestContext,
 } from '../testing/tenant-test-context.js';
+import { signTestToken } from '../testing/test-jwt.js';
+import { resolveJwtSecret } from '../auth/jwt-secret.js';
 
 describe('AccountsController permission gating (integration)', () => {
   let app: INestApplication;
   let ctx: TenantTestContext;
   let accountId: string;
-  let noPermissionHeaders: Record<string, string>;
+  let noPermissionToken: string;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'permission_gating', seedRbac: true });
-    noPermissionHeaders = {
-      'x-tenant-id': ctx.tenantId,
-    };
+    noPermissionToken = await signTestToken({
+      sub: 'accounts-permgate-user',
+      hospitalId: ctx.tenantId,
+    });
 
     const moduleRef = await Test.createTestingModule({ imports: [AccountsModule] })
       .overrideProvider(DataSource)
@@ -28,6 +33,7 @@ describe('AccountsController permission gating (integration)', () => {
       .compile();
 
     const tenantContext = moduleRef.get(TenantContextService);
+    const jwtService = new JwtService({ secret: resolveJwtSecret() });
     const account = await ctx.inTenant(() =>
       ctx.accountsService.createStaffAccount({
         username: 'no.permission.doctor',
@@ -40,6 +46,9 @@ describe('AccountsController permission gating (integration)', () => {
     accountId = account.id;
 
     app = moduleRef.createNestApplication();
+    app.use(
+      new AuthContextMiddleware(jwtService).use.bind(new AuthContextMiddleware(jwtService)),
+    );
     app.use(
       new TenantContextMiddleware(tenantContext).use.bind(new TenantContextMiddleware(tenantContext)),
     );
@@ -54,7 +63,7 @@ describe('AccountsController permission gating (integration)', () => {
   it('rejects account creation with 403 when no identity.accounts.manage permission is granted', async () => {
     const response = await request(app.getHttpServer())
       .post('/accounts')
-      .set(noPermissionHeaders)
+      .set('Authorization', `Bearer ${noPermissionToken}`)
       .send({
         username: 'blocked.user',
         email: 'blocked@example.com',
@@ -66,44 +75,44 @@ describe('AccountsController permission gating (integration)', () => {
   });
 
   it('rejects listing accounts with 403 when no identity.accounts.manage permission is granted', async () => {
-    const response = await request(app.getHttpServer()).get('/accounts').set(noPermissionHeaders);
+    const response = await request(app.getHttpServer()).get('/accounts').set('Authorization', `Bearer ${noPermissionToken}`);
     expect(response.status).toBe(403);
   });
 
   it('rejects getting a single account with 403 when no identity.accounts.manage permission is granted', async () => {
     const response = await request(app.getHttpServer())
       .get(`/accounts/${accountId}`)
-      .set(noPermissionHeaders);
+      .set('Authorization', `Bearer ${noPermissionToken}`);
     expect(response.status).toBe(403);
   });
 
   it('rejects deactivate/reactivate/unlock with 403 when no identity.accounts.manage permission is granted', async () => {
     const deactivateResponse = await request(app.getHttpServer())
       .patch(`/accounts/${accountId}/deactivate`)
-      .set(noPermissionHeaders);
+      .set('Authorization', `Bearer ${noPermissionToken}`);
     expect(deactivateResponse.status).toBe(403);
 
     const reactivateResponse = await request(app.getHttpServer())
       .patch(`/accounts/${accountId}/reactivate`)
-      .set(noPermissionHeaders);
+      .set('Authorization', `Bearer ${noPermissionToken}`);
     expect(reactivateResponse.status).toBe(403);
 
     const unlockResponse = await request(app.getHttpServer())
       .patch(`/accounts/${accountId}/unlock`)
-      .set(noPermissionHeaders);
+      .set('Authorization', `Bearer ${noPermissionToken}`);
     expect(unlockResponse.status).toBe(403);
   });
 
   it('rejects role assignment and revocation with 403 when no identity.accounts.manage permission is granted', async () => {
     const assignResponse = await request(app.getHttpServer())
       .post(`/accounts/${accountId}/roles`)
-      .set(noPermissionHeaders)
+      .set('Authorization', `Bearer ${noPermissionToken}`)
       .send({ roleName: 'Nurse' });
     expect(assignResponse.status).toBe(403);
 
     const revokeResponse = await request(app.getHttpServer())
       .delete(`/accounts/${accountId}/roles/00000000-0000-0000-0000-000000000000`)
-      .set(noPermissionHeaders);
+      .set('Authorization', `Bearer ${noPermissionToken}`);
     expect(revokeResponse.status).toBe(403);
   });
 });
