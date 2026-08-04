@@ -90,3 +90,91 @@ docker-compose -f docker-compose.dev.yml up -d
 npx nx serve api
 ```
 This drops the volume and restarts Postgres with a clean slate.
+
+## 5. Restoring from Backup
+
+Backups are nightly `pg_dump -Fc` files produced by `scripts/backup-db.sh` (see
+`Deployment-Guide.md` "Backup Configuration"), uploaded to the configured S3 bucket. **RPO: up to
+24 hours of data loss** — backups are nightly only, no continuous WAL archiving/point-in-time
+recovery exists yet (tracked as a known gap, not solved by this runbook).
+
+### Full-database restore
+
+```bash
+aws s3 cp s3://$S3_BUCKET/$S3_PREFIX/<filename>.dump.gz ./restore.dump.gz
+gunzip ./restore.dump.gz
+docker compose -f docker-compose.dev.yml exec -T api-postgres \
+  pg_restore -U identity_access -d identity_access --clean --if-exists < ./restore.dump
+```
+`--clean --if-exists` drops existing objects before recreating them, so this is safe to run
+against a database that already has stale or corrupt data in it.
+
+### Per-tenant schema restore
+
+Restores exactly one tenant's schema without touching any other tenant or the platform's `public`
+schema:
+```bash
+docker compose -f docker-compose.dev.yml exec -T api-postgres \
+  pg_restore -U identity_access -d identity_access --schema=tenant_<hospitalId> --clean --if-exists < ./restore.dump
+```
+
+### Monthly restore-drill procedure
+
+Once a month, prove a real backup actually restores:
+1. Restore the latest dump into a scratch database:
+   ```bash
+   docker compose -f docker-compose.dev.yml exec -T api-postgres createdb -U identity_access restore_drill_scratch
+   docker compose -f docker-compose.dev.yml exec -T api-postgres \
+     pg_restore -U identity_access -d restore_drill_scratch --clean --if-exists < ./restore.dump
+   ```
+2. Run smoke queries confirming non-zero row counts on both a platform table and at least one
+   tenant schema:
+   ```bash
+   docker compose -f docker-compose.dev.yml exec -T api-postgres \
+     psql -U identity_access -d restore_drill_scratch -c "SELECT count(*) FROM public.tenants;"
+   docker compose -f docker-compose.dev.yml exec -T api-postgres \
+     psql -U identity_access -d restore_drill_scratch -c "SELECT count(*) FROM tenant_<any-known-tenant-id>.patients;"
+   ```
+3. Drop the scratch database:
+   ```bash
+   docker compose -f docker-compose.dev.yml exec -T api-postgres dropdb -U identity_access restore_drill_scratch
+   ```
+4. Log the result below.
+
+**Drill log:**
+
+| Date | Dump used (filename/date) | Result | Notes |
+|---|---|---|---|
+| _(fill in after first drill)_ | | | |
+
+## 6. Hardware Failure Recovery
+
+Scope: the **Hostinger VPS** hosting path. `PRD.md` §12 open question #1 (self-owned server vs.
+VPS) is still unresolved — this runbook covers what's actually deployed today. If the self-owned
+direction is finalized later, this section needs a follow-up rewrite, not a patch.
+
+**Target RTO: ~4 hours.**
+
+### Recovery steps
+
+1. Provision a replacement: either restore from a recent Hostinger-level VPS snapshot if one
+   exists and is fresh enough, or provision a new VPS instance from scratch.
+2. Install Docker + Docker Compose on the new instance.
+3. Clone the repo (`new_hospital`) and check out the commit currently running in production (tag
+   or note this as part of your deploy process — not yet formalized; see `pending-tasks.md`'s
+   tracked production-infra gap).
+4. Bring up the compose stack: `docker compose -f docker-compose.dev.yml up -d` (update this once
+   a production compose file exists).
+5. Pull the latest dump from S3 and restore it (see "Restoring from Backup" above) — accept the
+   RPO stated there (up to 24h of data since the last nightly backup).
+6. Run the restore-drill smoke queries above against the now-live database to confirm the restore
+   is good before cutting traffic over.
+7. Cut DNS over: update the A record for the production hostname to the new VPS's IP. TTL and the
+   specific DNS provider/registrar are host-specific — fill in against whatever is actually in use
+   once that's decided (not yet documented anywhere in this repo).
+8. Monitor error logs/health after cutover for any residual issues.
+
+### Owner and escalation
+
+_(Placeholder — fill in the actual on-call owner/escalation contact for this procedure. Not
+something this runbook can supply on its own.)_

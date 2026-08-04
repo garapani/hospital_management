@@ -63,9 +63,14 @@ follows the PRD's own phase order — no reason to re-litigate that).
    the main `DataSource`. Per-tenant caps (needs PgBouncer — grouped with the existing missing
    production Dockerfile/`docker-compose.yml` gap) and tenant-tagged metrics/alerts (needs the
    observability stack deferred out of item 6) are **not done**.
-8. **Backup/restore runbooks** (new-features.md #6) **+ hardware failure recovery plan**
-   (new-features.md #7) — pure ops docs, no code dependency, can run in parallel with anything
-   above, but must land before any real launch (data loss = compliance issue).
+8. [x] **Backup/restore runbooks** (new-features.md #6) **+ hardware failure recovery plan**
+   (new-features.md #7) — done: `scripts/backup-db.sh` (nightly `pg_dump -Fc`, S3-compatible
+   India-region offsite target, 30-day retention), full + per-tenant restore procedures and a
+   monthly restore-drill procedure in `Runbook.md`, and a Hostinger-VPS-path hardware-failure
+   recovery runbook (~4h target RTO). Scoped to the VPS hosting path only — `PRD.md` §12 open
+   question #1 (self-owned server vs. VPS) is still unresolved. **Not done:** continuous WAL/PITR
+   (24h RPO accepted instead), a self-owned-server recovery runbook, and naming a real
+   owner/escalation contact (left as an explicit placeholder).
 9. **Reference server sizing + load test** (new-features.md #8) — only meaningful once
    observability (item 6) and pooling (item 7) are in place to measure against.
 
