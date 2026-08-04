@@ -58,8 +58,11 @@ follows the PRD's own phase order — no reason to re-litigate that).
    rest of this item — Prometheus metrics, OpenTelemetry tracing, Grafana/Loki dashboards and
    alert rules — is **not done** and needs its own future item before load testing (item 9) or
    touching auth/isolation in staging, since those still depend on metrics/tracing, not just logs.
-7. **Connection pooling/tenant limits** (new-features.md #9) — direct extension of the
-   pool-timeout work from the reporting-archiver session; context is fresh.
+7. [x] **Connection pooling/tenant limits** (new-features.md #9) — **global pool max + statement
+   timeout only**, done: `DB_POOL_MAX` (default 20), `DB_STATEMENT_TIMEOUT_MS` (default 30000ms) on
+   the main `DataSource`. Per-tenant caps (needs PgBouncer — grouped with the existing missing
+   production Dockerfile/`docker-compose.yml` gap) and tenant-tagged metrics/alerts (needs the
+   observability stack deferred out of item 6) are **not done**.
 8. **Backup/restore runbooks** (new-features.md #6) **+ hardware failure recovery plan**
    (new-features.md #7) — pure ops docs, no code dependency, can run in parallel with anything
    above, but must land before any real launch (data loss = compliance issue).

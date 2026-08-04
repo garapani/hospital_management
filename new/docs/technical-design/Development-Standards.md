@@ -275,3 +275,29 @@ See `new/docs/superpowers/plans/2026-08-04-structured-logging.md` for the full i
 history. Metrics, tracing, and dashboards (the rest of `new-features.md` #10) are a separate,
 not-yet-scheduled follow-up.
 
+## 10. Connection Pooling
+
+The main `DataSource` (`apps/api/src/database/data-source.ts`) has an explicit, env-tunable pool
+size and statement timeout: `DB_POOL_MAX` (default `20`, replacing node-postgres's implicit
+default of 10) and `DB_STATEMENT_TIMEOUT_MS` (default `30000`, 30 seconds). Both are first-class
+`pg` `Pool`/`Client` options passed through TypeORM's `extra` — `pg` issues `SET statement_timeout`
+itself right after connecting, unlike `search_path`, which has no first-class option and needs the
+connection-string workaround `tenant-migration-data-source.ts` uses instead.
+
+The reporting pool (`apps/api/src/database/reporting-data-source.ts`) is untouched — it already has
+its own `max: 3`/`connectionTimeoutMillis: 2000`, and only ever runs simple best-effort
+single-table inserts, so a statement timeout adds nothing there.
+
+**These defaults are a placeholder, not a measured number** — `PRD.md` §12 open question #1 (exact
+reference server sizing) is still open pending a real load test (`pending-tasks.md` Phase 3 item
+9). Both values are env vars specifically so that load test can tune them without a code change.
+
+**Deferred:** true per-tenant connection caps (`new-features.md` #9 calls for "PgBouncer or
+equivalent" — a new proxy process this repo has no production infrastructure to run yet) and
+tenant-tagged query metrics + noisy-neighbor alerts (needs the Prometheus/Grafana stack already
+deferred out of Phase 3 item 6). Both remain open, grouped with their respective existing
+follow-ups rather than solved here.
+
+See `new/docs/superpowers/plans/2026-08-04-connection-pool-limits.md` for the full implementation
+history.
+
