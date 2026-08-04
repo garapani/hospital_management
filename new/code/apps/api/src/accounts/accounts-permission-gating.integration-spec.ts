@@ -46,9 +46,8 @@ describe('AccountsController permission gating (integration)', () => {
     accountId = account.id;
 
     app = moduleRef.createNestApplication();
-    app.use(
-      new AuthContextMiddleware(jwtService).use.bind(new AuthContextMiddleware(jwtService)),
-    );
+    const authContextMiddleware = new AuthContextMiddleware(jwtService);
+    app.use(authContextMiddleware.use.bind(authContextMiddleware));
     app.use(
       new TenantContextMiddleware(tenantContext).use.bind(new TenantContextMiddleware(tenantContext)),
     );

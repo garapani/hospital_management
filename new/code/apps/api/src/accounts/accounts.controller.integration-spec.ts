@@ -36,9 +36,8 @@ describe('AccountsController (integration)', () => {
     const jwtService = new JwtService({ secret: resolveJwtSecret() });
 
     app = moduleRef.createNestApplication();
-    app.use(
-      new AuthContextMiddleware(jwtService).use.bind(new AuthContextMiddleware(jwtService)),
-    );
+    const authContextMiddleware = new AuthContextMiddleware(jwtService);
+    app.use(authContextMiddleware.use.bind(authContextMiddleware));
     app.use(
       new TenantContextMiddleware(tenantContext).use.bind(new TenantContextMiddleware(tenantContext)),
     );
