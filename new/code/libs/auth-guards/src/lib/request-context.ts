@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { Request } from 'express';
 
 export interface RequestContext {
@@ -15,27 +15,15 @@ declare module 'express' {
   }
 }
 
-function parseCsvHeader(value: string | undefined): string[] {
-  return (value ?? '')
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
-
 @Injectable()
 export class RequestContextFactory {
   fromRequest(req: Request): RequestContext {
-    if (req.authContext) {
-      return req.authContext;
+    if (!req.authContext) {
+      // AuthContextMiddleware populates req.authContext on every route except the excluded
+      // POST /auth/login and POST /auth/refresh — this factory has no legitimate use on those,
+      // so a missing authContext here is a caller error, not a route to trust request headers.
+      throw new UnauthorizedException('Request has no authContext');
     }
-    // Only reachable on POST /auth/login and POST /auth/refresh, which never populate
-    // req.authContext (see AuthContextMiddleware / TenantContextMiddleware).
-    return {
-      accountId: req.header('x-account-id') || undefined,
-      hospitalId: req.header('x-tenant-id') || undefined,
-      roles: parseCsvHeader(req.header('x-roles')),
-      permissions: parseCsvHeader(req.header('x-permissions')),
-      patientId: req.header('x-patient-id') || undefined,
-    };
+    return req.authContext;
   }
 }

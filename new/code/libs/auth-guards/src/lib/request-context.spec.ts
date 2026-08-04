@@ -1,3 +1,4 @@
+import { UnauthorizedException } from '@nestjs/common';
 import { RequestContextFactory } from './request-context.js';
 
 describe('RequestContextFactory', () => {
@@ -25,35 +26,14 @@ describe('RequestContextFactory', () => {
     });
   });
 
-  it('falls back to forwarded headers when authContext is absent (login/refresh routes)', () => {
+  it('throws UnauthorizedException when authContext is absent, without trusting any headers', () => {
     const factory = new RequestContextFactory();
-    const headers: Record<string, string | undefined> = {
-      'x-account-id': 'acc-1',
-      'x-tenant-id': 'h1',
-      'x-roles': 'Doctor, Nurse',
-      'x-permissions': 'clinical.notes.write',
-    };
-    const req = { header: (name: string) => headers[name] } as any;
+    const req = {
+      header: () => {
+        throw new Error('should not read headers when authContext is absent');
+      },
+    } as any;
 
-    expect(factory.fromRequest(req)).toEqual({
-      accountId: 'acc-1',
-      hospitalId: 'h1',
-      roles: ['Doctor', 'Nurse'],
-      permissions: ['clinical.notes.write'],
-      patientId: undefined,
-    });
-  });
-
-  it('defaults to empty arrays and undefined fields when authContext is absent and no headers are present', () => {
-    const factory = new RequestContextFactory();
-    const req = { header: () => undefined } as any;
-
-    expect(factory.fromRequest(req)).toEqual({
-      accountId: undefined,
-      hospitalId: undefined,
-      roles: [],
-      permissions: [],
-      patientId: undefined,
-    });
+    expect(() => factory.fromRequest(req)).toThrow(UnauthorizedException);
   });
 });
