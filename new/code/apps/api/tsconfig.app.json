@@ -17,7 +17,8 @@
     "jest.config.cts",
     "src/**/*.spec.ts",
     "src/**/*.test.ts",
-    "src/**/*.integration-spec.ts"
+    "src/**/*.integration-spec.ts",
+    "src/testing/**"
   ],
   "references": [
     {
