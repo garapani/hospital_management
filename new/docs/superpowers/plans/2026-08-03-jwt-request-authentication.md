@@ -1563,7 +1563,9 @@ Run: `pnpm exec jest -c apps/api/jest.config.cts --rootDir apps/api accounts.con
 Expected: PASS, same test counts as before.
 
 Run: `pnpm exec nx run-many -t typecheck test`
-Expected: These two files' tests now pass; every other not-yet-migrated controller-style spec still fails the same way (expected, tracked, fixed in later tasks) — baseline is 5 failed suites / 32 failed tests as of Task 4 (`accounts.controller`, `patients.controller`, `tenants.controller`, `master-data.controller`, `encounters.controller` — the last fixed in Task 11).
+Expected: These two files' tests now pass; every other not-yet-migrated controller-style spec still fails the same way (expected, tracked, fixed in later tasks) — baseline is 5 failed suites as of Task 4 (`accounts.controller`, `patients.controller`, `tenants.controller`, `master-data.controller`, `encounters.controller` — the last fixed in Task 11).
+
+**Actual result (confirmed during execution, reproduced across 2 independent runs):** 4 failed suites / **26** failed tests after this task, not 25 as an earlier arithmetic pass in this plan estimated — the suite count (4, decreasing by exactly the newly-fixed files each batch) is the reliable signal; the plan's per-file test-count arithmetic has had minor miscounts more than once and should not be trusted over an actual test run. From here on, verify against the real test output, not against a number stated in this plan.
 
 - [ ] **Step 5: Commit**
 
@@ -1601,7 +1603,7 @@ Expected: PASS, same test counts as before.
 - [ ] **Step 3: Run the full suite**
 
 Run: `pnpm exec nx run-many -t typecheck test`
-Expected: These 4 files now pass, including `tenants.controller.integration-spec.ts` (one of the 5 files in the known failure baseline since Task 4). Remaining known failures after this task: `patients.controller`, `master-data.controller`, `encounters.controller` (3 suites) — fixed in Tasks 9 and 11.
+Expected: These 4 files now pass, including `tenants.controller.integration-spec.ts` (one of the 5 files in the known failure baseline since Task 4). Remaining known failures after this task: `patients.controller`, `master-data.controller`, `encounters.controller` (3 suites — trust the suite count and the actual test run over any specific test-count number; this plan's per-file arithmetic has been off before) — fixed in Tasks 9 and 11.
 
 - [ ] **Step 4: Commit**
 
@@ -1640,7 +1642,7 @@ Expected: PASS, same test counts as before (with the possible 403→401 assertio
 - [ ] **Step 3: Run the full suite**
 
 Run: `pnpm exec nx run-many -t typecheck test`
-Expected: These 5 files now pass, including `master-data.controller.integration-spec.ts` and `patients.controller.integration-spec.ts` (two of the 5 files in the known failure baseline since Task 4). Remaining known failure after this task: `encounters.controller` only (1 suite) — fixed in Task 11.
+Expected: These 5 files now pass, including `master-data.controller.integration-spec.ts` and `patients.controller.integration-spec.ts` (two of the 5 files in the known failure baseline since Task 4). Remaining known failure after this task: `encounters.controller` only (1 suite — trust the suite count and actual test run, not this plan's test-count arithmetic) — fixed in Task 11.
 
 - [ ] **Step 4: Commit**
 
