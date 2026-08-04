@@ -28,21 +28,21 @@ describe('TriageController (e2e)', () => {
     await app.close();
   });
 
-  it('fails with 403 when registering a triage entry without proper permissions', async () => {
+  it('fails with 401 when registering a triage entry without an Authorization header', async () => {
     const res = await request(app.getHttpServer())
       .post('/triage/entries')
       .send({
         chiefComplaint: 'Chest pain',
       });
 
-    expect(res.status).toBeGreaterThanOrEqual(401);
-    expect(res.status).toBeLessThanOrEqual(403);
+    // No Authorization header is sent, so AuthContextMiddleware rejects the request
+    // before it ever reaches PermissionGuard — this is always 401, never 403.
+    expect(res.status).toBe(401);
   });
 
-  it('fails with 403 when listing the triage queue', async () => {
+  it('fails with 401 when listing the triage queue without an Authorization header', async () => {
     const res = await request(app.getHttpServer()).get('/triage/entries');
 
-    expect(res.status).toBeGreaterThanOrEqual(401);
-    expect(res.status).toBeLessThanOrEqual(403);
+    expect(res.status).toBe(401);
   });
 });

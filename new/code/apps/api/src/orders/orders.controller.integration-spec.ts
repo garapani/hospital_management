@@ -28,7 +28,7 @@ describe('OrdersController (e2e)', () => {
     await app.close();
   });
 
-  it('fails with 403 when placing an order without proper permissions', async () => {
+  it('fails with 401 when placing an order without an Authorization header', async () => {
     const res = await request(app.getHttpServer())
       .post('/orders')
       .send({
@@ -37,14 +37,14 @@ describe('OrdersController (e2e)', () => {
         items: [{ itemType: 'Lab', itemDescription: 'CBC' }],
       });
 
-    expect(res.status).toBeGreaterThanOrEqual(401);
-    expect(res.status).toBeLessThanOrEqual(403);
+    // No Authorization header is sent, so AuthContextMiddleware rejects the request
+    // before it ever reaches PermissionGuard — this is always 401, never 403.
+    expect(res.status).toBe(401);
   });
 
-  it('fails with 403 when listing orders', async () => {
+  it('fails with 401 when listing orders without an Authorization header', async () => {
     const res = await request(app.getHttpServer()).get('/orders');
 
-    expect(res.status).toBeGreaterThanOrEqual(401);
-    expect(res.status).toBeLessThanOrEqual(403);
+    expect(res.status).toBe(401);
   });
 });

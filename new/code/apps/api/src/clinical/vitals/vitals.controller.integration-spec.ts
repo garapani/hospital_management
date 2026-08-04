@@ -28,7 +28,7 @@ describe('VitalsController (e2e)', () => {
     await app.close();
   });
 
-  it('fails with 403 when creating vitals without proper permissions', async () => {
+  it('fails with 401 when creating vitals without an Authorization header', async () => {
     const res = await request(app.getHttpServer())
       .post('/vitals')
       .send({
@@ -36,15 +36,15 @@ describe('VitalsController (e2e)', () => {
         temperature: 37,
       });
 
-    expect(res.status).toBeGreaterThanOrEqual(401);
-    expect(res.status).toBeLessThanOrEqual(403);
+    // No Authorization header is sent, so AuthContextMiddleware rejects the request
+    // before it ever reaches PermissionGuard — this is always 401, never 403.
+    expect(res.status).toBe(401);
   });
 
-  it('fails with 403 when getting vitals by patient', async () => {
+  it('fails with 401 when getting vitals by patient without an Authorization header', async () => {
     const res = await request(app.getHttpServer())
       .get('/vitals/patient/00000000-0000-0000-0000-000000000000');
 
-    expect(res.status).toBeGreaterThanOrEqual(401);
-    expect(res.status).toBeLessThanOrEqual(403);
+    expect(res.status).toBe(401);
   });
 });

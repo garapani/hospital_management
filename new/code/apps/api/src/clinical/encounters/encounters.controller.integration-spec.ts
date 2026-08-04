@@ -2,43 +2,46 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../../app/app.module.js';
-import { PermissionGuard } from '@hospital/auth-guards';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
   TenantTestContext,
 } from '../../testing/tenant-test-context.js';
+import { signTestToken } from '../../testing/test-jwt.js';
 
 describe('EncountersController (integration)', () => {
   let app: INestApplication;
   let ctx: TenantTestContext;
   const patientId = '00000000-0000-0000-0000-000000000001';
 
+  let readOnlyToken: string;
+  let manageOnlyToken: string;
+  let fullPermToken: string;
+
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'encounters_ctrl' });
 
+    readOnlyToken = await signTestToken({
+      sub: 'encounters-controller-readonly',
+      hospitalId: ctx.tenantId,
+      permissions: ['encounter.read'],
+    });
+
+    manageOnlyToken = await signTestToken({
+      sub: 'encounters-controller-manage-only',
+      hospitalId: ctx.tenantId,
+      permissions: ['encounter.manage'],
+    });
+
+    fullPermToken = await signTestToken({
+      sub: 'encounters-controller-full',
+      hospitalId: ctx.tenantId,
+      permissions: ['encounter.read', 'encounter.manage'],
+    });
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    })
-      .overrideGuard(PermissionGuard)
-      .useValue({
-        canActivate: (context: any) => {
-          const req = context.switchToHttp().getRequest();
-          req.user = {
-            accountId: 'test-account',
-            tenantId: ctx.tenantId,
-            permissions: req.headers['x-test-permissions']?.split(',') || [],
-          };
-
-          const permissions = req.user.permissions;
-          const routePermission = Reflect.getMetadata('requiredPermission', context.getHandler());
-          if (routePermission && !permissions.includes(routePermission)) {
-            return false;
-          }
-          return true;
-        },
-      })
-      .compile();
+    }).compile();
 
     app = moduleFixture.createNestApplication();
     await app.init();
@@ -53,8 +56,7 @@ describe('EncountersController (integration)', () => {
     it('returns 403 when creating a note without encounter.manage', async () => {
       await request(app.getHttpServer())
         .post('/encounters/notes')
-        .set('x-tenant-id', ctx.tenantId)
-        .set('x-test-permissions', 'encounter.read')
+        .set('Authorization', `Bearer ${readOnlyToken}`)
         .send({ patientId, doctorId: '00000000-0000-0000-0000-000000000002' })
         .expect(403);
     });
@@ -62,16 +64,14 @@ describe('EncountersController (integration)', () => {
     it('returns 403 when reading notes without encounter.read', async () => {
       await request(app.getHttpServer())
         .get(`/encounters/notes/patient/${patientId}`)
-        .set('x-tenant-id', ctx.tenantId)
-        .set('x-test-permissions', 'encounter.manage')
+        .set('Authorization', `Bearer ${manageOnlyToken}`)
         .expect(403);
     });
 
     it('allows access with correct permissions', async () => {
       await request(app.getHttpServer())
         .get(`/encounters/notes/patient/${patientId}`)
-        .set('x-tenant-id', ctx.tenantId)
-        .set('x-test-permissions', 'encounter.read')
+        .set('Authorization', `Bearer ${readOnlyToken}`)
         .expect(200);
     });
   });
@@ -82,8 +82,7 @@ describe('EncountersController (integration)', () => {
     it('creates a note', async () => {
       const res = await request(app.getHttpServer())
         .post('/encounters/notes')
-        .set('x-tenant-id', ctx.tenantId)
-        .set('x-test-permissions', 'encounter.manage')
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           patientId,
           doctorId: '00000000-0000-0000-0000-000000000002',
@@ -99,8 +98,7 @@ describe('EncountersController (integration)', () => {
     it('updates a note', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/encounters/notes/${noteId}`)
-        .set('x-tenant-id', ctx.tenantId)
-        .set('x-test-permissions', 'encounter.manage')
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           plan: 'Take paracetamol',
         })
@@ -112,8 +110,7 @@ describe('EncountersController (integration)', () => {
     it('creates a diagnosis', async () => {
       const res = await request(app.getHttpServer())
         .post('/encounters/diagnoses')
-        .set('x-tenant-id', ctx.tenantId)
-        .set('x-test-permissions', 'encounter.manage')
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           patientId,
           doctorId: '00000000-0000-0000-0000-000000000002',
@@ -126,8 +123,7 @@ describe('EncountersController (integration)', () => {
     it('creates a prescription', async () => {
       const res = await request(app.getHttpServer())
         .post('/encounters/prescriptions')
-        .set('x-tenant-id', ctx.tenantId)
-        .set('x-test-permissions', 'encounter.manage')
+        .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           patientId,
           doctorId: '00000000-0000-0000-0000-000000000002',
