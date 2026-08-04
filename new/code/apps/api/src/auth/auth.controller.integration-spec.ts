@@ -1,14 +1,26 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { TenantContextMiddleware, TenantContextService } from '@hospital/tenant-context';
 import { DataSource } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
+import type { NextFunction, Request, Response } from 'express';
 import { AuthModule } from './auth.module.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
   TenantTestContext,
 } from '../testing/tenant-test-context.js';
+import { resolveJwtSecret } from './jwt-secret.js';
+
+// POST /auth/login and POST /auth/refresh are excluded from AuthContextMiddleware in production
+// (see AppModule.configure()) — no prior JWT can exist at login, and refresh authenticates via
+// the refresh token itself, not an access token. This manually-constructed test app doesn't go
+// through AppModule.configure(), so the exclusion is reproduced here to keep behavior identical.
+function isAuthContextExcludedRoute(req: Request): boolean {
+  return req.method === 'POST' && (req.path === '/auth/login' || req.path === '/auth/refresh');
+}
 
 describe('AuthController (integration)', () => {
   let app: INestApplication;
@@ -35,7 +47,17 @@ describe('AuthController (integration)', () => {
       .useValue(ctx.tenantContext)
       .compile();
 
+    const jwtService = new JwtService({ secret: resolveJwtSecret() });
+
     app = moduleRef.createNestApplication();
+    const authContextMiddleware = new AuthContextMiddleware(jwtService);
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (isAuthContextExcludedRoute(req)) {
+        next();
+        return;
+      }
+      authContextMiddleware.use(req, res, next);
+    });
     app.use(
       new TenantContextMiddleware(ctx.tenantContext).use.bind(new TenantContextMiddleware(ctx.tenantContext)),
     );
