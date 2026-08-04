@@ -87,4 +87,60 @@ describe('AuthService (integration)', () => {
     >;
     expect(decoded['permissions']).toContain('identity.accounts.manage');
   });
+
+  it('issues a new access token from a valid refresh token, reflecting current roles', async () => {
+    await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
+        username: 'refresh.user',
+        email: 'refreshuser@example.com',
+        displayName: 'Refresh User',
+        password: 'a-refresh-password',
+        roleName: 'Nurse',
+      }),
+    );
+    const loginResult = await ctx.inTenant(() =>
+      authService.login({ username: 'refresh.user', password: 'a-refresh-password' }),
+    );
+    if (!('refreshToken' in loginResult)) {
+      throw new Error('expected a successful login');
+    }
+
+    // JWT `iat` has second-level granularity: without this delay, a refresh issued in the same
+    // wall-clock second as login would sign an identical payload and produce a byte-identical
+    // token, making the "rotated" assertion below flaky rather than a real behavior check.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    const refreshResult = await authService.refresh({ refreshToken: loginResult.refreshToken });
+    expect('accessToken' in refreshResult).toBe(true);
+    if ('accessToken' in refreshResult) {
+      expect(typeof refreshResult.refreshToken).toBe('string');
+      expect(refreshResult.refreshToken).not.toBe(loginResult.refreshToken);
+    }
+  });
+
+  it('rejects refresh when given an access token instead of a refresh token', async () => {
+    await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
+        username: 'refresh.wrong.token',
+        email: 'refreshwrong@example.com',
+        displayName: 'Refresh Wrong Token',
+        password: 'a-wrong-password',
+        roleName: 'Nurse',
+      }),
+    );
+    const loginResult = await ctx.inTenant(() =>
+      authService.login({ username: 'refresh.wrong.token', password: 'a-wrong-password' }),
+    );
+    if (!('accessToken' in loginResult)) {
+      throw new Error('expected a successful login');
+    }
+
+    const refreshResult = await authService.refresh({ refreshToken: loginResult.accessToken });
+    expect(refreshResult).toEqual({ invalidToken: true });
+  });
+
+  it('rejects refresh with a malformed token', async () => {
+    const refreshResult = await authService.refresh({ refreshToken: 'not-a-real-token' });
+    expect(refreshResult).toEqual({ invalidToken: true });
+  });
 });

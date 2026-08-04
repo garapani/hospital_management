@@ -19,6 +19,20 @@ export type LoginResult =
   | { locked: true; retryAfterSeconds: number }
   | { invalidCredentials: true };
 
+export interface RefreshInput {
+  refreshToken: string;
+}
+
+export type RefreshResult =
+  | { accessToken: string; refreshToken: string }
+  | { invalidToken: true };
+
+interface RefreshTokenPayload {
+  sub: string;
+  hospitalId: string;
+  type: string;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -61,14 +75,56 @@ export class AuthService {
       roles: roleNames,
       permissions,
       hospitalId,
+      type: 'access' as const,
     };
 
     const accessToken = await this.jwtService.signAsync(payload, { expiresIn: ACCESS_TOKEN_TTL });
     const refreshToken = await this.jwtService.signAsync(
-      { sub: account.id, hospitalId },
+      { sub: account.id, hospitalId, type: 'refresh' as const },
       { expiresIn: REFRESH_TOKEN_TTL },
     );
 
     return { accessToken, refreshToken };
+  }
+
+  async refresh(input: RefreshInput): Promise<RefreshResult> {
+    let payload: RefreshTokenPayload;
+    try {
+      payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(input.refreshToken);
+    } catch {
+      return { invalidToken: true };
+    }
+
+    if (payload.type !== 'refresh') {
+      return { invalidToken: true };
+    }
+
+    const found = await this.tenantContext.run(
+      { tenantId: payload.hospitalId, correlationId: 'auth-refresh' },
+      () => this.accountsService.getAccountWithRoles(payload.sub),
+    );
+    if (!found) {
+      return { invalidToken: true };
+    }
+
+    const permissions = await this.accountsService.getPermissionNamesForRoles(found.roleIds);
+    const accessPayload = {
+      sub: found.account.id,
+      roles: found.roleNames,
+      permissions,
+      hospitalId: payload.hospitalId,
+      type: 'access' as const,
+    };
+
+    const accessToken = await this.jwtService.signAsync(accessPayload, { expiresIn: ACCESS_TOKEN_TTL });
+    // Rotate: issue a new refresh token instead of letting the caller reuse the old one. This is
+    // stateless rotation only — there is no revocation store in this codebase, so the previous
+    // refresh token remains cryptographically valid until its own 7-day expiry rather than being
+    // immediately invalidated (see the design spec for why this is an accepted limitation).
+    const newRefreshToken = await this.jwtService.signAsync(
+      { sub: found.account.id, hospitalId: payload.hospitalId, type: 'refresh' as const },
+      { expiresIn: REFRESH_TOKEN_TTL },
+    );
+    return { accessToken, refreshToken: newRefreshToken };
   }
 }
