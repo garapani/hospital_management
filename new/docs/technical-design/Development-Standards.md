@@ -102,3 +102,23 @@ instances, e.g. it asserts on wiring inside the full `AppModule`): keep the DI-r
 exception, not the default — annotate the call site so nobody "simplifies" it back to
 `ctx.inTenant()`.
 
+## 6. Request Authentication
+
+Every request **except** `POST /auth/login` and `POST /auth/refresh` requires a valid JWT in the
+`Authorization: Bearer <token>` header, verified by `AuthContextMiddleware` (in `libs/auth-guards`).
+The middleware extracts and validates the token, then stores the decoded claims in `req.authContext` —
+this becomes the single source of truth for identity, tenant ID, and permissions downstream.
+
+`req.authContext` is read by:
+- `TenantContextMiddleware` — derives the active tenant schema from `req.authContext.hospitalId`
+- `RequestContextFactory` — exposes identity and permissions to business logic
+- `PermissionGuard` — checks route-level and resource-level permissions against `req.authContext.permissions`
+
+**Why login and refresh are the exception:**
+- `POST /auth/login` has no token yet (it mints one); the middleware accepts an unauthenticated request and allows the controller to read an optional `x-tenant-id` header as a hint for which tenant to authenticate against.
+- `POST /auth/refresh` holds a refresh token (from a prior login); the controller decodes it directly and mints a new access token without requiring middleware validation.
+
+**Testing against real tokens:** All controller-style integration specs now mint real JWTs via
+`signTestToken()` in `apps/api/src/testing/test-jwt.ts`. This ensures tests exercise the same
+auth flow as production — no header-mocking shortcuts.
+

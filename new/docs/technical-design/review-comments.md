@@ -6,6 +6,8 @@ Review target: `new/docs/technical-design/`
 
 ### High: Authorization and tenant selection are documented as JWT-backed, but current code trusts request headers
 
+**Resolved:** `AuthContextMiddleware` now verifies `Authorization: Bearer <token>` on every route except `/auth/login`/`/auth/refresh`; see `new/docs/superpowers/plans/2026-08-03-jwt-request-authentication.md`.
+
 The PRD says tenant resolution comes from the `hospitalId` JWT claim and that the application guard validates JWTs before checking permissions:
 
 - `new/docs/technical-design/PRD.md:52`

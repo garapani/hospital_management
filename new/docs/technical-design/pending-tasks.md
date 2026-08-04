@@ -25,9 +25,9 @@ follows the PRD's own phase order — no reason to re-litigate that).
 1. [x] **Shared `inTenant()` test helper** (new-features.md #5) — done: `apps/api/src/testing/tenant-test-context.ts`, all ~40 integration specs migrated. Build *before* item 3. Proving
    tenant isolation requires reliable, consistent test infrastructure; building the helper after
    item 3 lands would mean rewriting its isolation tests.
-2. **JWT-backed request auth** (new-features.md #1) — root cause. Every protected route
-   currently trusts client-controlled `x-tenant-id`/`x-permissions` headers for identity *and*
-   tenant. Everything downstream (permission checks, tenant context) is built on top of this.
+2. [x] **JWT-backed request auth** (new-features.md #1) — done: `AuthContextMiddleware`
+   (`libs/auth-guards`), `POST /auth/refresh`, all controller-style integration specs migrated
+   onto real tokens via `signTestToken()`. Root cause. Every protected route
 3. **Database-enforced tenant isolation** (new-features.md #2) — defense-in-depth: catches
    tenant-resolution bugs even after item 2 lands. **Blocked on the parked tenant-migration-runner
    gap** (see Dependencies below) — new schema grants can't be rolled out to already-provisioned
