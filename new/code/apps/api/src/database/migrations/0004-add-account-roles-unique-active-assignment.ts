@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddAccountRolesUniqueActiveAssignment implements MigrationInterface {
-  name = 'AddAccountRolesUniqueActiveAssignment';
+  name = 'AddAccountRolesUniqueActiveAssignment2000000000002';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class CreateTenantAccountTables implements MigrationInterface {
-  name = 'CreateTenantAccountTables';
+  name = 'CreateTenantAccountTables2000000000001';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

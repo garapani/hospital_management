@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class CreateEncounterTables011 implements MigrationInterface {
-  name = 'CreateEncounterTables011';
+  name = 'CreateEncounterTables0112000000000008';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

@@ -1,6 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class CreateVitalsTable0010 implements MigrationInterface {
+  name = 'CreateVitalsTable00102000000000007';
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       CREATE TABLE vitals (

@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class CreateBedsTable0013 implements MigrationInterface {
-  name = 'CreateBedsTable0013';
+  name = 'CreateBedsTable00132000000000010';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
