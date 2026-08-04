@@ -227,3 +227,51 @@ tenant schema at all.
 See `new/docs/superpowers/plans/2026-08-04-database-enforced-tenant-isolation.md` for the full
 implementation history.
 
+## 9. Structured Logging
+
+Every log line is structured JSON (pretty-printed to stdout only in local dev) via `nestjs-pino`,
+configured once in `libs/observability`'s `ObservabilityLoggerModule` and wired into `AppModule`.
+`main.ts` calls `app.useLogger(app.get(PinoLogger))` right after `NestFactory.create(AppModule,
+{ bufferLogs: true })` — every existing `Logger.log/warn/error/debug` call site (including
+`@nestjs/common`'s static `Logger.log(...)` calls) automatically routes through it with no changes
+needed at the call site.
+
+**Context is automatic, not manual.** A pino `mixin` — not `pinoHttp.customProps` — reads
+`TenantContextService.getTenantId()`/`getAccountId()`/`getCorrelationId()` (from
+`@hospital/tenant-context`, backed by `AsyncLocalStorage`) on every single log call, including the
+automatic HTTP request-completion line pino-http emits. `mixin` is a core pino option that fires on
+every write regardless of caller, which is what makes it safe to reason about independently of
+NestJS middleware registration order: it just needs a log call to happen somewhere inside the async
+chain `TenantContextMiddleware.use()`'s `tenantContext.run({...}, () => next())` kicked off, which
+covers all request-handling code by construction. Verified manually against a running dev server:
+an inbound `x-correlation-id` header shows up as `correlationId` on both the request-completion log
+line and an `ExceptionsHandler` error log line for the same request. A request that never reaches
+`TenantContextMiddleware` (e.g. one `AuthContextMiddleware` rejects with 401 before calling `next()`)
+correctly has no context fields — there's nothing to attach yet at that point in the chain.
+
+**Convention: log specific fields/IDs, never whole entity objects.** This is a hospital EMR — a
+`logger.log(patient)` call can leak PHI through any field that happens to be on the entity,
+regardless of the redact list below. Always log `{ patientId: patient.id }`, not `patient` itself.
+
+**Redaction is a backstop, not the primary defense.** `ObservabilityLoggerModule` configures pino's
+`redact` option with a fixed key-path list: `password`, `token`, `refreshToken`, `authorization`,
+`req.headers.authorization`, `req.headers.cookie`, `ssn`, `dob`, `diagnosis`, `phone`, `email`,
+`address` (plus a `*.<key>` wildcard variant of each so it's caught one level into any logged
+object). It only catches those specific key names — it cannot substitute for the logging
+convention above.
+
+**Config:** `LOG_LEVEL` env var (default `debug` outside production, `info` in production; forced
+to `silent` when `NODE_ENV === 'test'`, which Jest sets automatically — so the existing test suite
+stays quiet without per-spec configuration).
+
+**Deferred:** the two automated tests this feature calls for (an HTTP request's log line carries
+`tenantId`/`correlationId`; a redacted key never appears in emitted output — see
+`new/docs/superpowers/specs/2026-08-04-structured-logging-design.md`'s Testing section) were not
+written as part of this pass, per the human partner's prototype-demo priority — they're left for
+the human partner's own post-prototype testing pass, the same deferral pattern as Phase 1 item 3's
+Task 7.
+
+See `new/docs/superpowers/plans/2026-08-04-structured-logging.md` for the full implementation
+history. Metrics, tracing, and dashboards (the rest of `new-features.md` #10) are a separate,
+not-yet-scheduled follow-up.
+

@@ -52,8 +52,12 @@ follows the PRD's own phase order — no reason to re-litigate that).
 
 ## Phase 3 — Production-readiness ops
 
-6. **Observability stack** (new-features.md #10) — stand this up *before* load testing or
-   touching auth/isolation in staging, not after.
+6. [x] **Observability stack** (new-features.md #10) — **structured logging only**, done: JSON
+   logs via `nestjs-pino`, tagged with `tenantId`/`accountId`/`correlationId` automatically via a
+   pino `mixin` reading `TenantContextService`, redaction backstop for known-sensitive keys. The
+   rest of this item — Prometheus metrics, OpenTelemetry tracing, Grafana/Loki dashboards and
+   alert rules — is **not done** and needs its own future item before load testing (item 9) or
+   touching auth/isolation in staging, since those still depend on metrics/tracing, not just logs.
 7. **Connection pooling/tenant limits** (new-features.md #9) — direct extension of the
    pool-timeout work from the reporting-archiver session; context is fresh.
 8. **Backup/restore runbooks** (new-features.md #6) **+ hardware failure recovery plan**
