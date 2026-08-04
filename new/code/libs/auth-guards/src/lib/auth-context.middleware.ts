@@ -17,16 +17,16 @@ export class AuthContextMiddleware implements NestMiddleware {
 
   async use(req: Request, _res: Response, next: NextFunction): Promise<void> {
     const authHeader = req.header('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader || authHeader.slice(0, 7).toLowerCase() !== 'bearer ') {
       next(new UnauthorizedException('Missing or malformed Authorization header'));
       return;
     }
 
-    const token = authHeader.slice('Bearer '.length);
+    const token = authHeader.slice(7);
 
     let payload: AccessTokenPayload;
     try {
-      payload = await this.jwtService.verifyAsync<AccessTokenPayload>(token);
+      payload = await this.jwtService.verifyAsync<AccessTokenPayload>(token, { algorithms: ['HS256'] });
     } catch {
       next(new UnauthorizedException('Invalid or expired token'));
       return;
@@ -34,6 +34,11 @@ export class AuthContextMiddleware implements NestMiddleware {
 
     if (payload.type !== 'access') {
       next(new UnauthorizedException('Token is not an access token'));
+      return;
+    }
+
+    if (!payload.sub || !payload.hospitalId) {
+      next(new UnauthorizedException('Token missing required claims'));
       return;
     }
 

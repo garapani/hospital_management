@@ -103,4 +103,79 @@ describe('AuthContextMiddleware', () => {
 
     expect(capturedError).toBeInstanceOf(UnauthorizedException);
   });
+
+  it('calls next with UnauthorizedException when a validly-signed access token is missing hospitalId', async () => {
+    const token = await jwtService.signAsync(
+      { sub: 'acc-1', roles: ['Doctor'], permissions: [], type: 'access' },
+      { expiresIn: '15m' },
+    );
+    const middleware = new AuthContextMiddleware(jwtService);
+    const req = buildRequest(`Bearer ${token}`);
+    let capturedError: unknown;
+    let nextCalledWithoutError = false;
+
+    await middleware.use(req, {} as any, (err?: unknown) => {
+      if (err) {
+        capturedError = err;
+      } else {
+        nextCalledWithoutError = true;
+      }
+    });
+
+    expect(capturedError).toBeInstanceOf(UnauthorizedException);
+    expect(nextCalledWithoutError).toBe(false);
+    expect(req.authContext).toBeUndefined();
+  });
+
+  it('calls next with UnauthorizedException when a validly-signed access token is missing sub', async () => {
+    const token = await jwtService.signAsync(
+      { hospitalId: 'h1', roles: [], permissions: [], type: 'access' },
+      { expiresIn: '15m' },
+    );
+    const middleware = new AuthContextMiddleware(jwtService);
+    const req = buildRequest(`Bearer ${token}`);
+    let capturedError: unknown;
+
+    await middleware.use(req, {} as any, (err?: unknown) => {
+      capturedError = err;
+    });
+
+    expect(capturedError).toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('accepts a lowercase "bearer" scheme prefix (case-insensitive per RFC 7235)', async () => {
+    const token = await jwtService.signAsync(
+      { sub: 'acc-1', hospitalId: 'h1', roles: [], permissions: [], type: 'access' },
+      { expiresIn: '15m' },
+    );
+    const middleware = new AuthContextMiddleware(jwtService);
+    const req = buildRequest(`bearer ${token}`);
+    let nextCalled = false;
+
+    await middleware.use(req, {} as any, () => {
+      nextCalled = true;
+    });
+
+    expect(nextCalled).toBe(true);
+    expect(req.authContext).toMatchObject({ accountId: 'acc-1', hospitalId: 'h1' });
+  });
+
+  it('rejects a token signed with a different algorithm than the pinned HS256', async () => {
+    // Sign a token whose header claims 'none' but which JwtService (HS256-only) would otherwise
+    // need to explicitly reject rather than silently accept via alg confusion.
+    const middleware = new AuthContextMiddleware(jwtService);
+    const forgedHeader = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+    const forgedPayload = Buffer.from(
+      JSON.stringify({ sub: 'acc-1', hospitalId: 'h1', roles: [], permissions: [], type: 'access' }),
+    ).toString('base64url');
+    const forgedToken = `${forgedHeader}.${forgedPayload}.`;
+    const req = buildRequest(`Bearer ${forgedToken}`);
+    let capturedError: unknown;
+
+    await middleware.use(req, {} as any, (err?: unknown) => {
+      capturedError = err;
+    });
+
+    expect(capturedError).toBeInstanceOf(UnauthorizedException);
+  });
 });
