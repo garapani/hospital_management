@@ -96,6 +96,9 @@ export class RadiologyWorkflowService {
   }
 
   async markScanned(id: string, scannedBy: string): Promise<RadiologyRequisition> {
+    if (!scannedBy?.trim()) {
+      throw new BadRequestException('scannedBy is required');
+    }
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(RadiologyRequisition);
       const requisition = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
@@ -116,6 +119,12 @@ export class RadiologyWorkflowService {
   }
 
   async enterReport(id: string, input: EnterReportInput): Promise<RadiologyRequisition> {
+    if (!input.reportText?.trim()) {
+      throw new BadRequestException('reportText is required');
+    }
+    if (!input.reportEnteredBy?.trim()) {
+      throw new BadRequestException('reportEnteredBy is required');
+    }
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(RadiologyRequisition);
       const requisition = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
@@ -143,6 +152,9 @@ export class RadiologyWorkflowService {
   }
 
   async verify(id: string, verifiedBy: string): Promise<RadiologyRequisition> {
+    if (!verifiedBy?.trim()) {
+      throw new BadRequestException('verifiedBy is required');
+    }
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(RadiologyRequisition);
       const requisition = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
