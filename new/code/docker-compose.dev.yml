@@ -27,5 +27,21 @@ services:
       timeout: 5s
       retries: 5
 
+  api-minio:
+    image: minio/minio:latest
+    container_name: api-minio-dev
+    environment:
+      MINIO_ROOT_USER: hospital_dev
+      MINIO_ROOT_PASSWORD: hospital_dev_password
+    command: server /data --console-address ":9001"
+    ports:
+      - '9002:9000'
+      - '9003:9001'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   api-postgres-data:
