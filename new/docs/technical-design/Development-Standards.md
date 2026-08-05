@@ -392,3 +392,40 @@ until a real writer exists (see `Runbook.md`'s Object Storage Backup Policy sect
 See `new/docs/superpowers/plans/2026-08-05-minio-object-storage.md` for the full implementation
 history.
 
+## 14. Lab/LIS Core Pipeline
+
+The Lab/LIS module (`apps/api/src/lab/`) splits into two controllers/services by concern:
+`LabCatalogService`/`LabCatalogController` (category/test/component catalog CRUD, gated by
+`lab.catalog.manage` — Hospital Admin/Super Admin only, mirrors `master-data.manage`'s
+admin-only-catalog convention) and `LabWorkflowService`/`LabWorkflowController` (requisition/
+sample/result/verify actions, gated by `lab.requisition.create`/`lab.result.enter`/
+`lab.result.verify` — Lab Technician's first-ever permission grants).
+
+**Status machine:** `LabRequisition.status` moves `'Pending'` → `'SampleCollected'` →
+`'ResultsEntered'` (auto-advanced once every one of the test's `LabTestComponent`s has a
+`LabResult` row) → `'Verified'`, plus `'Cancelled'` from any non-terminal state. Each transition
+is guarded the same way `OrderItem`'s `completeItem`/`cancelItem` guards its own status — a
+`ConflictException` if the current status doesn't allow it.
+
+**Result correction:** re-entering a result for a component that already has one **overwrites**
+it via a Postgres `ON CONFLICT ("requisitionId", "componentId") DO UPDATE` upsert, as long as the
+requisition isn't `'Verified'` yet — lets a tech fix a data-entry mistake before sign-off. Once
+`'Verified'`, `enterResult` is rejected outright; verification is meant to lock the result set it
+signs off on.
+
+**No four-eyes enforcement:** the same person can enter a result and then verify it — the old
+system's four-eyes/multi-level verification was a per-deployment config toggle
+(`VerificationCoreCFGModel`), and no stated need for that configurability exists yet, so this is a
+deliberate scope cut, not an oversight.
+
+**Order module untouched:** `OrderItem` still carries a free-text `itemDescription` with no
+catalog reference — a `LabRequisition` is the reclassification step, referencing both
+`orderItemId` and the catalog `testId` a Lab Technician matches it to. The `Order`/`OrderItem`
+entities and the Orders module were not modified by this item.
+
+**Deferred to future items:** report generation/PDF export, machine/instrument (LIS) integration,
+external lab send-out, government disease-reporting mapping, auto-calculated derived components,
+multi-level verification.
+
+See `new/docs/superpowers/plans/2026-08-05-lab-lis-module.md` for the full implementation
+history.

@@ -105,7 +105,12 @@ follows the PRD's own phase order — no reason to re-litigate that).
 
 Follow the PRD's own phase ordering as-is:
 
-- Phase 2: Lab/LIS, Radiology, DICOM, Pharmacy, Inventory, Ward Supply
+- Phase 2:
+  - [x] Lab/LIS core pipeline (test catalog, requisition/sample tracking, result entry,
+        single-level verification) — done. **Not done:** report/PDF export, machine/instrument
+        (LIS) integration, external lab send-out, government disease-reporting mapping,
+        multi-level verification — each a distinct future item.
+  - Radiology, DICOM, Pharmacy, Inventory, Ward Supply — not started
 - Phase 3: Insurance/Claims, Accounting, Verification, Fixed Asset
 - Phase 4: Clinical/EMR long tail, Nursing, Emergency, OT, Maternity, CSSD
 - Phase 5: Employee, Payroll, Fraction and Incentive
