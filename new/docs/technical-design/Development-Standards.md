@@ -395,11 +395,14 @@ history.
 ## 14. Lab/LIS Core Pipeline
 
 The Lab/LIS module (`apps/api/src/lab/`) splits into two controllers/services by concern:
-`LabCatalogService`/`LabCatalogController` (category/test/component catalog CRUD, gated by
-`lab.catalog.manage` — Hospital Admin/Super Admin only, mirrors `master-data.manage`'s
-admin-only-catalog convention) and `LabWorkflowService`/`LabWorkflowController` (requisition/
-sample/result/verify actions, gated by `lab.requisition.create`/`lab.result.enter`/
-`lab.result.verify` — Lab Technician's first-ever permission grants).
+`LabCatalogService`/`LabCatalogController` (category/test/component catalog — create and list
+only, gated by `lab.catalog.manage` — Hospital Admin/Super Admin only, mirrors
+`master-data.manage`'s admin-only-catalog convention) and `LabWorkflowService`/
+`LabWorkflowController` (requisition/sample/result/verify actions, gated by
+`lab.requisition.create`/`lab.result.enter`/`lab.result.verify` — Lab Technician's first-ever
+permission grants). No update/delete endpoints exist on any catalog entity (category, test, or
+component) — catalog corrections currently require direct DB access; see `pending-tasks.md`'s
+Lab/LIS entry for this gap.
 
 **Status machine:** `LabRequisition.status` moves `'Pending'` → `'SampleCollected'` →
 `'ResultsEntered'` (auto-advanced once every one of the test's `LabTestComponent`s has a

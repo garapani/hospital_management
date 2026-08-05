@@ -204,7 +204,7 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
   },
   {
     name: 'lab.catalog.manage',
-    description: 'Create, list, and update the lab test category/test/component catalog.',
+    description: 'Create and list the lab test category/test/component catalog.',
   },
   {
     name: 'lab.read',

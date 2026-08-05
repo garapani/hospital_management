@@ -109,7 +109,13 @@ Follow the PRD's own phase ordering as-is:
   - [x] Lab/LIS core pipeline (test catalog, requisition/sample tracking, result entry,
         single-level verification) — done. **Not done:** report/PDF export, machine/instrument
         (LIS) integration, external lab send-out, government disease-reporting mapping,
-        multi-level verification — each a distinct future item.
+        multi-level verification, catalog update/delete (create+list only shipped; see
+        `Development-Standards.md` §14), result amendment history/audit trail (corrections
+        currently overwrite in place with no version row — acceptable for now since only
+        pre-verification edits are allowed, but named explicitly rather than left silent), and
+        `OrderItem.status` never advancing when its lab requisition is verified (the ordering
+        doctor has no signal from the Order module itself that results are ready; they'd need to
+        check Lab directly) — each a distinct future item.
   - Radiology, DICOM, Pharmacy, Inventory, Ward Supply — not started
 - Phase 3: Insurance/Claims, Accounting, Verification, Fixed Asset
 - Phase 4: Clinical/EMR long tail, Nursing, Emergency, OT, Maternity, CSSD
@@ -126,6 +132,14 @@ Follow the PRD's own phase ordering as-is:
   through `libs/audit-emitter`. The underlying migration logic is proven correct (passes under
   Jest), so this is a standalone-script tooling fix (decorator-safe runner or a build step), not a
   logic fix. Should land before any real deployment — bundle with Phase 3 ops-readiness work.
+- **New gap, not yet its own item, codebase-wide**: every domain module's "actor" DTO fields
+  (`enteredBy`, `verifiedBy`, `sampleCollectedBy` in Lab, and the pre-existing
+  `orderedBy`/`dischargedBy`/`transferredBy` elsewhere) are client-supplied in the request body
+  rather than derived from the authenticated principal (`request.authContext`), so any caller
+  holding the right permission can attribute an action to a different, arbitrary user ID. Most
+  severe for Lab's `verifiedBy` (a clinical sign-off), but this is a pattern across the whole
+  codebase, not a Lab-specific defect — worth its own future item to derive these fields from
+  `authContext` instead of trusting the body, across every domain, not just Lab.
 - **New gap, not yet its own item**: one test in
   `apps/api/src/reporting/persisting-reporting-event-publisher.integration-spec.ts` (the
   "SQL-level failure gets logged" assertion around its `loggedErrors` spy on
