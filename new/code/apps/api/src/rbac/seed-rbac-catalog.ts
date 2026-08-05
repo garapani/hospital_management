@@ -222,6 +222,26 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'lab.result.verify',
     description: 'Verify a fully-resulted lab requisition.',
   },
+  {
+    name: 'radiology.catalog.manage',
+    description: 'Create and list the radiology imaging type/item catalog.',
+  },
+  {
+    name: 'radiology.read',
+    description: 'View the radiology catalog, requisitions, and reports.',
+  },
+  {
+    name: 'radiology.requisition.create',
+    description: 'Create a radiology requisition from an order item.',
+  },
+  {
+    name: 'radiology.report.enter',
+    description: 'Mark a study scanned and enter its report text.',
+  },
+  {
+    name: 'radiology.report.verify',
+    description: 'Verify a fully-reported radiology requisition.',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -316,6 +336,18 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Lab Technician', permissionName: 'lab.result.enter' },
   { roleName: 'Super Admin', permissionName: 'lab.result.verify' },
   { roleName: 'Lab Technician', permissionName: 'lab.result.verify' },
+  { roleName: 'Super Admin', permissionName: 'radiology.catalog.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'radiology.catalog.manage' },
+  { roleName: 'Super Admin', permissionName: 'radiology.read' },
+  { roleName: 'Hospital Admin', permissionName: 'radiology.read' },
+  { roleName: 'Radiology Technician', permissionName: 'radiology.read' },
+  { roleName: 'Doctor', permissionName: 'radiology.read' },
+  { roleName: 'Super Admin', permissionName: 'radiology.requisition.create' },
+  { roleName: 'Radiology Technician', permissionName: 'radiology.requisition.create' },
+  { roleName: 'Super Admin', permissionName: 'radiology.report.enter' },
+  { roleName: 'Radiology Technician', permissionName: 'radiology.report.enter' },
+  { roleName: 'Super Admin', permissionName: 'radiology.report.verify' },
+  { roleName: 'Radiology Technician', permissionName: 'radiology.report.verify' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
