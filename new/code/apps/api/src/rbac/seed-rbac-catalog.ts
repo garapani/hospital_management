@@ -242,6 +242,22 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'radiology.report.verify',
     description: 'Verify a fully-reported radiology requisition.',
   },
+  {
+    name: 'inventory.catalog.manage',
+    description: 'Create and list inventory item categories, sub-categories, items, and vendors',
+  },
+  {
+    name: 'inventory.read',
+    description: 'View inventory catalog, purchase orders, and stock balance',
+  },
+  {
+    name: 'inventory.purchase-order.create',
+    description: 'Create a purchase order; also gates cancellation',
+  },
+  {
+    name: 'inventory.goods-receipt.enter',
+    description: 'Record a goods receipt against a purchase order line',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -348,6 +364,15 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Radiology Technician', permissionName: 'radiology.report.enter' },
   { roleName: 'Super Admin', permissionName: 'radiology.report.verify' },
   { roleName: 'Radiology Technician', permissionName: 'radiology.report.verify' },
+  { roleName: 'Super Admin', permissionName: 'inventory.catalog.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'inventory.catalog.manage' },
+  { roleName: 'Super Admin', permissionName: 'inventory.read' },
+  { roleName: 'Hospital Admin', permissionName: 'inventory.read' },
+  { roleName: 'Inventory/Store Manager', permissionName: 'inventory.read' },
+  { roleName: 'Super Admin', permissionName: 'inventory.purchase-order.create' },
+  { roleName: 'Inventory/Store Manager', permissionName: 'inventory.purchase-order.create' },
+  { roleName: 'Super Admin', permissionName: 'inventory.goods-receipt.enter' },
+  { roleName: 'Inventory/Store Manager', permissionName: 'inventory.goods-receipt.enter' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
