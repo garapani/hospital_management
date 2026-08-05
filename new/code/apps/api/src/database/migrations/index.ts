@@ -16,6 +16,7 @@ import { CreateOrdersTables0015 } from './0015-create-orders-tables.js';
 import { CreateBillingTables0016 } from './0016-create-billing-tables.js';
 import { CreateReportingTables0017 } from './0017-create-reporting-tables.js';
 import { CreateLabTables0018 } from './0018-create-lab-tables.js';
+import { AddLabRequisitionsActiveUniqueIndex0019 } from './0019-add-lab-requisitions-active-unique-index.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -46,4 +47,5 @@ export const TENANT_MIGRATIONS = [
   CreateBillingTables0016,
   CreateReportingTables0017,
   CreateLabTables0018,
+  AddLabRequisitionsActiveUniqueIndex0019,
 ];

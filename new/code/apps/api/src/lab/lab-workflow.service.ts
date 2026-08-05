@@ -1,8 +1,10 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Not, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { LabRequisition } from './entities/lab-requisition.entity.js';
 import { LabResult } from './entities/lab-result.entity.js';
+import { LabTestComponent } from './entities/lab-test-component.entity.js';
 import { LabRequisitionNumberGeneratorService } from './lab-requisition-number-generator.service.js';
 import { LabCatalogService } from './lab-catalog.service.js';
 
@@ -31,6 +33,14 @@ export class LabWorkflowService {
 
   async createRequisition(input: CreateRequisitionInput): Promise<LabRequisition> {
     await this.labCatalogService.getTest(input.testId); // throws NotFoundException if missing
+    const components = await this.labCatalogService.listComponentsByTest(input.testId);
+    if (components.length === 0) {
+      throw new BadRequestException(
+        `Test ${input.testId} has no components defined; cannot create a requisition against it`,
+      );
+    }
+
+    const requisitionNumber = await this.requisitionNumberGenerator.generateNextRequisitionNumber();
 
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const orderItem = await manager.getRepository(OrderItem).findOne({ where: { id: input.orderItemId } });
@@ -40,28 +50,38 @@ export class LabWorkflowService {
       if (orderItem.itemType !== 'Lab') {
         throw new BadRequestException(`Order item ${input.orderItemId} is not a Lab order (itemType: ${orderItem.itemType})`);
       }
+      if (orderItem.status === 'Cancelled') {
+        throw new BadRequestException(`Order item ${input.orderItemId} is cancelled and cannot be requisitioned`);
+      }
 
       const requisitionRepository = manager.getRepository(LabRequisition);
       const existing = await requisitionRepository.findOne({
-        where: { orderItemId: input.orderItemId },
+        where: { orderItemId: input.orderItemId, status: Not('Cancelled') },
       });
-      if (existing && existing.status !== 'Cancelled') {
+      if (existing) {
         throw new ConflictException(
           `Order item ${input.orderItemId} already has a non-cancelled requisition (${existing.id})`,
         );
       }
 
-      const requisitionNumber = await this.requisitionNumberGenerator.generateNextRequisitionNumber();
-
-      return requisitionRepository.save(
-        requisitionRepository.create({
-          orderItemId: input.orderItemId,
-          testId: input.testId,
-          requisitionNumber,
-          specimenType: input.specimenType,
-          status: 'Pending',
-        }),
-      );
+      try {
+        return await requisitionRepository.save(
+          requisitionRepository.create({
+            orderItemId: input.orderItemId,
+            testId: input.testId,
+            requisitionNumber,
+            specimenType: input.specimenType,
+            status: 'Pending',
+          }),
+        );
+      } catch (error) {
+        if (error instanceof QueryFailedError && (error as QueryFailedError & { code?: string }).code === '23505') {
+          throw new ConflictException(
+            `Order item ${input.orderItemId} already has a non-cancelled requisition`,
+          );
+        }
+        throw error;
+      }
     });
   }
 
@@ -84,7 +104,7 @@ export class LabWorkflowService {
   async collectSample(id: string, collectedBy: string): Promise<LabRequisition> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(LabRequisition);
-      const requisition = await repository.findOne({ where: { id } });
+      const requisition = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!requisition) {
         throw new NotFoundException(`Lab requisition ${id} not found`);
       }
@@ -104,7 +124,10 @@ export class LabWorkflowService {
   async enterResult(requisitionId: string, input: EnterResultInput): Promise<LabResult> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const requisitionRepository = manager.getRepository(LabRequisition);
-      const requisition = await requisitionRepository.findOne({ where: { id: requisitionId } });
+      const requisition = await requisitionRepository.findOne({
+        where: { id: requisitionId },
+        lock: { mode: 'pessimistic_write' },
+      });
       if (!requisition) {
         throw new NotFoundException(`Lab requisition ${requisitionId} not found`);
       }
@@ -120,7 +143,9 @@ export class LabWorkflowService {
         );
       }
 
-      const components = await this.labCatalogService.listComponentsByTest(requisition.testId);
+      const components = await manager
+        .getRepository(LabTestComponent)
+        .find({ where: { testId: requisition.testId }, order: { displaySequence: 'ASC' } });
       if (!components.some((c) => c.id === input.componentId)) {
         throw new BadRequestException(
           `Component ${input.componentId} does not belong to requisition ${requisitionId}'s test`,
@@ -156,14 +181,28 @@ export class LabWorkflowService {
   async verify(id: string, verifiedBy: string): Promise<LabRequisition> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(LabRequisition);
-      const requisition = await repository.findOne({ where: { id } });
+      const requisition = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!requisition) {
         throw new NotFoundException(`Lab requisition ${id} not found`);
       }
-      if (requisition.status !== 'ResultsEntered') {
-        throw new ConflictException(
-          `Requisition ${id} must have all results entered before verification (current status: ${requisition.status})`,
-        );
+      if (requisition.status === 'Verified') {
+        throw new ConflictException(`Requisition ${id} is already verified`);
+      }
+      if (requisition.status === 'Cancelled') {
+        throw new ConflictException(`Requisition ${id} is cancelled`);
+      }
+      if (requisition.status === 'Pending') {
+        throw new ConflictException(`Requisition ${id} must have a sample collected before verification`);
+      }
+
+      const components = await manager
+        .getRepository(LabTestComponent)
+        .find({ where: { testId: requisition.testId } });
+      const results = await manager.getRepository(LabResult).find({ where: { requisitionId: id } });
+      const allComponentsResulted =
+        components.length > 0 && components.every((c) => results.some((r) => r.componentId === c.id));
+      if (!allComponentsResulted) {
+        throw new ConflictException(`Requisition ${id} still has components without entered results`);
       }
 
       requisition.status = 'Verified';
@@ -176,7 +215,7 @@ export class LabWorkflowService {
   async cancel(id: string, cancelReason?: string): Promise<LabRequisition> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(LabRequisition);
-      const requisition = await repository.findOne({ where: { id } });
+      const requisition = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!requisition) {
         throw new NotFoundException(`Lab requisition ${id} not found`);
       }
