@@ -18,8 +18,6 @@ export interface CreatePurchaseOrderInput {
   items: CreatePurchaseOrderItemInput[];
 }
 
-const NON_TERMINAL_PO_STATUSES = ['Ordered', 'PartiallyReceived'];
-
 @Injectable()
 export class InventoryProcurementService {
   constructor(
