@@ -202,6 +202,26 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'reporting.read',
     description: 'View reporting events, dashboards, and aggregated metrics.',
   },
+  {
+    name: 'lab.catalog.manage',
+    description: 'Create, list, and update the lab test category/test/component catalog.',
+  },
+  {
+    name: 'lab.read',
+    description: 'View the lab catalog, requisitions, and results.',
+  },
+  {
+    name: 'lab.requisition.create',
+    description: 'Create a lab requisition from an order item.',
+  },
+  {
+    name: 'lab.result.enter',
+    description: 'Mark sample collection and enter lab result values.',
+  },
+  {
+    name: 'lab.result.verify',
+    description: 'Verify a fully-resulted lab requisition.',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -284,6 +304,18 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Super Admin', permissionName: 'reporting.read' },
   { roleName: 'Hospital Admin', permissionName: 'reporting.read' },
   { roleName: 'Auditor/Compliance', permissionName: 'reporting.read' },
+  { roleName: 'Super Admin', permissionName: 'lab.catalog.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'lab.catalog.manage' },
+  { roleName: 'Super Admin', permissionName: 'lab.read' },
+  { roleName: 'Hospital Admin', permissionName: 'lab.read' },
+  { roleName: 'Lab Technician', permissionName: 'lab.read' },
+  { roleName: 'Doctor', permissionName: 'lab.read' },
+  { roleName: 'Super Admin', permissionName: 'lab.requisition.create' },
+  { roleName: 'Lab Technician', permissionName: 'lab.requisition.create' },
+  { roleName: 'Super Admin', permissionName: 'lab.result.enter' },
+  { roleName: 'Lab Technician', permissionName: 'lab.result.enter' },
+  { roleName: 'Super Admin', permissionName: 'lab.result.verify' },
+  { roleName: 'Lab Technician', permissionName: 'lab.result.verify' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
