@@ -168,11 +168,15 @@ Mirrors `master-data.manage`'s existing coarse-catalog / fine-operational split:
 
 | Permission | Grant to | Covers |
 |---|---|---|
-| `lab.manage_catalog` | Hospital Admin, Super Admin | CRUD on categories/tests/components |
+| `lab.catalog.manage` | Hospital Admin, Super Admin | CRUD on categories/tests/components |
 | `lab.read` | Lab Technician, Doctor | View catalog, requisitions, results |
-| `lab.create_requisition` | Lab Technician | Create a requisition from an OrderItem |
-| `lab.enter_results` | Lab Technician | Collect sample, enter component results |
-| `lab.verify_results` | Lab Technician | Verify a fully-resulted requisition |
+| `lab.requisition.create` | Lab Technician | Create a requisition from an OrderItem |
+| `lab.result.enter` | Lab Technician | Collect sample, enter component results |
+| `lab.result.verify` | Lab Technician | Verify a fully-resulted requisition |
+
+(Naming matches this repo's existing nested-dot convention for multi-concern domains — see
+`identity.accounts.manage`, `system-admin.tenants.manage` in `seed-rbac-catalog.ts` — rather than
+underscores, which don't appear anywhere else in the permission catalog.)
 
 Doctor gets `lab.read` per the PRD's stated cross-role visibility ("Doctor: ... Lab, Radiology,
 Pharmacy (results/status)"). `Lab Technician` role already exists in `seed-rbac-catalog.ts` with
