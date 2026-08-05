@@ -2,14 +2,18 @@ import { Inject, Module, OnModuleDestroy } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { PersistingReportingEventPublisher } from './persisting-reporting-event-publisher.js';
 import { ReportingSubscriber } from './reporting.subscriber.js';
+import { ReportingQueryService } from './reporting-query.service.js';
+import { ReportingController } from './reporting.controller.js';
 import { TenantContextModule } from '@hospital/tenant-context';
+import { DatabaseModule } from '../database/database.module.js';
 import {
   REPORTING_DATA_SOURCE,
   createReportingDataSource,
 } from '../database/reporting-data-source.js';
 
 @Module({
-  imports: [TenantContextModule],
+  imports: [TenantContextModule, DatabaseModule],
+  controllers: [ReportingController],
   providers: [
     {
       // Dedicated, bounded connection pool for reporting-archive writes — see
@@ -25,6 +29,7 @@ import {
     },
     PersistingReportingEventPublisher,
     ReportingSubscriber,
+    ReportingQueryService,
   ],
   exports: [PersistingReportingEventPublisher],
 })
