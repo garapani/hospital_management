@@ -17,6 +17,9 @@
     },
     {
       "path": "./libs/observability"
+    },
+    {
+      "path": "./libs/object-storage"
     }
   ],
   "compilerOptions": {}

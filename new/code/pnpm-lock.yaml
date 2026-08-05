@@ -232,6 +232,8 @@ importers:
 
   libs/auth-guards: {}
 
+  libs/object-storage: {}
+
   libs/observability:
     dependencies:
       '@hospital/tenant-context':
