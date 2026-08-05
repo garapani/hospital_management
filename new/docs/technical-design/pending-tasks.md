@@ -76,9 +76,12 @@ follows the PRD's own phase order — no reason to re-litigate that).
 
 ## Phase 4 — Complete near-finished features
 
-10. **Reporting dashboard read APIs** (new-features.md #13) — the event archiver is
-    capture-only as of the reporting-archiver session; finishing the read side is the shortest
-    path to a shippable feature.
+10. [x] **Reporting dashboard read APIs** (new-features.md #13) — done: `GET /reporting/events`
+    (filterable/paginated list), `GET /reporting/dashboard/event-counts` and
+    `GET /reporting/dashboard/revenue` (daily aggregations), all gated by a new `reporting.read`
+    permission wired to `Super Admin`/`Hospital Admin`/`Auditor/Compliance` (the latter's first-ever
+    permission grant). **Not done:** export endpoints (CSV/PDF for government/operational reports)
+    — deferred, open product-scoping question on formats/audience.
 
 ## Phase 5 — New platform capabilities
 

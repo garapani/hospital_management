@@ -301,3 +301,30 @@ follow-ups rather than solved here.
 See `new/docs/superpowers/plans/2026-08-04-connection-pool-limits.md` for the full implementation
 history.
 
+## 11. Reporting Dashboard Reads
+
+`ReportingQueryService` (`apps/api/src/reporting/reporting-query.service.ts`) reads
+`reporting_events` through the **main** connection pool via
+`TenantConnectionService.runInTenantSchema()` — the same pattern every other domain service uses
+(e.g. `PatientsService`) — never through the dedicated `REPORTING_DATA_SOURCE` pool
+`PersistingReportingEventPublisher` writes through. That write pool is deliberately capped at 3
+connections so archiver writes never contend with business-transaction connections; a slow
+dashboard aggregation query sharing that pool would risk starving the archiver of one of only 3
+connections, defeating the reason it's separate at all. Reads getting tenant-role-scoped
+(`SET LOCAL ROLE`/`SET LOCAL search_path`) for free via `runInTenantSchema()` is a side effect of
+reusing that pattern, not something built specifically for this feature.
+
+**RBAC:** a new `reporting.read` permission gates all three endpoints
+(`GET /reporting/events`, `GET /reporting/dashboard/event-counts`,
+`GET /reporting/dashboard/revenue`), mapped to `Super Admin`, `Hospital Admin`, and
+`Auditor/Compliance` — the first permission the `Auditor/Compliance` role has ever been granted;
+it was seeded with zero permissions before this.
+
+**Deferred:** export endpoints (CSV/PDF for government/operational reports) —
+`new-features.md` #13's fourth ask — need real product decisions (which formats, for which
+audience) this repo hasn't made anywhere yet, so they're a separate future item, not a mechanical
+follow-on to the query endpoints here.
+
+See `new/docs/superpowers/plans/2026-08-05-reporting-dashboard-read-apis.md` for the full
+implementation history.
+
