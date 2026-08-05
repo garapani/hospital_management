@@ -116,7 +116,15 @@ Follow the PRD's own phase ordering as-is:
         `OrderItem.status` never advancing when its lab requisition is verified (the ordering
         doctor has no signal from the Order module itself that results are ready; they'd need to
         check Lab directly) — each a distinct future item.
-  - Radiology, DICOM, Pharmacy, Inventory, Ward Supply — not started
+  - [x] Radiology core pipeline (imaging catalog, requisition/scan tracking, single-field report
+        entry, single-level verification) — done. **Not done:** image attachment
+        (`@hospital/object-storage` integration), film type/quantity billing tracking, DICOM
+        integration (confirmed a wholly separate old-system domain — its own models, own
+        controller), report template HTML rendering/PDF export, catalog update/delete (create+list
+        only, same scope cut as Lab), result amendment history/audit trail, and `OrderItem.status`
+        never advancing on verification (same two gaps Lab has, named here rather than left
+        silent) — each a distinct future item.
+  - DICOM, Pharmacy, Inventory, Ward Supply — not started
 - Phase 3: Insurance/Claims, Accounting, Verification, Fixed Asset
 - Phase 4: Clinical/EMR long tail, Nursing, Emergency, OT, Maternity, CSSD
 - Phase 5: Employee, Payroll, Fraction and Incentive

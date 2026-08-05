@@ -432,3 +432,46 @@ multi-level verification.
 
 See `new/docs/superpowers/plans/2026-08-05-lab-lis-module.md` for the full implementation
 history.
+
+## 15. Radiology Core Pipeline
+
+The Radiology module (`apps/api/src/radiology/`) mirrors Lab/LIS's two-controller split exactly:
+`RadiologyCatalogService`/`RadiologyCatalogController` (imaging type/item catalog, gated by
+`radiology.catalog.manage` — Hospital Admin/Super Admin only) and `RadiologyWorkflowService`/
+`RadiologyWorkflowController` (requisition/scan/report/verify actions, gated by
+`radiology.requisition.create`/`radiology.report.enter`/`radiology.report.verify` — Radiology
+Technician's first-ever permission grants).
+
+**Structural simplification vs. Lab:** a radiology study produces exactly one narrative report,
+not N per-component results — so unlike Lab's `LabResult`, there is no separate report entity.
+Report fields (`reportText`, `indication`, `performerId`, `reportEnteredBy`/`At`) live directly
+on `RadiologyRequisition`. This means `enterReport` is an ordinary conditional `UPDATE`, not an
+`ON CONFLICT` upsert, and `verify` checks `status === 'ReportEntered'` directly with no
+coverage-recomputation step — both are simpler by construction than Lab's equivalents, not by
+omission.
+
+**Status machine:** `'Pending'` → `'Scanned'` → `'ReportEntered'` → `'Verified'`, plus
+`'Cancelled'` from any non-terminal state. Same guard-before-mutate pattern as Lab and `OrderItem`.
+
+**Correctness fixes applied from the start, not as a follow-up:** Lab/LIS's final whole-branch
+review found and had to fix (after the fact) a duplicate-requisition race, nested-transaction
+pool-starvation risk, and missing row locks. This module's initial migration includes the partial
+unique index (`UQ_radiology_requisitions_active_order_item`) from day one, the
+existing-requisition check filters `status: Not('Cancelled')` from the start, the
+requisition-number generator call is never nested inside the creating transaction, and every
+status-transition mutator takes a `pessimistic_write` lock on its initial lookup. The `23505`
+catch on `createRequisition` is scoped to the specific constraint name
+(`error.constraint === 'UQ_radiology_requisitions_active_order_item'`), not a bare error-code
+check — closing the residual gap Lab/LIS's final review parked as a known follow-up rather than
+repeating it.
+
+**Order module untouched:** same reclassification pattern as Lab — `OrderItem` still carries
+free-text `itemDescription`; `RadiologyRequisition` references both `orderItemId` and the catalog
+`imagingItemId` a Radiology Technician matches it to.
+
+**Deferred to future items:** image attachment (`@hospital/object-storage` integration), film
+type/quantity billing tracking, DICOM integration (confirmed a wholly separate old-system domain),
+report template HTML rendering/PDF export.
+
+See `new/docs/superpowers/plans/2026-08-05-radiology-module.md` for the full implementation
+history.
