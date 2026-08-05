@@ -19,6 +19,7 @@ import { OrdersModule } from '../orders/orders.module.js';
 import { BillingModule } from '../billing/billing.module.js';
 import { ReportingModule } from '../reporting/reporting.module.js';
 import { LabModule } from '../lab/lab.module.js';
+import { RadiologyModule } from '../radiology/radiology.module.js';
 
 const GLOBAL_RATE_LIMIT = process.env['NODE_ENV'] === 'test' ? 1_000_000 : 100;
 
@@ -54,6 +55,7 @@ const GLOBAL_RATE_LIMIT = process.env['NODE_ENV'] === 'test' ? 1_000_000 : 100;
     BillingModule,
     ReportingModule,
     LabModule,
+    RadiologyModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
