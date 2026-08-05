@@ -15,6 +15,25 @@ function namespacedKey(tenantId: string, key: string): string {
   return `${tenantId}/${key}`;
 }
 
+function resolveRequiredInProduction(envVar: string, devDefault: string): string {
+  const value = process.env[envVar];
+  if (value) {
+    return value;
+  }
+  if (process.env['NODE_ENV'] === 'production') {
+    throw new Error(`${envVar} must be set in production`);
+  }
+  return devDefault;
+}
+
+function resolveUseSsl(): boolean {
+  const raw = process.env['OBJECT_STORAGE_USE_SSL'];
+  if (raw !== undefined) {
+    return raw === 'true';
+  }
+  return process.env['NODE_ENV'] === 'production';
+}
+
 @Injectable()
 export class ObjectStorageService implements OnModuleInit {
   private readonly logger = new Logger(ObjectStorageService.name);
@@ -26,17 +45,25 @@ export class ObjectStorageService implements OnModuleInit {
     this.client = new Client({
       endPoint: process.env['OBJECT_STORAGE_ENDPOINT'] ?? 'localhost',
       port: Number(process.env['OBJECT_STORAGE_PORT'] ?? 9002),
-      useSSL: process.env['OBJECT_STORAGE_USE_SSL'] === 'true',
-      accessKey: process.env['OBJECT_STORAGE_ACCESS_KEY'] ?? 'hospital_dev',
-      secretKey: process.env['OBJECT_STORAGE_SECRET_KEY'] ?? 'hospital_dev_password',
+      useSSL: resolveUseSsl(),
+      accessKey: resolveRequiredInProduction('OBJECT_STORAGE_ACCESS_KEY', 'hospital_dev'),
+      secretKey: resolveRequiredInProduction('OBJECT_STORAGE_SECRET_KEY', 'hospital_dev_password'),
     });
   }
 
   async onModuleInit(): Promise<void> {
-    const exists = await this.client.bucketExists(this.bucket);
-    if (!exists) {
-      await this.client.makeBucket(this.bucket);
-      this.logger.log(`Created object storage bucket "${this.bucket}"`);
+    try {
+      const exists = await this.client.bucketExists(this.bucket);
+      if (!exists) {
+        await this.client.makeBucket(this.bucket);
+        this.logger.log(`Created object storage bucket "${this.bucket}"`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `Object storage bucket bootstrap failed for bucket "${this.bucket}": ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
   }
 
