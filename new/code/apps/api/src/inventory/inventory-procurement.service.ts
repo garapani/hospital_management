@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { IsNull, QueryFailedError } from 'typeorm';
+import { IsNull } from 'typeorm';
+import type { EntityManager } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { PurchaseOrder } from './entities/purchase-order.entity.js';
 import { PurchaseOrderItem } from './entities/purchase-order-item.entity.js';
@@ -142,11 +143,17 @@ export class InventoryProcurementService {
     purchaseOrderItemId: string,
     input: RecordGoodsReceiptInput,
   ): Promise<PurchaseOrderItem> {
-    if (input.receivedQuantity <= 0) {
-      throw new BadRequestException('receivedQuantity must be positive');
+    const receivedQuantity = Number(input.receivedQuantity);
+    if (!Number.isFinite(receivedQuantity) || receivedQuantity <= 0) {
+      throw new BadRequestException('receivedQuantity must be a positive number');
     }
-    if (input.unitCost < 0) {
-      throw new BadRequestException('unitCost cannot be negative');
+    const unitCost = Number(input.unitCost);
+    if (!Number.isFinite(unitCost) || unitCost < 0) {
+      throw new BadRequestException('unitCost must be a non-negative number');
+    }
+    const mrp = input.mrp === undefined || input.mrp === null ? null : Number(input.mrp);
+    if (mrp !== null && !Number.isFinite(mrp)) {
+      throw new BadRequestException('mrp must be a number');
     }
 
     return this.tenantConnection.runInTenantSchema(async (manager) => {
@@ -173,10 +180,10 @@ export class InventoryProcurementService {
         );
       }
 
-      const newReceivedQuantity = Number(poItem.receivedQuantity) + input.receivedQuantity;
+      const newReceivedQuantity = Number(poItem.receivedQuantity) + receivedQuantity;
       if (newReceivedQuantity > Number(poItem.orderedQuantity)) {
         throw new BadRequestException(
-          `Receiving ${input.receivedQuantity} would exceed the ordered quantity for line ${purchaseOrderItemId} ` +
+          `Receiving ${receivedQuantity} would exceed the ordered quantity for line ${purchaseOrderItemId} ` +
             `(ordered: ${poItem.orderedQuantity}, already received: ${poItem.receivedQuantity})`,
         );
       }
@@ -185,8 +192,8 @@ export class InventoryProcurementService {
         itemId: poItem.itemId,
         batchNumber: input.batchNumber,
         expiryDate: input.expiryDate ?? null,
-        unitCost: input.unitCost,
-        mrp: input.mrp ?? null,
+        unitCost,
+        mrp,
       });
 
       await manager.getRepository(StockTransaction).save(
@@ -195,7 +202,7 @@ export class InventoryProcurementService {
           stockBatchId: stockBatch.id,
           transactionType: 'GoodsReceipt',
           referenceId: poItem.id,
-          quantity: String(input.receivedQuantity),
+          quantity: String(receivedQuantity),
           recordedBy: input.recordedBy,
         }),
       );
@@ -207,7 +214,7 @@ export class InventoryProcurementService {
         ON CONFLICT ("itemId", "stockBatchId")
         DO UPDATE SET "availableQuantity" = stock_balances."availableQuantity" + excluded."availableQuantity"
         `,
-        [poItem.itemId, stockBatch.id, input.receivedQuantity],
+        [poItem.itemId, stockBatch.id, receivedQuantity],
       );
 
       poItem.receivedQuantity = String(newReceivedQuantity);
@@ -225,75 +232,64 @@ export class InventoryProcurementService {
   }
 
   private async findOrCreateStockBatch(
-    manager: import('typeorm').EntityManager,
+    manager: EntityManager,
     input: { itemId: string; batchNumber: string; expiryDate: string | null; unitCost: number; mrp: number | null },
   ): Promise<StockBatch> {
     const repository = manager.getRepository(StockBatch);
 
-    try {
-      if (input.expiryDate === null) {
-        const inserted = await manager.query<StockBatch[]>(
-          `
-          INSERT INTO stock_batches ("itemId", "batchNumber", "expiryDate", "unitCost", mrp)
-          VALUES ($1, $2, NULL, $3, $4)
-          ON CONFLICT ("itemId", "batchNumber") WHERE "expiryDate" IS NULL DO NOTHING
-          RETURNING *
-          `,
-          [input.itemId, input.batchNumber, input.unitCost, input.mrp],
-        );
-        if (inserted.length > 0) {
-          return repository.create(inserted[0]);
-        }
-        const existing = await repository.findOne({
-          where: { itemId: input.itemId, batchNumber: input.batchNumber, expiryDate: IsNull() },
-        });
-        if (!existing) {
-          throw new ConflictException(
-            `Stock batch race for item ${input.itemId} / batch ${input.batchNumber} (no expiry) could not be resolved`,
-          );
-        }
-        return existing;
-      }
-
-      const inserted = await manager.query<StockBatch[]>(
+    if (input.expiryDate === null) {
+      const inserted = await manager.query<Array<{ id: string }>>(
         `
         INSERT INTO stock_batches ("itemId", "batchNumber", "expiryDate", "unitCost", mrp)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT ("itemId", "batchNumber", "expiryDate") WHERE "expiryDate" IS NOT NULL DO NOTHING
+        VALUES ($1, $2, NULL, $3, $4)
+        ON CONFLICT ("itemId", "batchNumber") WHERE "expiryDate" IS NULL DO NOTHING
         RETURNING *
         `,
-        [input.itemId, input.batchNumber, input.expiryDate, input.unitCost, input.mrp],
+        [input.itemId, input.batchNumber, input.unitCost, input.mrp],
       );
       if (inserted.length > 0) {
-        return repository.create(inserted[0]);
+        return repository.findOneOrFail({ where: { id: inserted[0].id } });
       }
       const existing = await repository.findOne({
-        where: { itemId: input.itemId, batchNumber: input.batchNumber, expiryDate: input.expiryDate },
+        where: { itemId: input.itemId, batchNumber: input.batchNumber, expiryDate: IsNull() },
       });
       if (!existing) {
         throw new ConflictException(
-          `Stock batch race for item ${input.itemId} / batch ${input.batchNumber} / expiry ${input.expiryDate} could not be resolved`,
+          `Stock batch race for item ${input.itemId} / batch ${input.batchNumber} (no expiry) could not be resolved`,
         );
       }
+      // Batch cost is fixed at first receipt by design: a subsequent goods receipt against the
+      // same item/batchNumber (no expiry) that reports a different unitCost/mrp does NOT update
+      // the existing batch row. This is intentional, not an oversight — do not silently "fix" it
+      // without also deciding what should happen to already-issued stock priced at the old cost.
       return existing;
-    } catch (error) {
-      if (
-        error instanceof QueryFailedError &&
-        ((error as QueryFailedError & { constraint?: string }).constraint === 'UQ_stock_batches_item_batch_expiry' ||
-          (error as QueryFailedError & { constraint?: string }).constraint ===
-            'UQ_stock_batches_item_batch_no_expiry')
-      ) {
-        const existing = await repository.findOne({
-          where: {
-            itemId: input.itemId,
-            batchNumber: input.batchNumber,
-            expiryDate: input.expiryDate === null ? IsNull() : input.expiryDate,
-          },
-        });
-        if (existing) return existing;
-      }
-      throw error;
     }
+
+    const inserted = await manager.query<Array<{ id: string }>>(
+      `
+      INSERT INTO stock_batches ("itemId", "batchNumber", "expiryDate", "unitCost", mrp)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT ("itemId", "batchNumber", "expiryDate") WHERE "expiryDate" IS NOT NULL DO NOTHING
+      RETURNING *
+      `,
+      [input.itemId, input.batchNumber, input.expiryDate, input.unitCost, input.mrp],
+    );
+    if (inserted.length > 0) {
+      return repository.findOneOrFail({ where: { id: inserted[0].id } });
+    }
+    const existing = await repository.findOne({
+      where: { itemId: input.itemId, batchNumber: input.batchNumber, expiryDate: input.expiryDate },
+    });
+    if (!existing) {
+      throw new ConflictException(
+        `Stock batch race for item ${input.itemId} / batch ${input.batchNumber} / expiry ${input.expiryDate} could not be resolved`,
+      );
+    }
+    // Batch cost is fixed at first receipt by design: a subsequent goods receipt against the same
+    // item/batchNumber/expiryDate that reports a different unitCost/mrp does NOT update the
+    // existing batch row. This is intentional, not an oversight — do not silently "fix" it without
+    // also deciding what should happen to already-issued stock priced at the old cost.
+    return existing;
   }
 
   async listStockBalances(itemId?: string): Promise<StockBalanceView[]> {
@@ -304,7 +300,7 @@ export class InventoryProcurementService {
         .select('balance.itemId', 'itemId')
         .addSelect('balance.stockBatchId', 'stockBatchId')
         .addSelect('batch.batchNumber', 'batchNumber')
-        .addSelect('batch.expiryDate', 'expiryDate')
+        .addSelect("to_char(batch.expiryDate, 'YYYY-MM-DD')", 'expiryDate')
         .addSelect('balance.availableQuantity', 'availableQuantity');
       if (itemId) {
         query.where('balance.itemId = :itemId', { itemId });
