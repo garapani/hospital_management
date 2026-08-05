@@ -36,6 +36,9 @@ import { LabTest } from '../lab/entities/lab-test.entity.js';
 import { LabTestComponent } from '../lab/entities/lab-test-component.entity.js';
 import { LabRequisition } from '../lab/entities/lab-requisition.entity.js';
 import { LabResult } from '../lab/entities/lab-result.entity.js';
+import { RadiologyImagingType } from '../radiology/entities/radiology-imaging-type.entity.js';
+import { RadiologyImagingItem } from '../radiology/entities/radiology-imaging-item.entity.js';
+import { RadiologyRequisition } from '../radiology/entities/radiology-requisition.entity.js';
 import { PLATFORM_MIGRATIONS } from './migrations/index.js';
 
 export function createDataSource(): DataSource {
@@ -46,7 +49,7 @@ export function createDataSource(): DataSource {
     username: process.env['DB_USERNAME'] ?? 'identity_access',
     password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
     database: process.env['DB_DATABASE'] ?? 'identity_access',
-    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, ReportingEvent, LabTestCategory, LabTest, LabTestComponent, LabRequisition, LabResult],
+    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, ReportingEvent, LabTestCategory, LabTest, LabTestComponent, LabRequisition, LabResult, RadiologyImagingType, RadiologyImagingItem, RadiologyRequisition],
     migrations: PLATFORM_MIGRATIONS,
     synchronize: false,
     // Bounds connection acquisition so pool exhaustion fails fast (a thrown, catchable error)
