@@ -123,7 +123,11 @@ Follow the PRD's own phase ordering as-is:
         controller), report template HTML rendering/PDF export, catalog update/delete (create+list
         only, same scope cut as Lab), result amendment history/audit trail, and `OrderItem.status`
         never advancing on verification (same two gaps Lab has, named here rather than left
-        silent) — each a distinct future item.
+        silent) — each a distinct future item. Request-body validation for the required workflow
+        fields (`reportText`, `reportEnteredBy`, `scannedBy`, `verifiedBy`) is now enforced by
+        explicit service-layer guard clauses plus database CHECK constraints (added in a final-review
+        fix), closing a gap where an empty/malformed request body could previously have produced a
+        `Verified` report with NULL text/author.
   - DICOM, Pharmacy, Inventory, Ward Supply — not started
 - Phase 3: Insurance/Claims, Accounting, Verification, Fixed Asset
 - Phase 4: Clinical/EMR long tail, Nursing, Emergency, OT, Maternity, CSSD
@@ -141,8 +145,9 @@ Follow the PRD's own phase ordering as-is:
   Jest), so this is a standalone-script tooling fix (decorator-safe runner or a build step), not a
   logic fix. Should land before any real deployment — bundle with Phase 3 ops-readiness work.
 - **New gap, not yet its own item, codebase-wide**: every domain module's "actor" DTO fields
-  (`enteredBy`, `verifiedBy`, `sampleCollectedBy` in Lab, and the pre-existing
-  `orderedBy`/`dischargedBy`/`transferredBy` elsewhere) are client-supplied in the request body
+  (`enteredBy`, `verifiedBy`, `sampleCollectedBy` in Lab, Radiology's `scannedBy`/`reportEnteredBy`/
+  `verifiedBy`, and the pre-existing `orderedBy`/`dischargedBy`/`transferredBy` elsewhere) are
+  client-supplied in the request body
   rather than derived from the authenticated principal (`request.authContext`), so any caller
   holding the right permission can attribute an action to a different, arbitrary user ID. Most
   severe for Lab's `verifiedBy` (a clinical sign-off), but this is a pattern across the whole

@@ -473,5 +473,24 @@ free-text `itemDescription`; `RadiologyRequisition` references both `orderItemId
 type/quantity billing tracking, DICOM integration (confirmed a wholly separate old-system domain),
 report template HTML rendering/PDF export.
 
+**Required-field validation, fixed during final review:** this codebase has no global
+`ValidationPipe` and no class-validator decorators on any DTO (a deliberate, existing convention),
+so an empty/malformed request body hands the service a DTO whose fields are `undefined` —
+which TypeORM's `repository.save()` silently skips rather than rejecting. Lab was accidentally
+immune to this because its result writes go through raw SQL `INSERT`s into a separate
+`lab_results` table with `NOT NULL` columns; Radiology's "one report per requisition, folded onto
+the row" simplification (above) traded away that safety net, since the report columns on
+`RadiologyRequisition` must be nullable (they start empty, before any report is entered). Final
+review found this let `POST .../report` and `PATCH .../verify` succeed back-to-back on an empty
+body, producing a `Verified` requisition with NULL `reportText`/`reportEnteredBy`. Fixed with two
+layers: explicit guard clauses at the top of `markScanned`, `enterReport`, and `verify` in
+`RadiologyWorkflowService` that throw `BadRequestException` on missing/blank `scannedBy`,
+`reportText`/`reportEnteredBy`, and `verifiedBy` respectively (not class-validator, per this
+codebase's convention); and a follow-up migration (`0021-add-radiology-requisition-report-checks`)
+adding three database-level `CHECK` constraints on `radiology_requisitions` that enforce the same
+completeness invariant regardless of code path — so a future raw-SQL script or an added service
+method that bypasses these guards still can't leave a `Scanned`/`ReportEntered`/`Verified` row
+with its corresponding required fields NULL.
+
 See `new/docs/superpowers/plans/2026-08-05-radiology-module.md` for the full implementation
 history.
