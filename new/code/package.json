@@ -58,6 +58,7 @@
     "class-validator": "^0.15.1",
     "express": "^5.2.1",
     "ioredis": "^5.11.1",
+    "minio": "^8.0.7",
     "nestjs-pino": "^4.6.1",
     "pg": "^8.22.0",
     "pino": "^10.3.1",
