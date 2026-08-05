@@ -39,6 +39,15 @@ import { LabResult } from '../lab/entities/lab-result.entity.js';
 import { RadiologyImagingType } from '../radiology/entities/radiology-imaging-type.entity.js';
 import { RadiologyImagingItem } from '../radiology/entities/radiology-imaging-item.entity.js';
 import { RadiologyRequisition } from '../radiology/entities/radiology-requisition.entity.js';
+import { InventoryItemCategory } from '../inventory/entities/inventory-item-category.entity.js';
+import { InventoryItemSubCategory } from '../inventory/entities/inventory-item-sub-category.entity.js';
+import { InventoryItem } from '../inventory/entities/inventory-item.entity.js';
+import { InventoryVendor } from '../inventory/entities/inventory-vendor.entity.js';
+import { PurchaseOrder } from '../inventory/entities/purchase-order.entity.js';
+import { PurchaseOrderItem } from '../inventory/entities/purchase-order-item.entity.js';
+import { StockBatch } from '../inventory/entities/stock-batch.entity.js';
+import { StockBalance } from '../inventory/entities/stock-balance.entity.js';
+import { StockTransaction } from '../inventory/entities/stock-transaction.entity.js';
 import { PLATFORM_MIGRATIONS } from './migrations/index.js';
 
 export function createDataSource(): DataSource {
@@ -49,7 +58,7 @@ export function createDataSource(): DataSource {
     username: process.env['DB_USERNAME'] ?? 'identity_access',
     password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
     database: process.env['DB_DATABASE'] ?? 'identity_access',
-    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, ReportingEvent, LabTestCategory, LabTest, LabTestComponent, LabRequisition, LabResult, RadiologyImagingType, RadiologyImagingItem, RadiologyRequisition],
+    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, ReportingEvent, LabTestCategory, LabTest, LabTestComponent, LabRequisition, LabResult, RadiologyImagingType, RadiologyImagingItem, RadiologyRequisition, InventoryItemCategory, InventoryItemSubCategory, InventoryItem, InventoryVendor, PurchaseOrder, PurchaseOrderItem, StockBatch, StockBalance, StockTransaction],
     migrations: PLATFORM_MIGRATIONS,
     synchronize: false,
     // Bounds connection acquisition so pool exhaustion fails fast (a thrown, catchable error)
