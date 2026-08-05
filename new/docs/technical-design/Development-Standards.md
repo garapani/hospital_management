@@ -364,3 +364,31 @@ remain undelivered — no driving need for either yet.
 See `new/docs/superpowers/plans/2026-08-05-redis-rate-limiting.md` for the full implementation
 history.
 
+## 13. Object Storage
+
+`@hospital/object-storage` wraps the official `minio` npm package behind one injectable service,
+`ObjectStorageService`. Every method takes `(tenantId, key, ...)`, never a raw object key — the
+service builds the real key internally as `${tenantId}/${key}`, the same structural-enforcement
+pattern `TenantConnectionService.runInTenantSchema()` uses for Postgres (`SET LOCAL ROLE` inside a
+real transaction): the caller cannot bypass the tenant prefix by construction, not by convention.
+
+**Single shared bucket** (`OBJECT_STORAGE_BUCKET`, default `hospital-objects`), not
+bucket-per-tenant — matches `PRD.md` §9.1's stated design ("MinIO objects are namespaced by
+`hospitalId` so tenants share the object store without cross-tenant visibility"). `tenantId` is
+validated against `^[a-z0-9_-]+$` before being used in a key prefix; object store keys are opaque
+strings, not filesystem paths, so MinIO/S3 never collapses `..` segments the way a real filesystem
+would — this validation is defense-in-depth on identifier shape, not a path-traversal fix.
+
+**Scope of this item:** client module + namespace policy + local dev container + a documented
+(not yet scripted) backup policy. **Deferred:** generic upload/download REST endpoints — no domain
+module in this codebase produces or consumes files yet (DICOM, PDF reports, and Excel exports are
+all future Phase 2/6 work), so building a generic "upload anything" endpoint now would mean
+guessing its shape with no real caller to validate against. The first domain that actually needs
+to store a file wires its own controller directly against `ObjectStorageService`, the same way
+`PatientsService` wires against `TenantConnectionService` rather than the platform exposing a
+generic "run a query" endpoint. A backup script is deferred the same way — nothing to back up
+until a real writer exists (see `Runbook.md`'s Object Storage Backup Policy section).
+
+See `new/docs/superpowers/plans/2026-08-05-minio-object-storage.md` for the full implementation
+history.
+

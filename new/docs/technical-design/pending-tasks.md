@@ -92,7 +92,12 @@ follows the PRD's own phase order — no reason to re-litigate that).
     existing JWT-embedded-permissions mechanism already bounds staleness to 15 minutes without
     Redis; `PRD.md` §6.2 corrected to describe this instead) and master-data read-through cache
     (deferred, no driving need yet).
-12. **MinIO/object storage integration** (new-features.md #12) — independent, no urgency driver.
+12. [x] **MinIO/object storage integration** (new-features.md #12) — done: `@hospital/object-storage`
+    library (MinIO client + tenant-namespaced key policy, single shared bucket per PRD.md §9.1),
+    local dev MinIO container. **Not done:** upload/download REST endpoints (deferred — no domain
+    module produces or consumes files yet; the first real consumer wires directly against
+    `ObjectStorageService`) and an actual backup script (deferred — nothing to back up yet;
+    `Runbook.md` §7 documents the policy for when one exists).
 13. **India compliance roadmap** (new-features.md #14) — product-scoping work, not blocking
     engineering.
 

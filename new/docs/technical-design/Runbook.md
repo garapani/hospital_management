@@ -178,3 +178,25 @@ direction is finalized later, this section needs a follow-up rewrite, not a patc
 
 _(Placeholder — fill in the actual on-call owner/escalation contact for this procedure. Not
 something this runbook can supply on its own.)_
+
+## 7. Object Storage Backup Policy
+
+**Status: documented policy only — no implementing script yet.** There is currently no domain
+module writing real objects to MinIO (see `Development-Standards.md` §13), so there is nothing to
+back up today. This section exists so the policy doesn't have to be invented later under time
+pressure once a real writer (e.g. DICOM in Phase 2, reporting exports in Phase 6) lands.
+
+**Policy, once a real writer exists:**
+
+1. Enable bucket versioning on the shared `hospital-objects` bucket (`mc version enable`), so an
+   overwritten or deleted object stays recoverable.
+2. Run a periodic `mc mirror` job from the `hospital-objects` bucket to the same offsite
+   S3-compatible target `scripts/backup-db.sh` already uploads Postgres dumps to (`S3_BUCKET`/
+   `S3_PREFIX` env vars, see `Deployment-Guide.md` "Backup Configuration") — a separate
+   `S3_PREFIX` (e.g. `object-storage-backups`) keeps it from colliding with the Postgres dump
+   prefix in the same bucket.
+3. Apply the same 30-day retention lifecycle rule used for Postgres backups (`Deployment-Guide.md`
+   §"Configure a bucket lifecycle rule expiring objects... after 30 days").
+
+**Not yet decided:** cron schedule and frequency for the mirror job — likely nightly, alongside
+`backup-db.sh`, but not fixed until real object volume exists to size it against.
