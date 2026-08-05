@@ -31,6 +31,11 @@ import { InvoiceItem } from '../billing/entities/invoice-item.entity.js';
 import { Payment } from '../billing/entities/payment.entity.js';
 import { Deposit } from '../billing/entities/deposit.entity.js';
 import { ReportingEvent } from '../reporting/entities/reporting-event.entity.js';
+import { LabTestCategory } from '../lab/entities/lab-test-category.entity.js';
+import { LabTest } from '../lab/entities/lab-test.entity.js';
+import { LabTestComponent } from '../lab/entities/lab-test-component.entity.js';
+import { LabRequisition } from '../lab/entities/lab-requisition.entity.js';
+import { LabResult } from '../lab/entities/lab-result.entity.js';
 import { PLATFORM_MIGRATIONS } from './migrations/index.js';
 
 export function createDataSource(): DataSource {
@@ -41,7 +46,7 @@ export function createDataSource(): DataSource {
     username: process.env['DB_USERNAME'] ?? 'identity_access',
     password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
     database: process.env['DB_DATABASE'] ?? 'identity_access',
-    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, ReportingEvent],
+    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, ReportingEvent, LabTestCategory, LabTest, LabTestComponent, LabRequisition, LabResult],
     migrations: PLATFORM_MIGRATIONS,
     synchronize: false,
     // Bounds connection acquisition so pool exhaustion fails fast (a thrown, catchable error)
