@@ -328,3 +328,39 @@ follow-on to the query endpoints here.
 See `new/docs/superpowers/plans/2026-08-05-reporting-dashboard-read-apis.md` for the full
 implementation history.
 
+## 12. Rate Limiting
+
+`@nestjs/throttler` is registered globally via `APP_GUARD` in `AppModule`, backed by
+`@nest-lab/throttler-storage-redis`'s `ThrottlerStorageRedisService`, constructed with Redis
+connection **options** (`REDIS_HOST`/`REDIS_PORT` env vars, default `localhost`/`6380`) rather
+than a pre-built `ioredis` client — passing a pre-built client means the service's
+`onModuleDestroy()` never disconnects it (it only disconnects a client *it* constructed,
+tracked via its own `disconnectRequired` flag), which leaked an open Redis connection on every
+app shutdown and hung Jest outright for any spec that bootstraps the full `AppModule`. Passing
+connection options instead lets the service own the client's full lifecycle. An in-memory store
+(the package's default) was rejected because it would let a client get N× the intended limit by
+hitting N different Compose replicas once the app scales out (`Deployment-Guide.md` §7).
+
+**Limits:** global default 100 requests/60s per IP everywhere; `POST /auth/login` and
+`POST /auth/refresh` override to a stricter 5 requests/60s via `@Throttle()`, since those are the
+actual brute-force/credential-stuffing target, not just general traffic. Guards run after Nest's
+middleware layer — a request `AuthContextMiddleware` already rejects (e.g. no token on a
+protected route) never reaches `ThrottlerGuard` at all, so rate limiting is only observable on
+routes a request actually reaches (any excluded-from-auth route, or an authenticated request to
+a protected one).
+
+**Test bypass:** both limits raise to `1_000_000` when `NODE_ENV === 'test'` (Jest sets this
+automatically). This isn't defensive — several integration spec files independently make real HTTP
+requests to `/auth/login` through a bootstrapped Nest app, and since the Redis-backed counter is a
+real external store shared across every test file (not reset per file), the combined hits across
+the full suite could otherwise trip the 5/60s limit and cause spurious 429s in unrelated tests.
+
+**Corrected:** `PRD.md` §6.2 previously described permissions as living in a "short-TTL Redis cache
+of permissions" — not true; permissions are JWT-embedded with a 15-minute TTL, already bounding
+staleness without Redis. See that section for the corrected description. A literal Redis
+permission cache and a master-data read-through cache (the other two `new-features.md` #11 asks)
+remain undelivered — no driving need for either yet.
+
+See `new/docs/superpowers/plans/2026-08-05-redis-rate-limiting.md` for the full implementation
+history.
+

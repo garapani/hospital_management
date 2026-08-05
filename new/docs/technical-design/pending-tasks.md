@@ -85,8 +85,13 @@ follows the PRD's own phase order — no reason to re-litigate that).
 
 ## Phase 5 — New platform capabilities
 
-11. **Redis integration** (new-features.md #11) — pairs naturally with item 3's permission-check
-    rework; do it while that code is already open.
+11. [x] **Redis integration** (new-features.md #11) — **Redis container + rate limiting only**,
+    done: `docker-compose.dev.yml`'s `api-redis` service, `@nestjs/throttler` with a Redis-backed
+    storage adapter, global 100/60s default plus a stricter 5/60s override on
+    `POST /auth/login`/`POST /auth/refresh`. **Not done:** permission cache (deferred — the
+    existing JWT-embedded-permissions mechanism already bounds staleness to 15 minutes without
+    Redis; `PRD.md` §6.2 corrected to describe this instead) and master-data read-through cache
+    (deferred, no driving need yet).
 12. **MinIO/object storage integration** (new-features.md #12) — independent, no urgency driver.
 13. **India compliance roadmap** (new-features.md #14) — product-scoping work, not blocking
     engineering.
@@ -111,3 +116,11 @@ Follow the PRD's own phase ordering as-is:
   through `libs/audit-emitter`. The underlying migration logic is proven correct (passes under
   Jest), so this is a standalone-script tooling fix (decorator-safe runner or a build step), not a
   logic fix. Should land before any real deployment — bundle with Phase 3 ops-readiness work.
+- **New gap, not yet its own item**: one test in
+  `apps/api/src/reporting/persisting-reporting-event-publisher.integration-spec.ts` (the
+  "SQL-level failure gets logged" assertion around its `loggedErrors` spy on
+  `Logger.prototype.error`) fails consistently as of the Phase 5 item 11 work — confirmed
+  unrelated to that work (reproduces identically with those changes fully reverted). Not
+  investigated further; worth a focused look, possibly related to the structured-logging change
+  (Phase 3 item 6) altering how/whether `Logger.prototype.error` gets called once
+  `app.useLogger()` is active.
