@@ -198,6 +198,10 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'billing.manage',
     description: 'Create invoices, record payments, cancel invoices, and manage deposits',
   },
+  {
+    name: 'reporting.read',
+    description: 'View reporting events, dashboards, and aggregated metrics.',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -277,6 +281,9 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'billing.manage' },
   { roleName: 'Receptionist / Front Desk', permissionName: 'billing.manage' },
   { roleName: 'Billing/Accounts Staff', permissionName: 'billing.manage' },
+  { roleName: 'Super Admin', permissionName: 'reporting.read' },
+  { roleName: 'Hospital Admin', permissionName: 'reporting.read' },
+  { roleName: 'Auditor/Compliance', permissionName: 'reporting.read' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
