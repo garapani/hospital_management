@@ -267,6 +267,18 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'inventory.dispatch.fulfill',
     description: 'Fulfill a stock requisition line, decrementing stock balance',
   },
+  {
+    name: 'pharmacy.read',
+    description: 'View pharmacy dispensing records',
+  },
+  {
+    name: 'pharmacy.dispensing.create',
+    description: 'Create a pharmacy dispensing record from an order item; also gates cancellation',
+  },
+  {
+    name: 'pharmacy.dispensing.dispense',
+    description: 'Dispense against a pharmacy dispensing record, decrementing stock',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -386,6 +398,13 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Inventory/Store Manager', permissionName: 'inventory.requisition.create' },
   { roleName: 'Super Admin', permissionName: 'inventory.dispatch.fulfill' },
   { roleName: 'Inventory/Store Manager', permissionName: 'inventory.dispatch.fulfill' },
+  { roleName: 'Super Admin', permissionName: 'pharmacy.read' },
+  { roleName: 'Pharmacist', permissionName: 'pharmacy.read' },
+  { roleName: 'Doctor', permissionName: 'pharmacy.read' },
+  { roleName: 'Super Admin', permissionName: 'pharmacy.dispensing.create' },
+  { roleName: 'Pharmacist', permissionName: 'pharmacy.dispensing.create' },
+  { roleName: 'Super Admin', permissionName: 'pharmacy.dispensing.dispense' },
+  { roleName: 'Pharmacist', permissionName: 'pharmacy.dispensing.dispense' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
