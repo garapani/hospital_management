@@ -605,7 +605,15 @@ Item B closes the loop Item A (§16) left open: `InventoryRequisitionService`, s
 controllers — `InventoryRequisitionController` (`inventory/requisitions`, create/read/cancel, gated
 by `inventory.requisition.create` for writes and `inventory.read` for `GET`s) and
 `InventoryDispatchController` (`inventory/requisitions/items/:id/fulfill`, gated by
-`inventory.dispatch.fulfill`) — both new first-ever permission grants for Inventory/Store Manager
+`inventory.dispatch.fulfill`). **This is a different two-controller split than Item A's, not a reuse
+of the same shape:** Item A's split (§16) is catalog-vs-workflow —
+`InventoryCatalogController` for catalog CRUD, `InventoryProcurementController` for both
+purchase-order actions *and* goods receipt, all on one controller. Item B instead splits
+header-level actions (`InventoryRequisitionController`: create/list/get/cancel) from the
+line-level fulfillment action (`InventoryDispatchController`: fulfill only). This was a deliberate
+design choice made during this module's brainstorming (approved by the project owner), not a reuse
+of Item A's exact controller-split precedent. `inventory.requisition.create` and
+`inventory.dispatch.fulfill` are both new first-ever permission grants for Inventory/Store Manager
 (and Super Admin), added in migration `0023-create-inventory-requisition-tables` alongside the
 `stock_requisitions`/`stock_requisition_items`/`stock_requisition_sequences` tables. `InventoryModule`
 had to add `MasterDataModule` to its own `imports` array for this — unlike `DatabaseModule`, which
@@ -659,7 +667,17 @@ not the array's own `.length`** — only `INSERT ... RETURNING` returns a bare r
 codebase's driver. The same fix round also added a final `if (remaining > 0) throw new Error(...)`
 after the batch-walk loop, an invariant check that should be unreachable (the pre-loop
 `totalAvailable < quantity` check already guarantees the locked rows cover the requested quantity)
-but guards against a future refactor silently breaking that guarantee.
+and guards against a future refactor silently breaking that guarantee — but on final whole-branch
+review this was determined to be real protection against a walk that clearly falls short, **not a
+guarantee against sub-representable floating-point residue.** A `quantity` that splits unevenly
+across batches under IEEE-754 arithmetic — e.g. `0.3` fulfilled as `0.1` from one batch plus `0.2`
+from another — can land `remaining` at exactly `0` due to rounding, so the invariant check does not
+fire, `fulfilledQuantity` gets credited a clean `0.3`, and the actual sum of the `stock_balances`
+decrements and `stock_transactions` ledger rows written is a value like `0.29999999999999998` —
+silently leaving a residual fraction unaccounted for. Closing that gap would require decimal-safe
+arithmetic instead of JavaScript's `Number()`, which is out of scope for now. Severity is low for
+realistic hospital quantities (integers or at most 2 decimal places in practice), but this is not a
+fully fail-safe invariant — don't describe it as one.
 
 **Guarded direct-`UPDATE` decrement, not an upsert:** unlike Item A's `recordGoodsReceipt`, which
 uses `INSERT ... ON CONFLICT ... DO UPDATE` because a goods receipt's `stock_balances` row may or may
@@ -676,6 +694,25 @@ and `fulfillRequisitionItem` both `Number()`-coerce and `Number.isFinite`/positi
 quantity fields, and both throw `BadRequestException` on a missing/blank `requestedBy`/`fulfilledBy`
 actor string — the same pattern §16 established for `recordGoodsReceipt`'s numeric fields, applied
 here from the start rather than needing its own fix-round discovery.
+
+**`stock_transactions` is an append-only, polymorphic ledger — no FK, no sign convention:** the
+table now has two writers, Item A's `recordGoodsReceipt` (`transactionType: 'GoodsReceipt'`,
+`referenceId` pointing to a `purchase_order_items.id`) and this pipeline's
+`fulfillRequisitionItem` (`transactionType: 'Dispatch'`, `referenceId` pointing to a
+`stock_requisition_items.id`). Two conventions are load-bearing but not enforced anywhere in the
+schema, so any future consumer of this table must account for them explicitly: **`quantity` is
+always a positive magnitude regardless of `transactionType`** — direction is inferred from
+`transactionType` (`'GoodsReceipt'` = stock in, `'Dispatch'` = stock out), never from the sign of
+`quantity` — and **`referenceId` is polymorphic**, targeting `purchase_order_items.id` for
+`GoodsReceipt` rows and `stock_requisition_items.id` for `Dispatch` rows, with no database-level FK
+enforcing either target (consistent with this repo's no-FK convention) and no column other than
+`transactionType` itself distinguishing which table a given row's `referenceId` points into.
+Nothing today sums this ledger — `stock_balances` is the authoritative running total, and
+`stock_transactions` is currently write-only/audit-trail — but Pharmacy and a future
+Reporting/stock-ledger item are both queued to consume it, and a naive `SUM(quantity)` across both
+transaction types would double-count stock movement instead of netting it. A future stock-ledger
+report or audit view must branch on `transactionType` for both the sign and the join target rather
+than assuming a uniform shape.
 
 **With Item A and Item B both shipped, the Inventory module is complete** for the scope this pipeline
 was designed to cover — catalog, procurement (stock IN), and requisition/dispatch (stock OUT) all

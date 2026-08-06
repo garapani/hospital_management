@@ -143,9 +143,15 @@ Follow the PRD's own phase ordering as-is:
         multi-level verification/approval chains (fulfillment is single-step, no approval gate
         before a requisition line is dispatched), fixed-asset dispatch tracking (this pipeline
         covers consumable stock only), "direct dispatch" (there is no way to decrement stock
-        without first creating a requisition record), and manual batch selection (FEFO — nearest
+        without first creating a requisition record), manual batch selection (FEFO — nearest
         expiry first — is the only supported fulfillment strategy, with no override to pick a
-        specific batch) — each a distinct future item if ever needed. **With both Item A and
+        specific batch), and a clean close-out path for a stuck requisition (a requisition with
+        any line fulfilled can never be cancelled — matches Item A's PO
+        cancel-only-from-`Ordered` rule exactly, so this isn't an Item B-specific defect — meaning
+        a requisition with one line that can never be fully filled, e.g. an item gets
+        discontinued mid-fulfillment, has no path out and sits at `PartiallyFulfilled`
+        indefinitely; needs a future "close/write-off a stuck requisition" item) — each a distinct
+        future item if ever needed. **With both Item A and
         Item B complete, Inventory as a whole is positioned to unblock Pharmacy** (the next Phase 6
         item, which depends on a working stock pipeline).
   - DICOM, Pharmacy, Ward Supply — not started
@@ -181,3 +187,13 @@ Follow the PRD's own phase ordering as-is:
   investigated further; worth a focused look, possibly related to the structured-logging change
   (Phase 3 item 6) altering how/whether `Logger.prototype.error` gets called once
   `app.useLogger()` is active.
+- **New gap, not yet its own item, cross-cutting**: `InventoryProcurementService.listByVendor(vendorId: string)`
+  and `InventoryRequisitionService.listByDepartment(departmentId: string)` both silently return
+  ALL rows (not an empty result, not an error) if the query parameter is omitted from the
+  request — because TypeORM's `find({ where: { x: undefined } })` treats an `undefined` filter
+  value as "omit this WHERE clause entirely," not as "match nothing." Not a privilege-escalation
+  issue (anyone with `inventory.read` can already list everything tenant-wide via other means),
+  but a footgun for API correctness, and it now appears in two places with a third (Pharmacy)
+  expected to add a similar list-by-X method soon — worth a single cross-cutting fix (e.g. a
+  shared "require this query param or throw `BadRequestException`" helper) rather than three
+  separate per-module patches.
