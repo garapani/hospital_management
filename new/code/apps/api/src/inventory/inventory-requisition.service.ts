@@ -187,7 +187,9 @@ export class InventoryRequisitionService {
         .where('balance.itemId = :itemId', { itemId: reqItem.itemId })
         .andWhere('balance.availableQuantity > 0')
         .orderBy('batch.expiryDate', 'ASC', 'NULLS LAST')
-        .setLock('pessimistic_write')
+        .addOrderBy('batch.createdAt', 'ASC')
+        .addOrderBy('balance.id', 'ASC')
+        .setLock('pessimistic_write', undefined, ['balance'])
         .getMany();
 
       const totalAvailable = balanceRows.reduce((sum, row) => sum + Number(row.availableQuantity), 0);
@@ -203,16 +205,16 @@ export class InventoryRequisitionService {
         if (remaining <= 0) break;
         const portion = Math.min(remaining, Number(balanceRow.availableQuantity));
 
-        const updated = await manager.query<Array<{ id: string }>>(
+        const updated = await manager.query<[Array<{ id: string }>, number]>(
           `
           UPDATE stock_balances
-          SET "availableQuantity" = "availableQuantity" - $1
+          SET "availableQuantity" = "availableQuantity" - $1, "updatedAt" = now()
           WHERE id = $2 AND "availableQuantity" >= $1
           RETURNING id
           `,
           [portion, balanceRow.id],
         );
-        if (updated.length === 0) {
+        if (updated[1] === 0) {
           throw new Error(
             `Invariant violation: stock balance ${balanceRow.id} changed under lock during fulfillment`,
           );
@@ -230,6 +232,12 @@ export class InventoryRequisitionService {
         );
 
         remaining -= portion;
+      }
+
+      if (remaining > 0) {
+        throw new Error(
+          `Invariant violation: ${remaining} units of item ${reqItem.itemId} remained unfulfilled after consuming all locked stock balance rows`,
+        );
       }
 
       reqItem.fulfilledQuantity = String(newFulfilledQuantity);
