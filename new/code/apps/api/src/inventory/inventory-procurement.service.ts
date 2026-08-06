@@ -53,22 +53,33 @@ export class InventoryProcurementService {
   async createPurchaseOrder(
     input: CreatePurchaseOrderInput,
   ): Promise<PurchaseOrder & { items: PurchaseOrderItem[] }> {
+    if (!input.orderedBy?.trim()) {
+      throw new BadRequestException('orderedBy is required');
+    }
     if (!input.items || input.items.length === 0) {
       throw new BadRequestException('A purchase order must include at least one item');
     }
+
+    const validatedItems: Array<{ itemId: string; orderedQuantity: number; unitCost: number }> = [];
     for (const line of input.items) {
-      if (line.orderedQuantity <= 0) {
+      const orderedQuantity = Number(line.orderedQuantity);
+      if (
+        typeof line.orderedQuantity !== 'number' ||
+        !Number.isFinite(orderedQuantity) ||
+        orderedQuantity <= 0
+      ) {
         throw new BadRequestException(`Item ${line.itemId} must have a positive orderedQuantity`);
       }
-      if (line.unitCost < 0) {
+      const unitCost = Number(line.unitCost);
+      if (typeof line.unitCost !== 'number' || !Number.isFinite(unitCost) || unitCost < 0) {
         throw new BadRequestException(`Item ${line.itemId} has a negative unitCost`);
       }
+      validatedItems.push({ itemId: line.itemId, orderedQuantity, unitCost });
     }
 
     await this.inventoryCatalogService.getVendor(input.vendorId); // throws NotFoundException if missing
-    for (const line of input.items) {
-      await this.inventoryCatalogService.getItem(line.itemId); // throws NotFoundException if missing
-    }
+    // Single batched existence check instead of one getItem call (and transaction) per line.
+    await this.inventoryCatalogService.getItemsByIds(validatedItems.map((line) => line.itemId));
 
     const purchaseOrderNumber = await this.purchaseOrderNumberGenerator.generateNextPurchaseOrderNumber();
 
@@ -86,7 +97,7 @@ export class InventoryProcurementService {
 
       const itemRepository = manager.getRepository(PurchaseOrderItem);
       const items = await itemRepository.save(
-        input.items.map((line) => {
+        validatedItems.map((line) => {
           const itemData: Partial<PurchaseOrderItem> = {
             purchaseOrderId: purchaseOrder.id,
             itemId: line.itemId,
@@ -143,16 +154,23 @@ export class InventoryProcurementService {
     purchaseOrderItemId: string,
     input: RecordGoodsReceiptInput,
   ): Promise<PurchaseOrderItem> {
+    if (!input.recordedBy?.trim()) {
+      throw new BadRequestException('recordedBy is required');
+    }
     const receivedQuantity = Number(input.receivedQuantity);
-    if (!Number.isFinite(receivedQuantity) || receivedQuantity <= 0) {
+    if (
+      typeof input.receivedQuantity !== 'number' ||
+      !Number.isFinite(receivedQuantity) ||
+      receivedQuantity <= 0
+    ) {
       throw new BadRequestException('receivedQuantity must be a positive number');
     }
     const unitCost = Number(input.unitCost);
-    if (!Number.isFinite(unitCost) || unitCost < 0) {
+    if (typeof input.unitCost !== 'number' || !Number.isFinite(unitCost) || unitCost < 0) {
       throw new BadRequestException('unitCost must be a non-negative number');
     }
     const mrp = input.mrp === undefined || input.mrp === null ? null : Number(input.mrp);
-    if (mrp !== null && !Number.isFinite(mrp)) {
+    if (mrp !== null && (typeof input.mrp !== 'number' || !Number.isFinite(mrp))) {
       throw new BadRequestException('mrp must be a number');
     }
 
