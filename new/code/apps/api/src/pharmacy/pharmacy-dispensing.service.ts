@@ -5,11 +5,18 @@ import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { InventoryCatalogService } from '../inventory/inventory-catalog.service.js';
 import { PharmacyDispensing } from './entities/pharmacy-dispensing.entity.js';
 import { PharmacyDispensingNumberGeneratorService } from './pharmacy-dispensing-number-generator.service.js';
+import { StockBatch } from '../inventory/entities/stock-batch.entity.js';
+import { StockBalance } from '../inventory/entities/stock-balance.entity.js';
+import { StockTransaction } from '../inventory/entities/stock-transaction.entity.js';
 
 export interface CreateDispensingInput {
   orderItemId: string;
   inventoryItemId: string;
   quantity: number;
+}
+
+export interface DispenseDrugInput {
+  dispensedBy: string;
 }
 
 @Injectable()
@@ -109,6 +116,97 @@ export class PharmacyDispensingService {
       dispensing.status = 'Cancelled';
       dispensing.cancelReason = cancelReason ?? null;
       return repository.save(dispensing);
+    });
+  }
+
+  async dispenseDrug(id: string, input: DispenseDrugInput): Promise<PharmacyDispensing> {
+    if (!input.dispensedBy?.trim()) {
+      throw new BadRequestException('dispensedBy is required');
+    }
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const dispensingRepository = manager.getRepository(PharmacyDispensing);
+      const dispensing = await dispensingRepository.findOne({
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!dispensing) {
+        throw new NotFoundException(`Pharmacy dispensing ${id} not found`);
+      }
+      if (dispensing.status !== 'Pending') {
+        throw new ConflictException(
+          `Dispensing ${id} must be Pending to dispense (current status: ${dispensing.status})`,
+        );
+      }
+
+      const quantity = Number(dispensing.quantity);
+
+      // FEFO: lock every StockBalance row for this item with available stock, ordered so
+      // nearer-expiry batches are consumed first and no-expiry batches are consumed last.
+      const balanceRows = await manager
+        .createQueryBuilder(StockBalance, 'balance')
+        .innerJoin(StockBatch, 'batch', 'batch.id = balance.stockBatchId')
+        .where('balance.itemId = :itemId', { itemId: dispensing.inventoryItemId })
+        .andWhere('balance.availableQuantity > 0')
+        .orderBy('batch.expiryDate', 'ASC', 'NULLS LAST')
+        .addOrderBy('batch.createdAt', 'ASC')
+        .addOrderBy('balance.id', 'ASC')
+        .setLock('pessimistic_write', undefined, ['balance'])
+        .getMany();
+
+      const totalAvailable = balanceRows.reduce((sum, row) => sum + Number(row.availableQuantity), 0);
+      if (totalAvailable < quantity) {
+        throw new BadRequestException(
+          `Insufficient stock for item ${dispensing.inventoryItemId}: requested ${quantity}, available ${totalAvailable}`,
+        );
+      }
+
+      let remaining = quantity;
+      const transactionRepository = manager.getRepository(StockTransaction);
+      for (const balanceRow of balanceRows) {
+        if (remaining <= 0) break;
+        const portion = Math.min(remaining, Number(balanceRow.availableQuantity));
+
+        const updated = await manager.query<[Array<{ id: string }>, number]>(
+          `
+          UPDATE stock_balances
+          SET "availableQuantity" = "availableQuantity" - $1, "updatedAt" = now()
+          WHERE id = $2 AND "availableQuantity" >= $1
+          RETURNING id
+          `,
+          [portion, balanceRow.id],
+        );
+        if (updated[1] === 0) {
+          throw new Error(
+            `Invariant violation: stock balance ${balanceRow.id} changed under lock during dispensing`,
+          );
+        }
+
+        await transactionRepository.save(
+          transactionRepository.create({
+            itemId: dispensing.inventoryItemId,
+            stockBatchId: balanceRow.stockBatchId,
+            transactionType: 'PharmacyDispense',
+            referenceId: dispensing.id,
+            quantity: String(portion),
+            recordedBy: input.dispensedBy,
+          }),
+        );
+
+        remaining -= portion;
+      }
+
+      if (remaining > 0) {
+        throw new Error(
+          `Invariant violation: ${remaining} units of item ${dispensing.inventoryItemId} remained ` +
+            `unfulfilled after consuming all locked stock balance rows`,
+        );
+      }
+
+      dispensing.status = 'Dispensed';
+      dispensing.dispensedBy = input.dispensedBy;
+      dispensing.dispensedAt = new Date();
+      return dispensingRepository.save(dispensing);
     });
   }
 }
