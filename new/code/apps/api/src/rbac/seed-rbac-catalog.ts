@@ -259,6 +259,14 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'inventory.goods-receipt.enter',
     description: 'Record a goods receipt against a purchase order line',
   },
+  {
+    name: 'inventory.requisition.create',
+    description: 'Create a stock requisition; also gates cancellation',
+  },
+  {
+    name: 'inventory.dispatch.fulfill',
+    description: 'Fulfill a stock requisition line, decrementing stock balance',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -374,6 +382,10 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Inventory/Store Manager', permissionName: 'inventory.purchase-order.create' },
   { roleName: 'Super Admin', permissionName: 'inventory.goods-receipt.enter' },
   { roleName: 'Inventory/Store Manager', permissionName: 'inventory.goods-receipt.enter' },
+  { roleName: 'Super Admin', permissionName: 'inventory.requisition.create' },
+  { roleName: 'Inventory/Store Manager', permissionName: 'inventory.requisition.create' },
+  { roleName: 'Super Admin', permissionName: 'inventory.dispatch.fulfill' },
+  { roleName: 'Inventory/Store Manager', permissionName: 'inventory.dispatch.fulfill' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
