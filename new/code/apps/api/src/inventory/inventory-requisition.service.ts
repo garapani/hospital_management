@@ -5,6 +5,9 @@ import { StockRequisition } from './entities/stock-requisition.entity.js';
 import { StockRequisitionItem } from './entities/stock-requisition-item.entity.js';
 import { StockRequisitionNumberGeneratorService } from './stock-requisition-number-generator.service.js';
 import { InventoryCatalogService } from './inventory-catalog.service.js';
+import { StockBatch } from './entities/stock-batch.entity.js';
+import { StockBalance } from './entities/stock-balance.entity.js';
+import { StockTransaction } from './entities/stock-transaction.entity.js';
 
 export interface CreateRequisitionItemInput {
   itemId: string;
@@ -16,6 +19,13 @@ export interface CreateRequisitionInput {
   requestedBy: string;
   notes?: string;
   items: CreateRequisitionItemInput[];
+}
+
+const NON_TERMINAL_REQUISITION_STATUSES = ['Pending', 'PartiallyFulfilled'];
+
+export interface FulfillRequisitionItemInput {
+  quantity: number;
+  fulfilledBy: string;
 }
 
 @Injectable()
@@ -122,6 +132,117 @@ export class InventoryRequisitionService {
       requisition.status = 'Cancelled';
       requisition.cancelReason = cancelReason ?? null;
       return repository.save(requisition);
+    });
+  }
+
+  async fulfillRequisitionItem(
+    stockRequisitionItemId: string,
+    input: FulfillRequisitionItemInput,
+  ): Promise<StockRequisitionItem> {
+    if (!input.fulfilledBy?.trim()) {
+      throw new BadRequestException('fulfilledBy is required');
+    }
+    const quantity = Number(input.quantity);
+    if (typeof input.quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
+      throw new BadRequestException('quantity must be a positive number');
+    }
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const reqItemRepository = manager.getRepository(StockRequisitionItem);
+      const reqItem = await reqItemRepository.findOne({
+        where: { id: stockRequisitionItemId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!reqItem) {
+        throw new NotFoundException(`Stock requisition item ${stockRequisitionItemId} not found`);
+      }
+
+      const requisitionRepository = manager.getRepository(StockRequisition);
+      const requisition = await requisitionRepository.findOne({
+        where: { id: reqItem.requisitionId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!requisition) {
+        throw new NotFoundException(`Stock requisition ${reqItem.requisitionId} not found`);
+      }
+      if (!NON_TERMINAL_REQUISITION_STATUSES.includes(requisition.status)) {
+        throw new ConflictException(
+          `Requisition ${requisition.id} cannot be fulfilled from status ${requisition.status}`,
+        );
+      }
+
+      const newFulfilledQuantity = Number(reqItem.fulfilledQuantity) + quantity;
+      if (newFulfilledQuantity > Number(reqItem.requestedQuantity)) {
+        throw new BadRequestException(
+          `Fulfilling ${quantity} would exceed the requested quantity for line ${stockRequisitionItemId} ` +
+            `(requested: ${reqItem.requestedQuantity}, already fulfilled: ${reqItem.fulfilledQuantity})`,
+        );
+      }
+
+      // FEFO: lock every StockBalance row for this item with available stock, ordered so
+      // nearer-expiry batches are consumed first and no-expiry batches are consumed last.
+      const balanceRows = await manager
+        .createQueryBuilder(StockBalance, 'balance')
+        .innerJoin(StockBatch, 'batch', 'batch.id = balance.stockBatchId')
+        .where('balance.itemId = :itemId', { itemId: reqItem.itemId })
+        .andWhere('balance.availableQuantity > 0')
+        .orderBy('batch.expiryDate', 'ASC', 'NULLS LAST')
+        .setLock('pessimistic_write')
+        .getMany();
+
+      const totalAvailable = balanceRows.reduce((sum, row) => sum + Number(row.availableQuantity), 0);
+      if (totalAvailable < quantity) {
+        throw new BadRequestException(
+          `Insufficient stock for item ${reqItem.itemId}: requested ${quantity}, available ${totalAvailable}`,
+        );
+      }
+
+      let remaining = quantity;
+      const transactionRepository = manager.getRepository(StockTransaction);
+      for (const balanceRow of balanceRows) {
+        if (remaining <= 0) break;
+        const portion = Math.min(remaining, Number(balanceRow.availableQuantity));
+
+        const updated = await manager.query<Array<{ id: string }>>(
+          `
+          UPDATE stock_balances
+          SET "availableQuantity" = "availableQuantity" - $1
+          WHERE id = $2 AND "availableQuantity" >= $1
+          RETURNING id
+          `,
+          [portion, balanceRow.id],
+        );
+        if (updated.length === 0) {
+          throw new Error(
+            `Invariant violation: stock balance ${balanceRow.id} changed under lock during fulfillment`,
+          );
+        }
+
+        await transactionRepository.save(
+          transactionRepository.create({
+            itemId: reqItem.itemId,
+            stockBatchId: balanceRow.stockBatchId,
+            transactionType: 'Dispatch',
+            referenceId: reqItem.id,
+            quantity: String(portion),
+            recordedBy: input.fulfilledBy,
+          }),
+        );
+
+        remaining -= portion;
+      }
+
+      reqItem.fulfilledQuantity = String(newFulfilledQuantity);
+      const savedReqItem = await reqItemRepository.save(reqItem);
+
+      const siblingItems = await reqItemRepository.find({ where: { requisitionId: requisition.id } });
+      const fullyFulfilled = siblingItems.every(
+        (line) => Number(line.fulfilledQuantity) >= Number(line.requestedQuantity),
+      );
+      requisition.status = fullyFulfilled ? 'Fulfilled' : 'PartiallyFulfilled';
+      await requisitionRepository.save(requisition);
+
+      return savedReqItem;
     });
   }
 }
