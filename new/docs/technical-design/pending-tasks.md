@@ -128,7 +128,15 @@ Follow the PRD's own phase ordering as-is:
         explicit service-layer guard clauses plus database CHECK constraints (added in a final-review
         fix), closing a gap where an empty/malformed request body could previously have produced a
         `Verified` report with NULL text/author.
-  - DICOM, Pharmacy, Inventory, Ward Supply — not started
+  - [x] Inventory Item A — procurement pipeline (item category/sub-category/item/vendor catalog,
+        purchase order create/read/cancel, goods receipt, stock balance query) — done. **Not
+        done:** RFQ/Quotation, two-phase unconfirmed stock staging, store/location dimension,
+        vendor accounting fields (TDS/ledger/credit period), donations/returns/write-offs,
+        multi-store/currency/fiscal-year masters, formal PO approval workflow, catalog
+        update/delete (create+list only shipped; see `Development-Standards.md` §16) — each a
+        distinct future item. The immediate next follow-up is **Item B: internal
+        requisition/dispatch (stock OUT)**, the dependency Pharmacy needs before it can be built.
+  - DICOM, Pharmacy, Ward Supply — not started
 - Phase 3: Insurance/Claims, Accounting, Verification, Fixed Asset
 - Phase 4: Clinical/EMR long tail, Nursing, Emergency, OT, Maternity, CSSD
 - Phase 5: Employee, Payroll, Fraction and Incentive

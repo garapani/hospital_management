@@ -494,3 +494,92 @@ with its corresponding required fields NULL.
 
 See `new/docs/superpowers/plans/2026-08-05-radiology-module.md` for the full implementation
 history.
+
+## 16. Inventory Procurement Pipeline
+
+The Inventory module (`apps/api/src/inventory/`) follows the same two-controller split as Lab/LIS
+and Radiology: `InventoryCatalogService`/`InventoryCatalogController` (item category/sub-category/
+item/vendor catalog — create and list only, gated by `inventory.catalog.manage` — Hospital Admin/
+Super Admin only) and `InventoryProcurementService`/`InventoryProcurementController` (purchase
+order create/read/cancel, goods receipt, stock balance query, gated by
+`inventory.purchase-order.create`/`inventory.goods-receipt.enter`/`inventory.read` — Inventory/
+Store Manager's first-ever permission grants). Unlike Lab and Radiology, there is no requisition
+step feeding this pipeline from the Order module — procurement starts from a purchase order against
+a vendor, not from a clinical order.
+
+**Two partial unique indexes for `stock_batches`, not one plain constraint:** a batch is identified
+by `(itemId, batchNumber, expiryDate)`, but `expiryDate` is nullable for non-expiring items.
+Postgres treats every `NULL` as distinct for uniqueness purposes, so a single
+`UNIQUE ("itemId", "batchNumber", "expiryDate")` constraint would silently allow duplicate batch
+rows whenever `expiryDate` is `NULL` — two goods receipts for the same item/batch number with no
+expiry would each insert their own row instead of colliding. Migration `0022-create-inventory-
+tables` instead declares two `WHERE`-filtered unique indexes:
+`UQ_stock_batches_item_batch_expiry` on `("itemId", "batchNumber", "expiryDate") WHERE "expiryDate"
+IS NOT NULL`, and `UQ_stock_batches_item_batch_no_expiry` on `("itemId", "batchNumber") WHERE
+"expiryDate" IS NULL`. `findOrCreateStockBatch` in `InventoryProcurementService` branches on
+`input.expiryDate === null` and issues the matching `INSERT ... ON CONFLICT (...) WHERE ... DO
+NOTHING RETURNING *` against whichever partial index applies, then re-`findOne`s on a concurrent-
+insert miss to fetch the winning row. Any future module with a similar "identity with an optional
+differentiating field" shape (batch/lot numbers, versioned records, anything keyed partly on a
+nullable column) should use the same two-partial-index pattern rather than a single column-list
+UNIQUE constraint. Batch cost is fixed at first receipt by design — a later goods receipt against
+the same batch identity reporting a different `unitCost`/`mrp` does not update the existing row;
+this is intentional (already-issued stock stays priced at what it was actually received at), not an
+oversight, and is called out with an inline comment at both branches of `findOrCreateStockBatch` so
+it isn't "fixed" without also deciding what happens to stock already issued at the old cost.
+
+**Atomic stock balance increment via `ON CONFLICT ... DO UPDATE`:** `recordGoodsReceipt` updates
+`stock_balances` with a single raw-SQL upsert — `INSERT INTO stock_balances ("itemId",
+"stockBatchId", "availableQuantity") VALUES (...) ON CONFLICT ("itemId", "stockBatchId") DO UPDATE
+SET "availableQuantity" = stock_balances."availableQuantity" + excluded."availableQuantity"` —
+rather than a read-modify-write (`SELECT` current balance, add in application code, `UPDATE`).
+The database performs the addition atomically under the row's own lock, so two concurrent goods
+receipts against the same item/batch can't race and drop an increment the way a naive
+read-then-write would. Combined with the `pessimistic_write` lock `recordGoodsReceipt` takes on the
+purchase order item and purchase order rows up front (same pattern as `cancel`), this is the
+module's answer to Lab/Radiology's missing-row-lock lesson (`Development-Standards.md` §15) — the
+locking discipline was applied from the start here, not retrofitted after a review finding.
+
+**Numeric coercion at the service boundary — a lesson from the fix round:** this codebase has no
+global `ValidationPipe` and no class-validator decorators on any DTO (the same deliberate
+convention noted in §15), so `RecordGoodsReceiptInput`'s `receivedQuantity`, `unitCost`, and `mrp`
+arrive as whatever the raw request body contains — not guaranteed to be numbers, and not guaranteed
+to be finite. The first version of `recordGoodsReceipt` used `input.receivedQuantity` directly in
+arithmetic and in a parameterized SQL query; a non-numeric or non-finite value (a string, `NaN`,
+`Infinity`) would either produce silently wrong stock quantities or fail deep inside the query
+rather than at the API boundary. Fixed by explicitly `Number()`-coercing all three fields at the
+top of `recordGoodsReceipt`, before any arithmetic or DB access, and range-validating each
+(`receivedQuantity` must be finite and positive, `unitCost` finite and non-negative, `mrp` finite
+if present) with a `BadRequestException` on failure. **Any future module with unvalidated numeric
+DTO fields should follow this same pattern**: coerce with `Number(...)`, check
+`Number.isFinite(...)`, and range-check before the value touches arithmetic or a query — the
+service method is the only real validation boundary this codebase has for numeric input.
+
+The same fix round also corrected a subtler bug in `findOrCreateStockBatch`: on a successful insert,
+the original code built the returned `StockBatch` from the raw `INSERT ... RETURNING *` row via
+`repository.create(inserted[0])`, which bypasses TypeORM's column transformers — `expiryDate`'s
+`date`-typed column would come back from `node-postgres` as an untransformed value, producing an
+off-by-one-day timezone bug for some callers. The fix instead re-fetches the row through
+`repository.findOneOrFail({ where: { id: inserted[0].id } })`, so TypeORM's normal `date` transform
+(string, not `Date`) applies consistently regardless of whether the row was just inserted or already
+existed.
+
+**Explicit scope cuts:** the catalog is create+list only, same convention as Lab/Radiology — no
+update/delete endpoints on category, sub-category, item, or vendor. No two-phase "unconfirmed
+stock" staging — a goods receipt lands directly in `stock_balances` as available quantity, with no
+intermediate pending/quarantine state to confirm before it can be issued. No store/location
+dimension — `stock_balances` and `stock_batches` are keyed by `itemId` (and `stockBatchId`) only,
+with no warehouse/ward/sub-store column, so all stock for a tenant is a single undifferentiated
+pool. No `tenantId` column anywhere in this module's tables — isolation is schema-per-tenant (via
+`TenantConnectionService.runInTenantSchema`), consistent with every other domain module in this
+codebase, not a row-level tenant filter.
+
+**Deferred to future items:** RFQ/Quotation, two-phase unconfirmed stock staging, store/location
+dimension, vendor accounting fields (TDS/ledger/credit period), donations/returns/write-offs,
+multi-store/currency/fiscal-year masters, formal PO approval workflow. The immediate next
+follow-up is **Item B: internal requisition/dispatch (stock OUT)** — the module that will read from
+this pipeline's `stock_balances`/`listStockBalances` to dispatch stock to a department or ward, and
+the dependency the Pharmacy module needs before it can be built.
+
+See `new/docs/superpowers/plans/2026-08-05-inventory-procurement.md` for the full implementation
+history.
