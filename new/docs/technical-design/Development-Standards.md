@@ -499,13 +499,16 @@ history.
 
 The Inventory module (`apps/api/src/inventory/`) follows the same two-controller split as Lab/LIS
 and Radiology: `InventoryCatalogService`/`InventoryCatalogController` (item category/sub-category/
-item/vendor catalog — create and list only, gated by `inventory.catalog.manage` — Hospital Admin/
-Super Admin only) and `InventoryProcurementService`/`InventoryProcurementController` (purchase
-order create/read/cancel, goods receipt, stock balance query, gated by
-`inventory.purchase-order.create`/`inventory.goods-receipt.enter`/`inventory.read` — Inventory/
-Store Manager's first-ever permission grants). Unlike Lab and Radiology, there is no requisition
-step feeding this pipeline from the Order module — procurement starts from a purchase order against
-a vendor, not from a clinical order.
+item/vendor catalog — create and list only, with creation gated by `inventory.catalog.manage` —
+Hospital Admin/Super Admin only) and `InventoryProcurementService`/`InventoryProcurementController`
+(purchase order create/read/cancel, goods receipt, stock balance query, with writes gated by
+`inventory.purchase-order.create`/`inventory.goods-receipt.enter` — Inventory/Store Manager's
+first-ever permission grants). `inventory.catalog.manage` gates creation only (the catalog's `POST`
+endpoints); every `GET` endpoint across both controllers — catalog listing/lookup and procurement
+listing/lookup/stock-balance query alike — is gated by `inventory.read` instead, which
+Inventory/Store Manager also holds alongside Hospital Admin/Super Admin. Unlike Lab and Radiology,
+there is no requisition step feeding this pipeline from the Order module — procurement starts from
+a purchase order against a vendor, not from a clinical order.
 
 **Two partial unique indexes for `stock_batches`, not one plain constraint:** a batch is identified
 by `(itemId, batchNumber, expiryDate)`, but `expiryDate` is nullable for non-expiring items.
@@ -526,7 +529,12 @@ UNIQUE constraint. Batch cost is fixed at first receipt by design — a later go
 the same batch identity reporting a different `unitCost`/`mrp` does not update the existing row;
 this is intentional (already-issued stock stays priced at what it was actually received at), not an
 oversight, and is called out with an inline comment at both branches of `findOrCreateStockBatch` so
-it isn't "fixed" without also deciding what happens to stock already issued at the old cost.
+it isn't "fixed" without also deciding what happens to stock already issued at the old cost. The
+`INSERT ... ON CONFLICT DO NOTHING` + fallback-`SELECT` pattern does not depend on transaction
+isolation level in the way one might assume: `DO NOTHING` never blocks waiting on a concurrently
+uncommitted conflicting row at any isolation level, and the code already handles the
+fallback-not-found case (a genuine race where the winning row isn't visible yet) with a clean,
+retriable `ConflictException` rather than risking any data corruption.
 
 **Atomic stock balance increment via `ON CONFLICT ... DO UPDATE`:** `recordGoodsReceipt` updates
 `stock_balances` with a single raw-SQL upsert — `INSERT INTO stock_balances ("itemId",
@@ -538,7 +546,14 @@ receipts against the same item/batch can't race and drop an increment the way a 
 read-then-write would. Combined with the `pessimistic_write` lock `recordGoodsReceipt` takes on the
 purchase order item and purchase order rows up front (same pattern as `cancel`), this is the
 module's answer to Lab/Radiology's missing-row-lock lesson (`Development-Standards.md` §15) — the
-locking discipline was applied from the start here, not retrofitted after a review finding.
+locking discipline was applied from the start here, not retrofitted after a review finding. Because
+the `stock_balances` upsert (and the `stock_batches` inserts in `findOrCreateStockBatch` below) go
+through `manager.query()` rather than `repository.save()`, they bypass the repo's `AuditSubscriber`
+(which only fires on repository/entity operations) — this is not a lost-audit-trail problem in
+practice, since the append-only `stock_transactions` ledger written earlier in the same method (via
+`repository.save`, so it IS audited) captures the same event with quantity and `recordedBy`, but
+future modules reaching for a raw-query upsert for the same `ON CONFLICT` atomicity should be aware
+of this audit blind spot.
 
 **Numeric coercion at the service boundary — a lesson from the fix round:** this codebase has no
 global `ValidationPipe` and no class-validator decorators on any DTO (the same deliberate

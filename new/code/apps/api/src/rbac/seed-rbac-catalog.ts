@@ -244,11 +244,12 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
   },
   {
     name: 'inventory.catalog.manage',
-    description: 'Create and list inventory item categories, sub-categories, items, and vendors',
+    description: 'Create inventory item categories, sub-categories, items, and vendors',
   },
   {
     name: 'inventory.read',
-    description: 'View inventory catalog, purchase orders, and stock balance',
+    description:
+      'Read inventory catalog (categories, sub-categories, items, vendors), purchase orders, and stock balance',
   },
   {
     name: 'inventory.purchase-order.create',
