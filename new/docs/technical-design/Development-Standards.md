@@ -598,3 +598,89 @@ the dependency the Pharmacy module needs before it can be built.
 
 See `new/docs/superpowers/plans/2026-08-05-inventory-procurement.md` for the full implementation
 history.
+
+## 17. Inventory Requisition/Dispatch Pipeline
+
+Item B closes the loop Item A (§16) left open: `InventoryRequisitionService`, split across two
+controllers — `InventoryRequisitionController` (`inventory/requisitions`, create/read/cancel, gated
+by `inventory.requisition.create` for writes and `inventory.read` for `GET`s) and
+`InventoryDispatchController` (`inventory/requisitions/items/:id/fulfill`, gated by
+`inventory.dispatch.fulfill`) — both new first-ever permission grants for Inventory/Store Manager
+(and Super Admin), added in migration `0023-create-inventory-requisition-tables` alongside the
+`stock_requisitions`/`stock_requisition_items`/`stock_requisition_sequences` tables. `InventoryModule`
+had to add `MasterDataModule` to its own `imports` array for this — unlike `DatabaseModule`, which
+every Inventory service relies on without an explicit import, `MasterDataModule` is not `@Global()`,
+and `createRequisition` needs `MasterDataService.getDepartment` to validate the requester.
+
+**Department-based requester, no Store/location dimension:** a requisition's `departmentId` is
+validated against the existing `Department` master-data entity — the same one Lab/Radiology/Order
+already reference — not a new Inventory-specific entity. This is consistent with §16's "no
+store/location dimension" scope cut: stock is still a single undifferentiated per-tenant pool keyed
+by `itemId`/`stockBatchId` only, so fulfillment has no source-warehouse concept to resolve, only a
+requesting department to record. The requisition is a genuine two-step flow — `createRequisition`
+(status `Pending`) followed by one or more `fulfillRequisitionItem` calls per line (status advances
+to `PartiallyFulfilled` then `Fulfilled` once every sibling line's `fulfilledQuantity` reaches its
+`requestedQuantity`) — there is no single-call "direct dispatch" that bypasses the requisition
+record.
+
+**FEFO batch-walk: a locked, ordered, multi-row query builder, not `repository.find()`:**
+`fulfillRequisitionItem` needs to walk every `StockBalance` row for an item, nearest-expiry first,
+locking all of them for the duration of the fulfillment. `repository.find()`'s `lock` option only
+supports locking the rows of the entity being queried, with no way to control which joined tables a
+lock applies to — so this method uses `manager.createQueryBuilder(StockBalance, 'balance')` with an
+`innerJoin` to `StockBatch` for the expiry ordering, `.orderBy('batch.expiryDate', 'ASC', 'NULLS
+LAST')` tie-broken by `.addOrderBy('batch.createdAt', 'ASC')` then `.addOrderBy('balance.id', 'ASC')`
+for deterministic ordering when two batches share an expiry date, and
+`.setLock('pessimistic_write', undefined, ['balance'])`. The third argument to `setLock` matters: a
+bare `.setLock('pessimistic_write')` on a joined query locks every table named in the `FROM`/`JOIN`
+clauses under Postgres (`SELECT ... FOR UPDATE` with no `OF` clause locks all of them), which would
+have over-locked `stock_batches` rows this operation only reads and never writes — unnecessarily
+serializing unrelated concurrent goods receipts against the same batches. Scoping the lock to the
+`balance` alias produces `FOR UPDATE OF "balance"`, locking only the rows this method actually
+decrements. Any future module locking a joined query builder should scope `setLock` the same way
+unless every joined table genuinely needs locking.
+
+**The `manager.query()` UPDATE-vs-INSERT `RETURNING` shape gotcha — a lesson from this task's fix
+round:** §16 already established using `manager.query()` with raw SQL for atomicity outside what
+`repository.save()`/`.update()` can express. The decrement here follows that pattern —
+`UPDATE stock_balances SET "availableQuantity" = "availableQuantity" - $1, "updatedAt" = now() WHERE
+id = $2 AND "availableQuantity" >= $1 RETURNING id` — but this codebase's TypeORM/driver version
+returns a different shape for `UPDATE ... RETURNING` than for `INSERT ... RETURNING`: an `INSERT`
+returns a bare array of the returned rows (as used in §16's `findOrCreateStockBatch`), but an
+`UPDATE` (and, by the same driver mechanics, `DELETE`) returns a `[rows, rowCount]` **tuple**. The
+first implementation checked `updated.length === 0` to detect the guarded `WHERE` clause rejecting
+the row (meaning some other transaction changed `availableQuantity` between the locked read and this
+write) — but `updated` was always the two-element tuple, so `.length` was always `2` and the check
+was permanently dead code; a race that should have thrown `Invariant violation: stock balance ...
+changed under lock` would instead have silently proceeded as if the decrement succeeded. Fixed by
+checking `updated[1] === 0` (the row-count element) instead. **Any future module issuing a raw
+`UPDATE`/`DELETE ... RETURNING` through `manager.query()` must check the tuple's row-count element,
+not the array's own `.length`** — only `INSERT ... RETURNING` returns a bare row array in this
+codebase's driver. The same fix round also added a final `if (remaining > 0) throw new Error(...)`
+after the batch-walk loop, an invariant check that should be unreachable (the pre-loop
+`totalAvailable < quantity` check already guarantees the locked rows cover the requested quantity)
+but guards against a future refactor silently breaking that guarantee.
+
+**Guarded direct-`UPDATE` decrement, not an upsert:** unlike Item A's `recordGoodsReceipt`, which
+uses `INSERT ... ON CONFLICT ... DO UPDATE` because a goods receipt's `stock_balances` row may or may
+not already exist for a given item/batch pairing, `fulfillRequisitionItem`'s decrement only ever
+targets rows the FEFO query builder just selected and locked — by construction, those rows are
+guaranteed to already exist, so a plain guarded `UPDATE ... WHERE "availableQuantity" >= $1` is
+sufficient and an upsert would be solving a problem that can't occur here. The `WHERE` guard is the
+load-bearing part: it's what turns an impossible-in-theory race (the row is locked under
+`pessimistic_write` for the whole transaction) into a defense-in-depth check rather than a silent
+overdraw if that locking assumption is ever violated by a future change.
+
+**Numeric coercion and actor guards reused verbatim from Item A's fix round:** `createRequisition`
+and `fulfillRequisitionItem` both `Number()`-coerce and `Number.isFinite`/positivity-check their
+quantity fields, and both throw `BadRequestException` on a missing/blank `requestedBy`/`fulfilledBy`
+actor string — the same pattern §16 established for `recordGoodsReceipt`'s numeric fields, applied
+here from the start rather than needing its own fix-round discovery.
+
+**With Item A and Item B both shipped, the Inventory module is complete** for the scope this pipeline
+was designed to cover — catalog, procurement (stock IN), and requisition/dispatch (stock OUT) all
+exist and are wired together through the shared `stock_balances`/`stock_batches` tables. Pharmacy,
+the next Phase 6 item, can now build against a working stock pipeline instead of stubbing one.
+
+See `new/docs/superpowers/plans/2026-08-06-inventory-requisition-dispatch.md` for the full
+implementation history.

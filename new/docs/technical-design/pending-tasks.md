@@ -134,8 +134,20 @@ Follow the PRD's own phase ordering as-is:
         vendor accounting fields (TDS/ledger/credit period), donations/returns/write-offs,
         multi-store/currency/fiscal-year masters, formal PO approval workflow, catalog
         update/delete (create+list only shipped; see `Development-Standards.md` §16) — each a
-        distinct future item. The immediate next follow-up is **Item B: internal
-        requisition/dispatch (stock OUT)**, the dependency Pharmacy needs before it can be built.
+        distinct future item.
+  - [x] Inventory Item B — requisition/dispatch pipeline (department-based stock requisition
+        create/read/cancel, FEFO-ordered locked fulfillment against `stock_balances`, requisition
+        status machine `Pending` → `PartiallyFulfilled`/`Fulfilled`, with `Cancelled` from
+        `Pending`) — done; see `Development-Standards.md` §17. **Not done:** store-to-store/
+        sub-store routing (no store/location dimension exists yet — same scope cut as Item A),
+        multi-level verification/approval chains (fulfillment is single-step, no approval gate
+        before a requisition line is dispatched), fixed-asset dispatch tracking (this pipeline
+        covers consumable stock only), "direct dispatch" (there is no way to decrement stock
+        without first creating a requisition record), and manual batch selection (FEFO — nearest
+        expiry first — is the only supported fulfillment strategy, with no override to pick a
+        specific batch) — each a distinct future item if ever needed. **With both Item A and
+        Item B complete, Inventory as a whole is positioned to unblock Pharmacy** (the next Phase 6
+        item, which depends on a working stock pipeline).
   - DICOM, Pharmacy, Ward Supply — not started
 - Phase 3: Insurance/Claims, Accounting, Verification, Fixed Asset
 - Phase 4: Clinical/EMR long tail, Nursing, Emergency, OT, Maternity, CSSD
