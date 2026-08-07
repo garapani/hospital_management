@@ -743,8 +743,8 @@ against a domain-specific catalog reference" shape Lab and Radiology's requisiti
 established first. This is the third time this codebase has needed that pattern (after Lab and
 Radiology), and each time it's a fresh implementation in the new module rather than a shared
 "order-routed intake" helper — consistent with this codebase's established convention of mirroring a
-proven shape rather than extracting it. Unlike Lab/Radiology's first cut, which needed a fix-round
-to add duplicate-prevention after the fact, Pharmacy's `UQ_pharmacy_dispensings_active_order_item`
+proven shape rather than extracting it. Unlike Lab's first cut, which needed a fix-round to add duplicate-prevention after the fact,
+Pharmacy (like Radiology) reuses that hardened pattern and ships the `UQ_pharmacy_dispensings_active_order_item`
 partial unique index (`ON pharmacy_dispensings ("orderItemId") WHERE status <> 'Cancelled'`) ships
 in the same initial migration as the table itself, paired with an in-transaction
 `findOne({ where: { orderItemId, status: Not('Cancelled') } })` pre-check for a fast, friendly
