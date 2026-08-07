@@ -745,7 +745,7 @@ Radiology), and each time it's a fresh implementation in the new module rather t
 "order-routed intake" helper — consistent with this codebase's established convention of mirroring a
 proven shape rather than extracting it. Unlike Lab's first cut, which needed a fix-round to add duplicate-prevention after the fact,
 Pharmacy (like Radiology) reuses that hardened pattern and ships the `UQ_pharmacy_dispensings_active_order_item`
-partial unique index (`ON pharmacy_dispensings ("orderItemId") WHERE status <> 'Cancelled'`) ships
+partial unique index (`ON pharmacy_dispensings ("orderItemId") WHERE status <> 'Cancelled'`)
 in the same initial migration as the table itself, paired with an in-transaction
 `findOne({ where: { orderItemId, status: Not('Cancelled') } })` pre-check for a fast, friendly
 `ConflictException` plus a `QueryFailedError`/`constraint` catch scoped to that exact constraint
@@ -795,7 +795,12 @@ explicitly out of scope here (see below).
 
 **Explicit scope cuts:** Pharmacy has **no separate drug catalog** — a drug is just an
 `InventoryItem` (the same catalog Inventory Item A built), with no generic-name, dosage-form,
-strength, or controlled-substance fields layered on top. There is **no walk-in/OTC sales path** —
+strength, or controlled-substance fields layered on top. The design's framing of a drug as "an
+`InventoryItem` whose sub-category has `isConsumable = true`" is descriptive catalog metadata
+only — `createDispensing` never checks that flag, so any catalog item (a wheelchair, a lab
+reagent, anything in the catalog) can technically be dispensed as a "drug" today; enforcing that
+boundary, if ever needed, would be a future validation addition, not a retrofit to this branch.
+There is **no walk-in/OTC sales path** —
 every dispensing requires an existing `OrderItem`, so a patient walking up to the pharmacy counter
 without a doctor's order has no code path here. **Billing stays fully decoupled** — `dispenseDrug`
 never touches a billing/charge table; whatever charges a dispensed drug generates is entirely
