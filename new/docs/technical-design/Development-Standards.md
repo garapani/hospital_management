@@ -721,3 +721,95 @@ the next Phase 6 item, can now build against a working stock pipeline instead of
 
 See `new/docs/superpowers/plans/2026-08-06-inventory-requisition-dispatch.md` for the full
 implementation history.
+
+## 18. Pharmacy Dispensing Pipeline
+
+Pharmacy is the module Inventory's Item A/B pipeline (§16, §17) was built to unblock: it consumes
+`stock_balances`/`stock_batches` as-is, adding no new stock-holding tables of its own. The whole
+module lives in `apps/api/src/pharmacy/`: one entity (`PharmacyDispensing`), one service
+(`PharmacyDispensingService`), one controller (`PharmacyDispensingController`, gated by
+`pharmacy.dispensing.create`, `pharmacy.dispensing.dispense`, and `pharmacy.read`), and one atomic
+number generator (`PharmacyDispensingNumberGeneratorService`) — mirroring the per-module
+number-generator shape every prior module (Lab, Radiology, Inventory) has its own copy of; there is
+still no shared `@hospital/number-generator` library, by the same mirror-don't-extract convention
+this section names below. Tables (`pharmacy_dispensings`, `pharmacy_dispensing_sequences`) and
+permissions were both added in migration `0024-create-pharmacy-tables`.
+
+**Order-routed reclassification, mirroring Lab/Radiology's `createRequisition` shape — with the
+duplicate-race prevention baked in from day one, not retrofitted:** `createDispensing` takes an
+`orderItemId` and an `inventoryItemId`, loads the `OrderItem`, and rejects it unless
+`itemType === 'Pharmacy'` and `status !== 'Cancelled'` — the same "reclassify a generic `OrderItem`
+against a domain-specific catalog reference" shape Lab and Radiology's requisition-creation methods
+established first. This is the third time this codebase has needed that pattern (after Lab and
+Radiology), and each time it's a fresh implementation in the new module rather than a shared
+"order-routed intake" helper — consistent with this codebase's established convention of mirroring a
+proven shape rather than extracting it. Unlike Lab/Radiology's first cut, which needed a fix-round
+to add duplicate-prevention after the fact, Pharmacy's `UQ_pharmacy_dispensings_active_order_item`
+partial unique index (`ON pharmacy_dispensings ("orderItemId") WHERE status <> 'Cancelled'`) ships
+in the same initial migration as the table itself, paired with an in-transaction
+`findOne({ where: { orderItemId, status: Not('Cancelled') } })` pre-check for a fast, friendly
+`ConflictException` plus a `QueryFailedError`/`constraint` catch scoped to that exact constraint
+name as the race-safe backstop — both halves of the pattern present from the start, because the
+Lab/Radiology/Inventory fix-round history had already established that a pre-check alone is
+insufficient under concurrent requests.
+
+**Item B's FEFO batch-walk, reimplemented as Pharmacy's own copy, not a shared call — and why:**
+`dispenseDrug` walks `StockBalance` rows for `dispensing.inventoryItemId`, nearest-expiry-first via
+an inner join to `StockBatch`, using the identical `createQueryBuilder` shape §17 documented for
+`InventoryRequisitionService.fulfillRequisitionItem` — same `ORDER BY batch.expiryDate ASC NULLS
+LAST, batch.createdAt ASC, balance.id ASC` tie-break, same `.setLock('pessimistic_write', undefined,
+['balance'])` scoped-lock, same guarded raw `UPDATE ... RETURNING id` with the `updated[1] === 0`
+tuple-row-count check §17's fix round established, same post-loop `if (remaining > 0) throw` residue
+guard. This is the second time this codebase has needed FEFO stock-decrement mechanics (after Item
+B), and it is a second from-scratch copy, not a call into `InventoryRequisitionService`. Two reasons,
+both structural rather than stylistic: **different actor model** — Item B's fulfillment is keyed to
+a `stock_requisition_items` line and a `fulfilledBy` staff actor recorded per fulfillment call,
+while Pharmacy's dispense is keyed to a `pharmacy_dispensings` record and a `dispensedBy` pharmacist
+recorded once per dispensing — and **different ledger `referenceId` target** — Item B's
+`stock_transactions` rows point `referenceId` at a `stock_requisition_items.id`, Pharmacy's point it
+at a `pharmacy_dispensings.id`, so the write half of the method is domain-specific even though the
+read/lock/decrement half is identical. Extracting a shared FEFO-walk helper would need to
+parameterize both the actor field and the `referenceId` target, and this codebase has consistently
+chosen not to build that kind of parameterized shared abstraction after only two occurrences —
+mirror-don't-extract holds here the same way it holds for the number-generator services.
+
+**`'PharmacyDispense'` — the third `stock_transactions.transactionType` value:** extending the
+polymorphic-`referenceId`-by-`transactionType` convention §17 documented (`'GoodsReceipt'` →
+`purchase_order_items.id`, `'Dispatch'` → `stock_requisition_items.id`), `dispenseDrug` writes
+`transactionType: 'PharmacyDispense'` with `referenceId` pointing at the `pharmacy_dispensings.id`.
+`quantity` is still always a positive magnitude — `'PharmacyDispense'`, like `'Dispatch'`, means
+stock out, inferred from `transactionType` alone, never from a sign on `quantity`. No column in
+`stock_transactions` enforces which table a given `transactionType` points `referenceId` into; any
+future consumer (a stock-ledger report, an audit view) must branch on all three values now, not two.
+
+**A two-step flow, not three — deliberately narrower than Lab/Radiology's shape:** `createDispensing`
+sets status `Pending`; `dispenseDrug` (gated by `pharmacy.dispensing.dispense`, requiring a non-blank
+`dispensedBy`) walks stock and advances status straight to `Dispensed`, recording `dispensedBy` and
+`dispensedAt` on the same call. There is no separate verification step — unlike Lab and Radiology's
+three-step `create → enter result/scan → verify` shape, where a second actor signs off before a
+result is final, pharmacy dispensing has only the two steps a real pharmacy counter workflow needs:
+prepare/queue the order, then hand the drug over. `cancel` is only reachable from `Pending` (the same
+cancel-only-from-the-pre-commit-state rule Item A's PO and Item B's requisition both follow), so a
+`Dispensed` record is terminal with no reversal path — a return/write-off flow, if ever needed, is
+explicitly out of scope here (see below).
+
+**Explicit scope cuts:** Pharmacy has **no separate drug catalog** — a drug is just an
+`InventoryItem` (the same catalog Inventory Item A built), with no generic-name, dosage-form,
+strength, or controlled-substance fields layered on top. There is **no walk-in/OTC sales path** —
+every dispensing requires an existing `OrderItem`, so a patient walking up to the pharmacy counter
+without a doctor's order has no code path here. **Billing stays fully decoupled** — `dispenseDrug`
+never touches a billing/charge table; whatever charges a dispensed drug generates is entirely
+Billing's concern, not Pharmacy's, matching how Lab and Radiology also don't self-bill.
+
+**This is the first module in the pending-tasks pipeline to ship with zero task-review findings
+across all its code tasks.** Every prior module in this pipeline (Lab, Radiology, Inventory Item A,
+Inventory Item B) needed at least one fix-round commit after its initial task implementation —
+duplicate-prevention retrofits, the `RETURNING` tuple-shape bug, missing request-body validation,
+numeric-coercion gaps. Pharmacy's six `feat(pharmacy):`/`feat(rbac):` commits (see
+`new/docs/superpowers/plans/2026-08-06-pharmacy-dispensing.md` for the full implementation history)
+contain no corresponding fix commits. The most plausible reason: Pharmacy's two structurally hardest
+problems — order-routed reclassification with race-safe duplicate prevention, and locked FEFO
+stock decrement — were both *reuses* of patterns this pipeline had already hardened in Lab/Radiology
+and Item B respectively, not new logic written from scratch. Any future module that can position
+itself as a third or fourth consumer of an already-hardened pattern, rather than inventing its own,
+should expect the same payoff.

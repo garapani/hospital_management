@@ -154,7 +154,22 @@ Follow the PRD's own phase ordering as-is:
         future item if ever needed. **With both Item A and
         Item B complete, Inventory as a whole is positioned to unblock Pharmacy** (the next Phase 6
         item, which depends on a working stock pipeline).
-  - DICOM, Pharmacy, Ward Supply — not started
+  - [x] Pharmacy — prescription dispensing pipeline (order-routed dispensing create/read/cancel
+        against `OrderItem`s with `itemType='Pharmacy'`, race-safe duplicate-dispensing prevention,
+        FEFO-ordered locked stock decrement against the same `stock_balances`/`stock_batches`
+        tables Inventory Item B uses, two-step status machine `Pending` → `Dispensed`, with
+        `Cancelled` from `Pending`) — done; see `Development-Standards.md` §18. **Not done:**
+        walk-in/OTC sales (every dispensing requires an existing `OrderItem`; there is no
+        code path for a patient without a doctor's order), a separate dispensing-verification step
+        (unlike Lab/Radiology's three-step create→enter→verify shape, dispensing is only
+        create→dispense, no second-actor sign-off), a pharmacy-specific drug catalog (generic name,
+        dosage form, strength, controlled-substance flag — a drug is just an `InventoryItem`, same
+        catalog Inventory Item A built), POS/checkout (owned by Billing, not duplicated here;
+        `dispenseDrug` never touches a billing/charge table), rack/bin physical location tracking,
+        credit billing/credit notes/supplier ledger, narcotic/controlled-substance regulatory
+        logging, sales returns, write-offs (a `Dispensed` record is terminal, no reversal path),
+        and provisional IPD consumption billing — each a distinct future item if ever needed.
+  - DICOM, Ward Supply — not started
 - Phase 3: Insurance/Claims, Accounting, Verification, Fixed Asset
 - Phase 4: Clinical/EMR long tail, Nursing, Emergency, OT, Maternity, CSSD
 - Phase 5: Employee, Payroll, Fraction and Incentive
