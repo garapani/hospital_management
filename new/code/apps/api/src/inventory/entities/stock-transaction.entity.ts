@@ -5,7 +5,7 @@ export class StockTransaction {
   @PrimaryGeneratedColumn('uuid') id!: string;
   @Column({ type: 'uuid' }) itemId!: string;
   @Column({ type: 'uuid' }) stockBatchId!: string;
-  @Column({ type: 'varchar' }) transactionType!: string; // 'GoodsReceipt' | 'Dispatch'
+  @Column({ type: 'varchar' }) transactionType!: string; // 'GoodsReceipt' | 'Dispatch' | 'PharmacyDispense'
   @Column({ type: 'uuid', nullable: true }) referenceId!: string | null;
   @Column({ type: 'numeric' }) quantity!: string;
   @Column({ type: 'uuid' }) recordedBy!: string;

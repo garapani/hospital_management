@@ -139,6 +139,16 @@ export class PharmacyDispensingService {
         );
       }
 
+      const orderItem = await manager.getRepository(OrderItem).findOne({ where: { id: dispensing.orderItemId } });
+      if (!orderItem) {
+        throw new NotFoundException(`Order item ${dispensing.orderItemId} not found`);
+      }
+      if (orderItem.status === 'Cancelled') {
+        throw new ConflictException(
+          `Order item ${dispensing.orderItemId} was cancelled after this dispensing was created; cannot dispense`,
+        );
+      }
+
       const quantity = Number(dispensing.quantity);
 
       // FEFO: lock every StockBalance row for this item with available stock, ordered so
