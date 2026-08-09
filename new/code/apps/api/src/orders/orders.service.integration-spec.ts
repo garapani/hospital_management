@@ -187,12 +187,12 @@ describe('OrdersService (integration)', () => {
       ordersService.create({ patientId: patientB.id, orderedBy: DOCTOR_ID, items: [{ itemType: 'Lab', itemDescription: 'LFT' }] }),
     );
 
-    const filtered = await tenantB.inTenant(() => ordersService.list(patientA.id));
-    expect(filtered.total).toBe(1);
+    const filtered = await tenantB.inTenant(() => ordersService.list({ patientId: patientA.id }));
+    expect(filtered.meta.total).toBe(1);
     expect(filtered.data).toHaveLength(1);
     expect(filtered.data[0].patientId).toBe(patientA.id);
-    expect(filtered.page).toBe(1);
-    expect(filtered.limit).toBe(20);
+    expect(filtered.meta.page).toBe(1);
+    expect(filtered.meta.limit).toBe(20);
   });
 
   it('paginates orders using page and limit', async () => {
@@ -203,16 +203,16 @@ describe('OrdersService (integration)', () => {
       );
     }
 
-    const firstPage = await ctx.inTenant(() => ordersService.list(patient.id, 1, 2));
-    expect(firstPage.total).toBe(3);
+    const firstPage = await ctx.inTenant(() => ordersService.list({ patientId: patient.id, page: 1, limit: 2 }));
+    expect(firstPage.meta.total).toBe(3);
     expect(firstPage.data).toHaveLength(2);
-    expect(firstPage.page).toBe(1);
-    expect(firstPage.limit).toBe(2);
+    expect(firstPage.meta.page).toBe(1);
+    expect(firstPage.meta.limit).toBe(2);
 
-    const secondPage = await ctx.inTenant(() => ordersService.list(patient.id, 2, 2));
-    expect(secondPage.total).toBe(3);
+    const secondPage = await ctx.inTenant(() => ordersService.list({ patientId: patient.id, page: 2, limit: 2 }));
+    expect(secondPage.meta.total).toBe(3);
     expect(secondPage.data).toHaveLength(1);
-    expect(secondPage.page).toBe(2);
+    expect(secondPage.meta.page).toBe(2);
 
     const firstPageIds = firstPage.data.map((order) => order.id);
     expect(firstPageIds).not.toContain(secondPage.data[0].id);
@@ -224,8 +224,17 @@ describe('OrdersService (integration)', () => {
       ordersService.create({ patientId: patient.id, orderedBy: DOCTOR_ID, items: [{ itemType: 'Lab', itemDescription: 'CBC' }] }),
     );
 
-    const result = await ctx.inTenant(() => ordersService.list(patient.id, 1, 500));
-    expect(result.limit).toBe(100);
+    const result = await ctx.inTenant(() => ordersService.list({ patientId: patient.id, page: 1, limit: 500 }));
+    expect(result.meta.limit).toBe(100);
+  });
+
+  it('throws BadRequestException when patientId is omitted', async () => {
+    await expect(
+      ctx.inTenant(() => ordersService.list({} as any)),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      ctx.inTenant(() => ordersService.list({} as any)),
+    ).rejects.toThrow('patientId is required');
   });
 
   it('throws NotFoundException for an unknown order id', async () => {

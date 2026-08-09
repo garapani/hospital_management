@@ -3,6 +3,8 @@ import { TenantConnectionService } from '../database/tenant-connection.service.j
 import { Order } from './entities/order.entity.js';
 import { OrderItem } from './entities/order-item.entity.js';
 import { Patient } from '../patients/entities/patient.entity.js';
+import { paginate, PaginatedResponseDto, requireParam } from '@hospital/pagination';
+import { SearchOrdersDto } from './dto/search-orders.dto.js';
 
 export interface CreateOrderItemInput {
   itemType: string;
@@ -89,21 +91,13 @@ export class OrdersService {
     });
   }
 
-  async list(
-    patientId?: string,
-    page = 1,
-    limit = 20,
-  ): Promise<{ data: Order[]; total: number; page: number; limit: number }> {
-    const cappedLimit = Math.min(limit, 100);
-    const skip = (page - 1) * cappedLimit;
-    return this.tenantConnection.runInTenantSchema(async (manager) => {
-      const [data, total] = await manager.getRepository(Order).findAndCount({
-        where: patientId ? { patientId } : {},
-        order: { orderedAt: 'DESC' },
-        skip,
-        take: cappedLimit,
-      });
-      return { data, total, page, limit: cappedLimit };
+  async list(query: SearchOrdersDto): Promise<PaginatedResponseDto<Order>> {
+    const patientId = requireParam(query.patientId, 'patientId');
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager.getRepository(Order).createQueryBuilder('order');
+      qb.where('order.patientId = :patientId', { patientId });
+      qb.orderBy('order.orderedAt', 'DESC');
+      return paginate(qb, query);
     });
   }
 
