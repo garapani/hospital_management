@@ -174,7 +174,7 @@ describe('PatientsController (integration)', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data).toBeDefined();
-      expect(response.body.total).toBeGreaterThanOrEqual(1);
+      expect(response.body.meta.total).toBeGreaterThanOrEqual(1);
       expect(response.body.data.some((p: { lastName: string }) => p.lastName === 'Wonderland')).toBe(true);
     });
   });
