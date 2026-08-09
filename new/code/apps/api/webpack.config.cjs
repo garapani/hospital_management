@@ -26,6 +26,7 @@ module.exports = {
       outputHashing: 'none',
       generatePackageJson: false,
       sourceMap: true,
+      tsPlugins: ['@nestjs/swagger/plugin'],
     }),
   ],
 };
