@@ -884,9 +884,12 @@ tracked there.
 - **Screen styling:** Tailwind utility classes backed by the `tailwindcss-primeui` plugin
   (`bg-primary-*`, `text-surface-*`, etc. — see `node_modules/tailwindcss-primeui/v4/theme/colors.css`
   for the full list), not raw hex values or a separate CSS file per component. Cards use
-  `rounded-xl border border-surface-200 bg-white p-6`; page headers use
-  `text-2xl font-semibold text-surface-900` + a `text-sm text-surface-500` subtitle line — reuse
-  these exact classes for consistency rather than inventing new spacing/sizing per screen.
+  `rounded-xl border border-surface-200 bg-white p-6` for content cards (invoice list, invoice
+  detail); the standalone login card uses `rounded-xl bg-white p-8 shadow-md shadow-surface-200/60`
+  instead (no border, shadow for visual separation — it's an auth card, not a content card). Page
+  headers use `text-2xl font-semibold text-surface-900` + a `text-sm text-surface-500` subtitle
+  line — reuse these exact classes for consistency rather than inventing new spacing/sizing per
+  screen.
 - **PrimeIcons:** global CSS (`<i class="pi pi-{name}">`), no Angular module import needed — only
   import a PrimeNG *component* module (`ButtonModule`, `TagModule`, etc.) when using that
   component, not for icons alone.
