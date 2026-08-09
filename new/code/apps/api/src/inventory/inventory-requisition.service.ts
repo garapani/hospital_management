@@ -8,6 +8,8 @@ import { InventoryCatalogService } from './inventory-catalog.service.js';
 import { StockBatch } from './entities/stock-batch.entity.js';
 import { StockBalance } from './entities/stock-balance.entity.js';
 import { StockTransaction } from './entities/stock-transaction.entity.js';
+import { paginate, PaginatedResponseDto, requireParam } from '@hospital/pagination';
+import { SearchStockRequisitionsDto } from './dto/search-stock-requisitions.dto.js';
 
 export interface CreateRequisitionItemInput {
   itemId: string;
@@ -110,10 +112,14 @@ export class InventoryRequisitionService {
     });
   }
 
-  async listByDepartment(departmentId: string): Promise<StockRequisition[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(StockRequisition).find({ where: { departmentId }, order: { createdAt: 'DESC' } }),
-    );
+  async listByDepartment(query: SearchStockRequisitionsDto): Promise<PaginatedResponseDto<StockRequisition>> {
+    const departmentId = requireParam(query.departmentId, 'departmentId');
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager.getRepository(StockRequisition).createQueryBuilder('req');
+      qb.where('req.departmentId = :departmentId', { departmentId });
+      qb.orderBy('req.createdAt', 'DESC');
+      return paginate(qb, query);
+    });
   }
 
   async cancel(id: string, cancelReason?: string): Promise<StockRequisition> {
