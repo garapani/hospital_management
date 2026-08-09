@@ -7,6 +7,8 @@ import { LabResult } from './entities/lab-result.entity.js';
 import { LabTestComponent } from './entities/lab-test-component.entity.js';
 import { LabRequisitionNumberGeneratorService } from './lab-requisition-number-generator.service.js';
 import { LabCatalogService } from './lab-catalog.service.js';
+import { paginate, PaginatedResponseDto, requireParam } from '@hospital/pagination';
+import { SearchLabRequisitionsDto } from './dto/search-lab-requisitions.dto.js';
 
 export interface CreateRequisitionInput {
   orderItemId: string;
@@ -95,10 +97,14 @@ export class LabWorkflowService {
     });
   }
 
-  async listByOrderItem(orderItemId: string): Promise<LabRequisition[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(LabRequisition).find({ where: { orderItemId }, order: { createdAt: 'DESC' } }),
-    );
+  async listByOrderItem(query: SearchLabRequisitionsDto): Promise<PaginatedResponseDto<LabRequisition>> {
+    const orderItemId = requireParam(query.orderItemId, 'orderItemId');
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager.getRepository(LabRequisition).createQueryBuilder('req');
+      qb.where('req.orderItemId = :orderItemId', { orderItemId });
+      qb.orderBy('req.createdAt', 'DESC');
+      return paginate(qb, query);
+    });
   }
 
   async collectSample(id: string, collectedBy: string): Promise<LabRequisition> {
