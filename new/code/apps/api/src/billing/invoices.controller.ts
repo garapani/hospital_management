@@ -3,6 +3,7 @@ import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { InvoicesService } from './invoices.service.js';
 import { CreateInvoiceDto } from './dto/create-invoice.dto.js';
 import { RecordPaymentDto } from './dto/record-payment.dto.js';
+import { CreateReturnDto } from './dto/create-return.dto.js';
 
 @Controller('billing/invoices')
 @UseGuards(PermissionGuard)
@@ -37,5 +38,11 @@ export class InvoicesController {
   @RequirePermission('billing.manage')
   async recordPayment(@Param('id') id: string, @Body() dto: RecordPaymentDto) {
     return this.invoicesService.recordPayment(id, dto);
+  }
+
+  @Post(':id/returns')
+  @RequirePermission('billing.manage')
+  async createReturn(@Param('id') id: string, @Body() dto: CreateReturnDto) {
+    return this.invoicesService.createReturn(id, dto);
   }
 }

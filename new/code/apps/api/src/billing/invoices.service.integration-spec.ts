@@ -428,6 +428,108 @@ describe('InvoicesService (integration)', () => {
       ),
     ).rejects.toThrow(NotFoundException);
   });
+
+  it('issues a full return on a fully-paid invoice, zeroing totalAmount/paidAmount and status Paid', async () => {
+    const patient = await makePatient(ctx, '5550000035');
+    const invoice = await ctx.inTenant(() =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await ctx.inTenant(() => invoicesService.recordPayment(invoice.id, { amount: 1000, paymentMode: 'Cash', receivedBy: STAFF_ID }));
+
+    const returnRecord = await ctx.inTenant(() =>
+      invoicesService.createReturn(invoice.id, { amount: 1000, reason: 'Medicine returned to pharmacy', returnedBy: STAFF_ID }),
+    );
+    expect(returnRecord.amount).toBe(1000);
+    expect(returnRecord.reason).toBe('Medicine returned to pharmacy');
+
+    const refetched = await ctx.inTenant(() => invoicesService.findOne(invoice.id));
+    expect(refetched.totalAmount).toBe(0);
+    expect(refetched.paidAmount).toBe(0);
+    expect(refetched.status).toBe('Paid');
+    expect(refetched.returns).toHaveLength(1);
+  });
+
+  it('issues a partial return on a partially-paid invoice, reducing totalAmount/paidAmount and keeping status PartiallyPaid', async () => {
+    const patient = await makePatient(ctx, '5550000036');
+    const invoice = await ctx.inTenant(() =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await ctx.inTenant(() => invoicesService.recordPayment(invoice.id, { amount: 400, paymentMode: 'Cash', receivedBy: STAFF_ID }));
+
+    await ctx.inTenant(() => invoicesService.createReturn(invoice.id, { amount: 150, reason: 'Test cancelled', returnedBy: STAFF_ID }));
+
+    const refetched = await ctx.inTenant(() => invoicesService.findOne(invoice.id));
+    expect(refetched.totalAmount).toBe(850);
+    expect(refetched.paidAmount).toBe(250);
+    expect(refetched.status).toBe('PartiallyPaid');
+  });
+
+  it('rejects a return amount of zero or less', async () => {
+    const patient = await makePatient(ctx, '5550000037');
+    const invoice = await ctx.inTenant(() =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await ctx.inTenant(() => invoicesService.recordPayment(invoice.id, { amount: 1000, paymentMode: 'Cash', receivedBy: STAFF_ID }));
+    await expect(
+      ctx.inTenant(() => invoicesService.createReturn(invoice.id, { amount: 0, reason: 'x', returnedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a non-numeric return amount instead of silently passing validation', async () => {
+    const patient = await makePatient(ctx, '5550000041');
+    const invoice = await ctx.inTenant(() =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await ctx.inTenant(() => invoicesService.recordPayment(invoice.id, { amount: 1000, paymentMode: 'Cash', receivedBy: STAFF_ID }));
+    await expect(
+      ctx.inTenant(() => invoicesService.createReturn(invoice.id, { amount: Number('not-a-number'), reason: 'x', returnedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      ctx.inTenant(() =>
+        invoicesService.createReturn(invoice.id, { amount: undefined as unknown as number, reason: 'x', returnedBy: STAFF_ID }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a return exceeding the invoice paidAmount', async () => {
+    const patient = await makePatient(ctx, '5550000038');
+    const invoice = await ctx.inTenant(() =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await ctx.inTenant(() => invoicesService.recordPayment(invoice.id, { amount: 400, paymentMode: 'Cash', receivedBy: STAFF_ID }));
+    await expect(
+      ctx.inTenant(() => invoicesService.createReturn(invoice.id, { amount: 500, reason: 'x', returnedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a return on an Unpaid invoice with no payments recorded', async () => {
+    const patient = await makePatient(ctx, '5550000039');
+    const invoice = await ctx.inTenant(() =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await expect(
+      ctx.inTenant(() => invoicesService.createReturn(invoice.id, { amount: 100, reason: 'x', returnedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a return on a Cancelled invoice', async () => {
+    const patient = await makePatient(ctx, '5550000040');
+    const invoice = await ctx.inTenant(() =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+    await ctx.inTenant(() => invoicesService.cancel(invoice.id));
+    await expect(
+      ctx.inTenant(() => invoicesService.createReturn(invoice.id, { amount: 100, reason: 'x', returnedBy: STAFF_ID })),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('throws NotFoundException issuing a return against an unknown invoice', async () => {
+    await expect(
+      ctx.inTenant(() =>
+        invoicesService.createReturn('00000000-0000-0000-0000-000000000000', { amount: 100, reason: 'x', returnedBy: STAFF_ID }),
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
 });
 
 describe('getFinancialYearStart (IST pinning)', () => {

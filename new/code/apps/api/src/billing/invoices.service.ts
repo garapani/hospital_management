@@ -6,6 +6,7 @@ import { InvoiceItem } from './entities/invoice-item.entity.js';
 import { Payment } from './entities/payment.entity.js';
 import { Patient } from '../patients/entities/patient.entity.js';
 import { Deposit } from './entities/deposit.entity.js';
+import { Return } from './entities/return.entity.js';
 import { roundMoney } from './money.util.js';
 
 export interface CreateInvoiceItemInput {
@@ -32,6 +33,12 @@ export interface RecordPaymentInput {
   paymentMode: string;
   sourceDepositId?: string;
   receivedBy: string;
+}
+
+export interface CreateReturnInput {
+  amount: number;
+  reason: string;
+  returnedBy: string;
 }
 
 export function getFinancialYearStart(date: Date): number {
@@ -71,7 +78,9 @@ export class InvoicesService {
     return { invoiceNumber: result[0].lastSequence as number, financialYear: formatFinancialYear(startYear) };
   }
 
-  async create(input: CreateInvoiceInput): Promise<Invoice & { items: InvoiceItem[]; payments: Payment[] }> {
+  async create(
+    input: CreateInvoiceInput,
+  ): Promise<Invoice & { items: InvoiceItem[]; payments: Payment[]; returns: Return[] }> {
     if (input.sourceAppointmentId && input.sourceAdmissionId) {
       throw new BadRequestException(
         'An invoice can have at most one source: sourceAppointmentId or sourceAdmissionId, not both',
@@ -164,11 +173,11 @@ export class InvoicesService {
         itemsToInsert.map((item) => itemRepository.create({ ...item, invoiceId: invoice.id })),
       );
 
-      return { ...invoice, items, payments: [] };
+      return { ...invoice, items, payments: [], returns: [] };
     });
   }
 
-  async findOne(id: string): Promise<Invoice & { items: InvoiceItem[]; payments: Payment[] }> {
+  async findOne(id: string): Promise<Invoice & { items: InvoiceItem[]; payments: Payment[]; returns: Return[] }> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const invoice = await manager.getRepository(Invoice).findOne({ where: { id } });
       if (!invoice) {
@@ -182,7 +191,11 @@ export class InvoicesService {
         where: { invoiceId: id },
         order: { receivedAt: 'ASC', id: 'ASC' },
       });
-      return { ...invoice, items, payments };
+      const returns = await manager.getRepository(Return).find({
+        where: { invoiceId: id },
+        order: { createdAt: 'ASC', id: 'ASC' },
+      });
+      return { ...invoice, items, payments, returns };
     });
   }
 
@@ -283,6 +296,45 @@ export class InvoicesService {
       await invoiceRepository.save(invoice);
 
       return payment;
+    });
+  }
+
+  async createReturn(invoiceId: string, input: CreateReturnInput): Promise<Return> {
+    if (!Number.isFinite(input.amount) || input.amount <= 0) {
+      throw new BadRequestException('Return amount must be a positive number');
+    }
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const invoiceRepository = manager.getRepository(Invoice);
+      const invoice = await invoiceRepository.findOne({ where: { id: invoiceId }, lock: { mode: 'pessimistic_write' } });
+      if (!invoice) {
+        throw new NotFoundException(`Invoice ${invoiceId} not found`);
+      }
+      if (invoice.paidAmount <= 0) {
+        throw new BadRequestException(
+          `Invoice ${invoiceId} has no recorded payments to return against — use cancel instead`,
+        );
+      }
+      if (input.amount > invoice.paidAmount) {
+        throw new BadRequestException(`Return amount ${input.amount} exceeds invoice paidAmount ${invoice.paidAmount}`);
+      }
+
+      const returnRepository = manager.getRepository(Return);
+      const returnRecord = await returnRepository.save(
+        returnRepository.create({
+          invoiceId,
+          amount: input.amount,
+          reason: input.reason,
+          returnedBy: input.returnedBy,
+        }),
+      );
+
+      invoice.totalAmount = roundMoney(invoice.totalAmount - input.amount);
+      invoice.paidAmount = roundMoney(invoice.paidAmount - input.amount);
+      invoice.status = invoice.paidAmount >= invoice.totalAmount ? 'Paid' : 'PartiallyPaid';
+      await invoiceRepository.save(invoice);
+
+      return returnRecord;
     });
   }
 }

@@ -53,4 +53,12 @@ describe('InvoicesController (e2e)', () => {
     expect(res.status).toBeGreaterThanOrEqual(401);
     expect(res.status).toBeLessThanOrEqual(403);
   });
+
+  it('fails with 401/403 when issuing a return', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/billing/invoices/00000000-0000-0000-0000-000000000000/returns')
+      .send({ amount: 100, reason: 'x', returnedBy: '00000000-0000-0000-0000-000000000000' });
+    expect(res.status).toBeGreaterThanOrEqual(401);
+    expect(res.status).toBeLessThanOrEqual(403);
+  });
 });
