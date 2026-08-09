@@ -22,11 +22,15 @@ single-hospital registration → visit → bill → lab/pharmacy workflow. Delib
 Phase 3+ backlog (Insurance/Claims, Accounting, Fixed Asset, etc., below) — those are out of MVP
 scope, not merely lower priority.
 
-- [ ] **Billing: Settlement + Return/credit-note concept.** `billing/` has invoice
-      create/list/get/cancel/record-payment and deposit create/list/refund, but no Settlement or
-      Return/credit-note entity — PRD §5.5 names "settlements" explicitly as in-scope for Billing,
-      and the old system had a dedicated `Controllers/Billing/Return`. See `mvp-status.md`'s
-      Billing row.
+- [ ] **Billing: Return/credit-note concept.** `billing/` has invoice
+      create/list/get/cancel/record-payment and deposit create/list/refund, but no Return/
+      credit-note entity — the old system had a dedicated `Controllers/Billing/Return`. See
+      `mvp-status.md`'s Billing row. **Correction (2026-08-09):** the original Billing spec
+      (`new/docs/superpowers/specs/2026-08-01-billing-design.md:9,145`) already deliberately
+      deferred "Settlement" (credit-organization settlement — a corporate/insurance payer
+      periodically reconciling a batch of credit-billed invoices) to Phase 3's Insurance & Claims
+      module, since it depends on machinery that doesn't exist yet. `mvp-status.md`'s audit missed
+      this — Settlement is correctly out of MVP scope, not a gap; dropped from this item.
 - [ ] **Billing: automatic charge-capture from Lab/Radiology/Pharmacy.**
       `InvoiceItem.sourceOrderItemId` (`billing/entities/invoice-item.entity.ts`) is optional and
       client-supplied on invoice creation — nothing automatically creates a billing charge when a
