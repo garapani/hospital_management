@@ -133,6 +133,28 @@ After moving these files into `new/docs/technical-design/`, references such as `
 
 Use repo-root-relative paths consistently, or update relative links to account for the new folder, for example `../superpowers/specs/...`.
 
+### Medium: List endpoints silently return all tenant rows when their filter is omitted
+
+**Resolved:** a shared `requireParam()` helper in `@hospital/pagination` now throws
+`BadRequestException` when the filter is omitted on any of the four affected endpoints; see
+`new/docs/superpowers/plans/2026-08-09-pagination-required-filters.md`.
+
+`InventoryProcurementService.listByVendor(vendorId: string)`,
+`InventoryRequisitionService.listByDepartment(departmentId: string)`,
+`LabWorkflowService.listByOrderItem(orderItemId: string)`, and `OrdersService.list(patientId:
+string)` all silently returned every row in the tenant (not an empty result, not an error) if
+their filter parameter was omitted from the request, because TypeORM's `find({ where: { x:
+undefined } })` treats an `undefined` filter value as "omit this WHERE clause entirely," not as
+"match nothing":
+
+- `new/code/apps/api/src/inventory/inventory-procurement.service.ts` (`listByVendor`)
+- `new/code/apps/api/src/inventory/inventory-requisition.service.ts` (`listByDepartment`)
+- `new/code/apps/api/src/lab/lab-workflow.service.ts` (`listByOrderItem`)
+- `new/code/apps/api/src/orders/orders.service.ts` (`list`)
+
+Not a privilege-escalation issue (anyone with the relevant `*.read` permission could already list
+everything tenant-wide via other means), but a footgun for API correctness.
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.

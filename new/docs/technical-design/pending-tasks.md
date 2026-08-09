@@ -202,13 +202,17 @@ Follow the PRD's own phase ordering as-is:
   investigated further; worth a focused look, possibly related to the structured-logging change
   (Phase 3 item 6) altering how/whether `Logger.prototype.error` gets called once
   `app.useLogger()` is active.
-- **New gap, not yet its own item, cross-cutting**: `InventoryProcurementService.listByVendor(vendorId: string)`
-  and `InventoryRequisitionService.listByDepartment(departmentId: string)` both silently return
-  ALL rows (not an empty result, not an error) if the query parameter is omitted from the
-  request — because TypeORM's `find({ where: { x: undefined } })` treats an `undefined` filter
-  value as "omit this WHERE clause entirely," not as "match nothing." Not a privilege-escalation
-  issue (anyone with `inventory.read` can already list everything tenant-wide via other means),
-  but a footgun for API correctness, and it now appears in two places with a third (Pharmacy)
-  expected to add a similar list-by-X method soon — worth a single cross-cutting fix (e.g. a
-  shared "require this query param or throw `BadRequestException`" helper) rather than three
-  separate per-module patches.
+- [x] **Cross-cutting gap, resolved**: `InventoryProcurementService.listByVendor`,
+  `InventoryRequisitionService.listByDepartment`, `LabWorkflowService.listByOrderItem`, and
+  `OrdersService.list` used to silently return ALL tenant rows when their filter query param was
+  omitted (TypeORM's `find({ where: { x: undefined } })` drops the WHERE clause entirely). Done: a
+  shared `requireParam()` helper in `@hospital/pagination` now throws `BadRequestException` when
+  any of the four is omitted; see
+  `new/docs/superpowers/plans/2026-08-09-pagination-required-filters.md`. Along the way, also
+  fixed a real pagination-clamp regression discovered during this item's review (an in-flight,
+  previously-uncommitted `@hospital/pagination` library had deleted `OrdersService.list`'s
+  `Math.min(limit, 100)` clamp without replacing it — `limit` was effectively unbounded for a
+  window). **Deliberately excluded, staying optional:**
+  `InventoryProcurementService.listStockBalances` (`itemId`) and `PatientsService.findAll`
+  (`q`/`phoneNumber`/`patientNo`) — both are legitimate whole-tenant browse/search views, not "list
+  one parent's children."

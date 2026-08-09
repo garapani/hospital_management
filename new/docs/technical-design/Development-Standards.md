@@ -818,3 +818,25 @@ stock decrement — were both *reuses* of patterns this pipeline had already har
 and Item B respectively, not new logic written from scratch. Any future module that can position
 itself as a third or fourth consumer of an already-hardened pattern, rather than inventing its own,
 should expect the same payoff.
+
+## 19. Shared Pagination and Required-Filter Enforcement
+
+Any new list endpoint that returns more than a handful of rows should use `@hospital/pagination`'s
+`paginate()`/`paginateRaw()` — both clamp `page`/`limit` internally (`page` floors at 1; `limit`
+floors at 1, ceilings at 100) regardless of what the caller sends, including non-numeric or
+missing values. This clamping is manual code, not `class-validator`/`ValidationPipe` — this
+codebase has no `ValidationPipe` registered anywhere (confirmed: `apps/api/src/main.ts` and
+`app.module.ts` register none), and no other DTO in the codebase uses `class-validator` either, so
+a decorator-based approach would be silently inert. `PaginatedResponseDto<T>`'s shape is
+`{ data: T[], meta: { total, page, limit, totalPages } }` — note `total`/`page`/`limit` live under
+`meta`, not at the response root.
+
+For a list endpoint whose filter parameter scopes access to one parent entity's children (e.g.
+"purchase orders for this vendor," "requisitions for this department") rather than narrowing an
+otherwise-legitimate whole-tenant browse view, use `@hospital/pagination`'s `requireParam(value,
+paramName)` at the top of the service method to reject the request with `BadRequestException` when
+the filter is omitted, instead of letting TypeORM's `find({ where: { x: undefined } })` silently
+drop the WHERE clause and return everything. Genuinely optional browse/search filters (e.g.
+`PatientsService.findAll`'s `q`/`phoneNumber`/`patientNo`, or a whole-tenant stock-level view like
+`listStockBalances`'s `itemId`) should stay optional — `requireParam()` is for "list one parent's
+children," not every filterable field.
