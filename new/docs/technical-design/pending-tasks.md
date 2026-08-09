@@ -22,10 +22,13 @@ single-hospital registration → visit → bill → lab/pharmacy workflow. Delib
 Phase 3+ backlog (Insurance/Claims, Accounting, Fixed Asset, etc., below) — those are out of MVP
 scope, not merely lower priority.
 
-- [ ] **Billing: Return/credit-note concept.** `billing/` has invoice
-      create/list/get/cancel/record-payment and deposit create/list/refund, but no Return/
-      credit-note entity — the old system had a dedicated `Controllers/Billing/Return`. See
-      `mvp-status.md`'s Billing row. **Correction (2026-08-09):** the original Billing spec
+- [x] **Billing: Return/credit-note concept.** Done: `InvoicesService.createReturn` +
+      `POST /billing/invoices/:id/returns` let billing staff issue a return against a
+      Paid/PartiallyPaid invoice (amount up to `paidAmount`), reducing `totalAmount`/`paidAmount`
+      and recomputing `status` with the same rule `recordPayment` uses; rejects returns against
+      invoices with no recorded payments (use `cancel` instead). See
+      `new/docs/superpowers/specs/2026-08-09-billing-return-credit-note-design.md`. **Correction
+      (2026-08-09):** the original Billing spec
       (`new/docs/superpowers/specs/2026-08-01-billing-design.md:9,145`) already deliberately
       deferred "Settlement" (credit-organization settlement — a corporate/insurance payer
       periodically reconciling a batch of credit-billed invoices) to Phase 3's Insurance & Claims
@@ -224,13 +227,23 @@ Follow the PRD's own phase ordering as-is:
   logic fix. Should land before any real deployment — bundle with Phase 3 ops-readiness work.
 - **New gap, not yet its own item, codebase-wide**: every domain module's "actor" DTO fields
   (`enteredBy`, `verifiedBy`, `sampleCollectedBy` in Lab, Radiology's `scannedBy`/`reportEnteredBy`/
-  `verifiedBy`, and the pre-existing `orderedBy`/`dischargedBy`/`transferredBy` elsewhere) are
-  client-supplied in the request body
+  `verifiedBy`, Billing's `createdBy`/`receivedBy`/`returnedBy`, and the pre-existing
+  `orderedBy`/`dischargedBy`/`transferredBy` elsewhere) are client-supplied in the request body
   rather than derived from the authenticated principal (`request.authContext`), so any caller
   holding the right permission can attribute an action to a different, arbitrary user ID. Most
-  severe for Lab's `verifiedBy` (a clinical sign-off), but this is a pattern across the whole
-  codebase, not a Lab-specific defect — worth its own future item to derive these fields from
-  `authContext` instead of trusting the body, across every domain, not just Lab.
+  severe for Lab's `verifiedBy` (a clinical sign-off) and Billing's `returnedBy` (a refund
+  authorization — flagged during the 2026-08-09 Return/credit-note security review), but this is a
+  pattern across the whole codebase, not module-specific — worth its own future item to derive
+  these fields from `authContext` instead of trusting the body, across every domain.
+- **New gap, not yet its own item**: `InvoicesService.recordPayment` and `.cancel` read the
+  `Invoice` row with a plain `findOne` (no `pessimistic_write` lock) before mutating
+  `paidAmount`/`status`, unlike every other status-transition mutator in this codebase (Lab,
+  Radiology, Inventory, Pharmacy all lock on their initial lookup — see
+  `Development-Standards.md` §15/§16). Flagged by the 2026-08-09 Return/credit-note security
+  review, which fixed it for the new `createReturn` method but left the two pre-existing methods
+  untouched (out of scope for that item). Two concurrent writes to the same invoice (e.g. two
+  payments, or a payment racing a return) can lose an update under Postgres's default READ
+  COMMITTED. Worth its own future item to retrofit the same lock onto `recordPayment`/`cancel`.
 - **New gap, not yet its own item**: one test in
   `apps/api/src/reporting/persisting-reporting-event-publisher.integration-spec.ts` (the
   "SQL-level failure gets logged" assertion around its `loggedErrors` spy on

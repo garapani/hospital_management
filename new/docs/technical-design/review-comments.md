@@ -155,6 +155,33 @@ undefined } })` treats an `undefined` filter value as "omit this WHERE clause en
 Not a privilege-escalation issue (anyone with the relevant `*.read` permission could already list
 everything tenant-wide via other means), but a footgun for API correctness.
 
+### Medium: Billing had no way to reverse a paid invoice
+
+**Resolved:** `InvoicesService.createReturn` (`POST /billing/invoices/:id/returns`) now lets
+billing staff issue a return against a `Paid`/`PartiallyPaid` invoice; see
+`new/docs/superpowers/specs/2026-08-09-billing-return-credit-note-design.md`.
+
+`billing/` had invoice create/list/get/cancel/record-payment and deposit create/list/refund, but
+`cancel` only works before any payment lands (`paidAmount > 0` rejects it outright) — there was no
+way to record that a billed item was returned or a service reversed *after* the patient paid for
+it. The original Billing spec
+(`new/docs/superpowers/specs/2026-08-01-billing-design.md:145`) flagged this as deferred future
+work, not an oversight.
+
+- `new/code/apps/api/src/billing/invoices.service.ts` (`createReturn`)
+- `new/code/apps/api/src/billing/invoices.controller.ts` (`POST :id/returns`)
+
+### Low: createReturn's initial security review found a missing row lock and a NaN-slips-through validation gap, both fixed before commit
+
+**Resolved:** both fixed in the same change that introduced `createReturn` — never shipped
+unfixed. `new/code/apps/api/src/billing/invoices.service.ts`'s `createReturn` now takes a
+`pessimistic_write` lock on the invoice row (matching `Development-Standards.md` §15/§16's
+established pattern) and validates `input.amount` with `Number.isFinite()` before comparing (a
+bare `amount <= 0` check silently passes for `undefined`/`NaN`, since that comparison is always
+`false`). Recorded here because the same missing-lock gap was found to already exist,
+unfixed, in the pre-existing `recordPayment`/`cancel` methods — see `pending-tasks.md`'s
+"Dependencies worth calling out explicitly" for that follow-up item.
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.

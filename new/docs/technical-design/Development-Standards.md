@@ -840,3 +840,31 @@ drop the WHERE clause and return everything. Genuinely optional browse/search fi
 `PatientsService.findAll`'s `q`/`phoneNumber`/`patientNo`, or a whole-tenant stock-level view like
 `listStockBalances`'s `itemId`) should stay optional — `requireParam()` is for "list one parent's
 children," not every filterable field.
+
+## 20. Billing Return/Credit-Note
+
+`InvoicesService.createReturn` (`POST /billing/invoices/:id/returns`) models a return as an
+invoice-level balance adjustment, not a separate document: it reduces both `Invoice.totalAmount`
+and `paidAmount` by the return amount and recomputes `status` with the exact same rule
+`recordPayment` uses (`paidAmount >= totalAmount ? 'Paid' : 'PartiallyPaid'`). A full return of a
+fully-paid invoice lands at `totalAmount: 0, paidAmount: 0, status: 'Paid'` — consistent with
+`create()`'s existing "a zero-value invoice is immediately Paid" convention, not a special case.
+
+Only allowed against a `Paid`/`PartiallyPaid` invoice (`paidAmount > 0`); an invoice with no
+recorded payments must use the existing `cancel` endpoint instead — `createReturn` rejects it with
+a message naming `cancel` as the correct action. Return amount is capped at `paidAmount`, never
+`totalAmount` — a return can't refund more cash than was actually collected.
+
+**Money-mutation methods must take a `pessimistic_write` lock on their initial invoice lookup.**
+`createReturn` does (`repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } })`),
+matching this codebase's established status-transition-mutator pattern (§15/§16). This was not the
+starting shape — a risk-gated security review (per `CLAUDE.md`'s MVP Fast Track, since Billing is
+money-touching) caught the lock's absence, plus a `NaN`-slips-through gap in the amount validation
+(a bare `amount <= 0` check is silently `false` for `undefined`/`NaN`; fixed with
+`Number.isFinite()` first), before the feature was committed. The same missing-lock gap was found
+to already exist, unfixed, in `recordPayment`/`cancel` — tracked as a separate follow-up in
+`pending-tasks.md`, not retrofitted as part of this item.
+
+`returnedBy` is client-supplied, same as every other actor field in this codebase
+(`review-comments.md`'s codebase-wide "actor fields are client-supplied" gap) — not fixed here,
+tracked there.
