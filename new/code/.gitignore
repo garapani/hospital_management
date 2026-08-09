@@ -51,3 +51,9 @@ test-output
 
 # TypeScript build info
 *.tsbuildinfo
+
+# pnpm local package store
+.pnpm-store/
+
+# generated OpenAPI output
+swagger.json
