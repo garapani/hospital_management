@@ -43,5 +43,33 @@ services:
       timeout: 5s
       retries: 5
 
+  api:
+    image: node:22-alpine
+    container_name: api-dev
+    depends_on:
+      api-postgres:
+        condition: service_healthy
+      api-redis:
+        condition: service_healthy
+      api-minio:
+        condition: service_healthy
+    environment:
+      CI: 'true'
+      DB_HOST: api-postgres
+      DB_PORT: 5432
+      DB_USERNAME: identity_access
+      DB_PASSWORD: identity_access_dev_password
+      DB_DATABASE: identity_access
+      REDIS_HOST: api-redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: api-minio
+      MINIO_PORT: 9000
+    ports:
+      - '3000:3000'
+    volumes:
+      - .:/usr/src/app
+    working_dir: /usr/src/app
+    command: sh -c "corepack enable && pnpm install && pnpm nx serve api --host 0.0.0.0"
+
 volumes:
   api-postgres-data:
