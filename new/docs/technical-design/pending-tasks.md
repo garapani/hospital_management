@@ -8,7 +8,40 @@ they were discovered.
 every day live with header-trusted auth/tenant resolution is real exposure. After that: cheap
 guardrails that prevent the remaining backlog from making things worse, then ops-readiness, then
 feature completion, then net-new platform work, then the multi-quarter product backlog last (it
-follows the PRD's own phase order — no reason to re-litigate that).
+follows the PRD's own phase order — no reason to re-litigate that). **Exception, as of
+2026-08-09:** the "MVP hardening (fast track)" section below jumps this queue — see
+`new/docs/technical-design/mvp-status.md` for how it was scoped and `CLAUDE.md`'s "The MVP Fast
+Track" for the lighter process it's worked under.
+
+## MVP hardening (fast track)
+
+Identified by the `mvp-status.md` audit (2026-08-09): what's actually missing between the
+already-built Phase 0/1 modules (Patient, Appointments, Admissions, Billing, Clinical basics —
+built before this file's tracking regime existed, see `mvp-status.md`) and a genuinely usable
+single-hospital registration → visit → bill → lab/pharmacy workflow. Deliberately excludes all
+Phase 3+ backlog (Insurance/Claims, Accounting, Fixed Asset, etc., below) — those are out of MVP
+scope, not merely lower priority.
+
+- [ ] **Billing: Settlement + Return/credit-note concept.** `billing/` has invoice
+      create/list/get/cancel/record-payment and deposit create/list/refund, but no Settlement or
+      Return/credit-note entity — PRD §5.5 names "settlements" explicitly as in-scope for Billing,
+      and the old system had a dedicated `Controllers/Billing/Return`. See `mvp-status.md`'s
+      Billing row.
+- [ ] **Billing: automatic charge-capture from Lab/Radiology/Pharmacy.**
+      `InvoiceItem.sourceOrderItemId` (`billing/entities/invoice-item.entity.ts`) is optional and
+      client-supplied on invoice creation — nothing automatically creates a billing charge when a
+      Lab/Radiology/Pharmacy order item completes. For a real registration→visit→bill flow this
+      needs either a subscriber (matching the `@hospital/audit-emitter` in-process pattern already
+      used for Reporting/Audit) or a billing-staff UI that reads completed order items. See
+      `mvp-status.md`'s "No automatic charge-capture" discrepancy.
+- [ ] **Appointments: doctor-schedule/availability endpoints.** Create/list/get/update/cancel exist;
+      PRD's module description implies "doctor schedules" as in-scope. Confirm with the human
+      partner whether the MVP workflow actually needs scheduling-conflict checks or just appointment
+      records before scoping this one — lowest-confidence item in this section.
+- [ ] **Admissions: discharge-summary artifact.** Create/list/get/transfer/discharge exist as a
+      status-machine action; PRD names discharge summaries explicitly (old system:
+      `DischargeSummaryController`). Low effort if needed — currently there's no distinct
+      discharge-summary entity/endpoint, only a `discharge` state transition.
 
 ## Phase 0 — Housekeeping
 

@@ -1,19 +1,21 @@
 ---
 name: resolve-pending-task
-description: Use when picking up the next unblocked item from new/docs/technical-design/pending-tasks.md, to route it through this repo's established brainstorm -> plan -> execute -> docs pipeline.
+description: Use when picking up the next unblocked item from new/docs/technical-design/pending-tasks.md, to route it through this repo's MVP fast track or heavyweight brainstorm -> plan -> execute -> docs pipeline, whichever applies.
 ---
 
 # Resolve Pending Task
 
 Pick up the next unblocked item in `new/docs/technical-design/pending-tasks.md` and run it through
-this repo's established pipeline. See the repo-root `CLAUDE.md`'s "The Pending-Task Pipeline"
-section for the four-stage shape this encodes — this skill is the operational checklist for
-actually doing it.
+the pipeline that applies to it. See the repo-root `CLAUDE.md`'s "The MVP Fast Track" and "The
+Heavyweight Pipeline" sections for the two shapes this encodes — this skill is the operational
+checklist for actually doing it.
 
 ## Step 1: Find the next unblocked item
 
-Read `new/docs/technical-design/pending-tasks.md` in full, in order (Phase 0 through Phase 6 —
-phases are already priority-ordered, don't re-sort them). Find the first `- [ ]` / unchecked,
+Read `new/docs/technical-design/pending-tasks.md` in full, in order. **The "MVP hardening (fast
+track)" section at the top jumps the queue while the MVP push is active** — check it first,
+regardless of what's checked/unchecked further down in Phase 0 through Phase 6 (which remain
+priority-ordered among themselves, don't re-sort those). Find the first `- [ ]` / unchecked,
 un-numbered-bullet item that is not blocked:
 
 - Cross-check the "Dependencies worth calling out explicitly" section at the bottom of the file —
@@ -43,6 +45,25 @@ multiple `pending-tasks.md` items into a single session. Before invoking any pip
 
 ## Step 3: Route into the pipeline
 
+**First, determine which track the item is on**: anything in `pending-tasks.md`'s "MVP hardening
+(fast track)" section uses the MVP fast track below; everything else uses the heavyweight pipeline.
+Within a track, do not skip stages even under time pressure — the fast track is already the
+lighter-weight option, there's no lighter-still shortcut beneath it.
+
+### MVP fast track
+
+- **No spec exists yet:** write one directly per `CLAUDE.md`'s "The MVP Fast Track" step 1
+  (`mattpocock-skills:to-spec`'s template, no brainstorming-skill interview), save to
+  `new/docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`, commit it.
+- **Spec exists, not implemented:** invoke `mattpocock-skills:implement` (which uses
+  `mattpocock-skills:tdd` at test seams) directly against the spec — no separate plan doc, no
+  per-task subagent dispatch.
+- **Implementation done, not reviewed:** run risk-gated security review (only if the item touches
+  auth/tenant-isolation/PHI/money) plus `mattpocock-skills:code-review` (always), per `CLAUDE.md`'s
+  fast-track step 4.
+
+### Heavyweight pipeline
+
 - **No spec exists yet:** invoke `superpowers:brainstorming` to design the solution. It will
   itself handle writing `new/docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and committing
   it, and hands off to `superpowers:writing-plans` once the user approves the spec.
@@ -53,8 +74,9 @@ multiple `pending-tasks.md` items into a single session. Before invoking any pip
   (progress notes, task reports, review diffs) to figure out which tasks are already done versus
   which to resume from — don't restart completed tasks.
 
-Do not skip stages: a plan should not be hand-written without a preceding brainstormed-and-approved
-spec, and code should not be written without a preceding reviewed plan, even under time pressure.
+Do not skip stages within whichever track applies: on the heavyweight pipeline, a plan should not
+be hand-written without a preceding brainstormed-and-approved spec, and code should not be written
+without a preceding reviewed plan.
 
 ## Step 4: Verify the closing docs update landed
 

@@ -12,8 +12,15 @@ source of truth for scope and product phasing — read it, don't take this file'
     new section every time a pending-task pipeline run establishes a new pattern.
   - `pending-tasks.md` — the prioritized backlog, sequenced by dependency and risk (security gaps
     first, then guardrails, ops-readiness, feature completion, net-new platform work, then the
-    multi-quarter product backlog last). Read its "Ordering principle" and "Dependencies worth
-    calling out explicitly" sections before picking up new work.
+    multi-quarter product backlog last) — **except the "MVP hardening (fast track)" section, which
+    jumps the queue** while the MVP push is active (see "The MVP Fast Track" below). Read its
+    "Ordering principle" and "Dependencies worth calling out explicitly" sections before picking up
+    new work.
+  - `mvp-status.md` — point-in-time audit of what's actually built vs. `PRD.md`'s phase scope
+    (written because `pending-tasks.md` only tracks work from PRD Phase 2 onward — Phase 0/1
+    modules predate that file's tracking regime and never got checklist entries). Re-run this audit
+    rather than trust it blindly once enough MVP-track items have landed that the picture may have
+    shifted.
   - `new-features.md` / `review-comments.md` — the gap list and file:line evidence that
     `pending-tasks.md` sequences. Findings in `review-comments.md` are marked resolved in place
     when fixed, never deleted — it's a historical record.
@@ -31,10 +38,43 @@ source of truth for scope and product phasing — read it, don't take this file'
   for understanding domain scope and legacy DB-field shapes — explicitly **not** a parity contract;
   the PRD and the specs/plans pipeline are what defines what actually gets built.
 
-## The Pending-Task Pipeline
+## The MVP Fast Track
 
-Every item resolved from `pending-tasks.md` so far has gone through the same four-stage pipeline,
-one item at a time (not batched — confirm scope with the user before starting):
+As of 2026-08-09, `pending-tasks.md`'s "MVP hardening (fast track)" section (Billing
+settlement/return + auto charge-capture, Appointments doctor-schedule endpoints, Admissions
+discharge-summary artifact — see `mvp-status.md` for how these were identified) is being worked
+under a **lighter** pipeline than the heavyweight one below, because the full four-stage ceremony
+(brainstorm-interview → separate spec doc → separate plan doc → one subagent dispatch per task) was
+costing more tokens/time than these items warrant. This track exists **alongside**, not instead of,
+the heavyweight pipeline — see "The Heavyweight Pipeline" below for everything else in
+`pending-tasks.md`.
+
+One item at a time, still confirm scope with the user before starting:
+
+1. **Write a spec directly into the conversation** using `mattpocock-skills:to-spec`'s template
+   (Problem Statement / Solution / User Stories / Implementation Decisions / Testing Decisions /
+   Out of Scope) — no brainstorming-skill interview, synthesize from what's already been discussed.
+   Save it to `new/docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` (same location/naming as the
+   heavyweight track, so both tracks share one paper trail) and commit it.
+2. **Implement directly** via `mattpocock-skills:implement`, using `mattpocock-skills:tdd` at test
+   seams — no separate plan doc, no per-task subagent dispatch. Typecheck and run affected tests
+   regularly; run the full suite once at the end.
+3. **Test rigor scales to risk, not uniform depth**: full `TenantTestContext`-based integration
+   specs (matching the existing codebase pattern) for anything touching tenant isolation, money
+   (Billing), or clinical sign-off fields; lighter/unit-level tests are fine for low-risk CRUD.
+4. **Security/quality review is risk-gated, not automatic**: run `security-review` or `/code-review`
+   at `high` effort only for items touching auth, tenant isolation, PHI, or money (Billing
+   qualifies; a pure Appointments/Admissions CRUD gap likely doesn't) — plus
+   `mattpocock-skills:code-review` (Standards + Spec) always, since that one's cheap.
+5. **Commit granularity**: one feature commit for the implementation, one separate `docs:` commit
+   for the closing docs update (same three files as the heavyweight track's step 4, still never
+   skipped) — not one commit per task.
+
+## The Heavyweight Pipeline
+
+Every item resolved from `pending-tasks.md` outside the MVP fast track above goes through the same
+four-stage pipeline, one item at a time (not batched — confirm scope with the user before
+starting):
 
 1. **Brainstorm a design** via the `superpowers:brainstorming` skill → write a spec to
    `new/docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`, commit it.
