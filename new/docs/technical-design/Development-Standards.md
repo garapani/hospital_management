@@ -868,3 +868,25 @@ to already exist, unfixed, in `recordPayment`/`cancel` — tracked as a separate
 `returnedBy` is client-supplied, same as every other actor field in this codebase
 (`review-comments.md`'s codebase-wide "actor fields are client-supplied" gap) — not fixed here,
 tracked there.
+
+## 21. Frontend Theming and Screen Layout
+
+`staff-console`'s visual language (established 2026-08-09, see
+`new/docs/superpowers/specs/2026-08-09-frontend-design-refresh-design.md`):
+
+- **Theme:** a `definePreset(Aura, {...})` navy palette in `app.config.ts`, not the bare `Aura`
+  preset — `primary.700` (`#173b63`) is the exact brand navy, used via
+  `colorScheme.light.primary.color`. The `surface` scale stays PrimeNG's default. Any new brand
+  color needs the same `definePreset` treatment, not ad-hoc hex values in templates.
+- **Shell:** `AppShellComponent` is a fixed navy (`bg-primary-900`) sidebar + light
+  (`bg-surface-50`) content area. New nav entries get added to its `<nav>` list only when the
+  screen they point to actually ships — no placeholder links for unbuilt screens.
+- **Screen styling:** Tailwind utility classes backed by the `tailwindcss-primeui` plugin
+  (`bg-primary-*`, `text-surface-*`, etc. — see `node_modules/tailwindcss-primeui/v4/theme/colors.css`
+  for the full list), not raw hex values or a separate CSS file per component. Cards use
+  `rounded-xl border border-surface-200 bg-white p-6`; page headers use
+  `text-2xl font-semibold text-surface-900` + a `text-sm text-surface-500` subtitle line — reuse
+  these exact classes for consistency rather than inventing new spacing/sizing per screen.
+- **PrimeIcons:** global CSS (`<i class="pi pi-{name}">`), no Angular module import needed — only
+  import a PrimeNG *component* module (`ButtonModule`, `TagModule`, etc.) when using that
+  component, not for icons alone.
