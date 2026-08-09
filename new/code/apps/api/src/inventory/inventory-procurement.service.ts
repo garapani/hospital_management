@@ -9,6 +9,9 @@ import { InventoryCatalogService } from './inventory-catalog.service.js';
 import { StockBatch } from './entities/stock-batch.entity.js';
 import { StockBalance } from './entities/stock-balance.entity.js';
 import { StockTransaction } from './entities/stock-transaction.entity.js';
+import { paginate, paginateRaw, PaginatedResponseDto, requireParam } from '@hospital/pagination';
+import { SearchPurchaseOrdersDto } from './dto/search-purchase-orders.dto.js';
+import { SearchStockBalancesDto } from './dto/search-stock-balances.dto.js';
 
 export interface CreatePurchaseOrderItemInput {
   itemId: string;
@@ -125,10 +128,14 @@ export class InventoryProcurementService {
     });
   }
 
-  async listByVendor(vendorId: string): Promise<PurchaseOrder[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(PurchaseOrder).find({ where: { vendorId }, order: { createdAt: 'DESC' } }),
-    );
+  async listByVendor(query: SearchPurchaseOrdersDto): Promise<PaginatedResponseDto<PurchaseOrder>> {
+    const vendorId = requireParam(query.vendorId, 'vendorId');
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager.getRepository(PurchaseOrder).createQueryBuilder('po');
+      qb.where('po.vendorId = :vendorId', { vendorId });
+      qb.orderBy('po.createdAt', 'DESC');
+      return paginate(qb, query);
+    });
   }
 
   async cancel(id: string, cancelReason?: string): Promise<PurchaseOrder> {
@@ -310,9 +317,9 @@ export class InventoryProcurementService {
     return existing;
   }
 
-  async listStockBalances(itemId?: string): Promise<StockBalanceView[]> {
+  async listStockBalances(query: SearchStockBalancesDto): Promise<PaginatedResponseDto<StockBalanceView>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      const query = manager
+      const qb = manager
         .createQueryBuilder(StockBalance, 'balance')
         .innerJoin(StockBatch, 'batch', 'batch.id = balance.stockBatchId')
         .select('balance.itemId', 'itemId')
@@ -320,10 +327,10 @@ export class InventoryProcurementService {
         .addSelect('batch.batchNumber', 'batchNumber')
         .addSelect("to_char(batch.expiryDate, 'YYYY-MM-DD')", 'expiryDate')
         .addSelect('balance.availableQuantity', 'availableQuantity');
-      if (itemId) {
-        query.where('balance.itemId = :itemId', { itemId });
+      if (query.itemId) {
+        qb.where('balance.itemId = :itemId', { itemId: query.itemId });
       }
-      return query.getRawMany<StockBalanceView>();
+      return paginateRaw(qb, query);
     });
   }
 }
