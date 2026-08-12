@@ -29,6 +29,9 @@ export class Department {
   @Column({ type: 'varchar', nullable: true })
   noticeText!: string | null;
 
+  @Column({ type: 'integer', nullable: true })
+  maxDailyAppointments!: number | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 }

@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Appointment } from './entities/appointment.entity.js';
+import { Department } from '../master-data/entities/department.entity.js';
 
 export interface CreateAppointmentInput {
   patientId?: string;
@@ -42,6 +43,48 @@ export class AppointmentsService {
 
   async create(input: CreateAppointmentInput): Promise<Appointment> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      // Check department schedule capacity if departmentId is provided
+      if (input.departmentId && input.appointmentDate) {
+        const department = await manager.getRepository(Department).findOne({ 
+          where: { id: input.departmentId } 
+        });
+        
+        if (department?.maxDailyAppointments) {
+          // Count existing appointments for this department on the requested date
+          const existingCount = await manager.getRepository(Appointment).count({
+            where: {
+              departmentId: input.departmentId,
+              appointmentDate: input.appointmentDate,
+              status: 'Scheduled',
+            },
+          });
+          
+          if (existingCount >= department.maxDailyAppointments) {
+            throw new ConflictException(
+              `Department ${department.departmentName} has reached its maximum daily capacity of ${department.maxDailyAppointments} appointments for ${input.appointmentDate}`
+            );
+          }
+        }
+      }
+      
+      // Check for doctor schedule conflicts if doctorId is provided
+      if (input.doctorId && input.appointmentDate && input.appointmentTime) {
+        const conflictingAppointment = await manager.getRepository(Appointment).findOne({
+          where: {
+            doctorId: input.doctorId,
+            appointmentDate: input.appointmentDate,
+            appointmentTime: input.appointmentTime,
+            status: 'Scheduled',
+          },
+        });
+        
+        if (conflictingAppointment) {
+          throw new ConflictException(
+            `Doctor already has an appointment scheduled at ${input.appointmentTime} on ${input.appointmentDate}`
+          );
+        }
+      }
+      
       const repo = manager.getRepository(Appointment);
       const appointment = repo.create({
         ...input,
@@ -111,6 +154,62 @@ export class AppointmentsService {
       qb.addOrderBy('appointment.appointmentTime', 'ASC');
       
       return qb.getMany();
+    });
+  }
+  
+  /**
+   * Check if a doctor has available slots on a given date
+   */
+  async getDoctorSchedule(doctorId: string, date: string): Promise<{ available: boolean; bookedSlots: string[]; totalSlots: number }> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const appointments = await manager.getRepository(Appointment).find({
+        where: {
+          doctorId,
+          appointmentDate: date,
+          status: 'Scheduled',
+        },
+        order: { appointmentTime: 'ASC' },
+      });
+      
+      const bookedSlots = appointments.map(a => a.appointmentTime);
+      
+      // Assuming 8-hour workday with 30-minute slots = 16 slots
+      const totalSlots = 16;
+      
+      return {
+        available: bookedSlots.length < totalSlots,
+        bookedSlots,
+        totalSlots,
+      };
+    });
+  }
+  
+  /**
+   * Get department's daily appointment capacity and current bookings
+   */
+  async getDepartmentSchedule(departmentId: string, date: string): Promise<{ maxCapacity: number | null; currentBookings: number; available: boolean }> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const department = await manager.getRepository(Department).findOne({ 
+        where: { id: departmentId } 
+      });
+      
+      if (!department) {
+        throw new NotFoundException(`Department ${departmentId} not found`);
+      }
+      
+      const currentBookings = await manager.getRepository(Appointment).count({
+        where: {
+          departmentId,
+          appointmentDate: date,
+          status: 'Scheduled',
+        },
+      });
+      
+      return {
+        maxCapacity: department.maxDailyAppointments,
+        currentBookings,
+        available: !department.maxDailyAppointments || currentBookings < department.maxDailyAppointments,
+      };
     });
   }
 }

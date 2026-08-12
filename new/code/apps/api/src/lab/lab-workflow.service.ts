@@ -9,6 +9,7 @@ import { LabRequisitionNumberGeneratorService } from './lab-requisition-number-g
 import { LabCatalogService } from './lab-catalog.service.js';
 import { paginate, PaginatedResponseDto, requireParam } from '@hospital/pagination';
 import { SearchLabRequisitionsDto } from './dto/search-lab-requisitions.dto.js';
+import { InvoicesService } from '../billing/invoices.service.js';
 
 export interface CreateRequisitionInput {
   orderItemId: string;
@@ -31,6 +32,7 @@ export class LabWorkflowService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly requisitionNumberGenerator: LabRequisitionNumberGeneratorService,
     private readonly labCatalogService: LabCatalogService,
+    private readonly invoicesService: InvoicesService,
   ) {}
 
   async createRequisition(input: CreateRequisitionInput): Promise<LabRequisition> {
@@ -210,11 +212,29 @@ export class LabWorkflowService {
       if (!allComponentsResulted) {
         throw new ConflictException(`Requisition ${id} still has components without entered results`);
       }
-
       requisition.status = 'Verified';
       requisition.verifiedBy = verifiedBy;
       requisition.verifiedAt = new Date();
-      return repository.save(requisition);
+      const savedRequisition = await repository.save(requisition);
+      
+      // Auto-charge: trigger billing for the completed order
+      const orderItem = await manager.getRepository(OrderItem).findOne({ where: { id: savedRequisition.orderItemId } });
+      if (orderItem && orderItem.status !== 'Completed') {
+        orderItem.status = 'Completed';
+        orderItem.completedBy = verifiedBy;
+        orderItem.completedAt = new Date();
+        await manager.getRepository(OrderItem).save(orderItem);
+        
+        // Trigger auto-billing
+        try {
+          await this.invoicesService.autoChargeForCompletedOrder(orderItem.id, verifiedBy);
+        } catch (billingError) {
+          // Log but don't fail the verification - billing issues should be handled separately
+          console.error(`Auto-charge failed for lab order ${orderItem.id}:`, billingError);
+        }
+      }
+      
+      return savedRequisition;
     });
   }
 
