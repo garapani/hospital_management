@@ -51,12 +51,10 @@ the heavyweight pipeline — see "The Heavyweight Pipeline" below for everything
 
 One item at a time, still confirm scope with the user before starting:
 
-1. **Write a spec directly into the conversation** using `mattpocock-skills:to-spec`'s template
-   (Problem Statement / Solution / User Stories / Implementation Decisions / Testing Decisions /
-   Out of Scope) — no brainstorming-skill interview, synthesize from what's already been discussed.
-   Save it to `new/docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` (same location/naming as the
-   heavyweight track, so both tracks share one paper trail) and commit it.
-2. **Implement directly** via `mattpocock-skills:implement`, using `mattpocock-skills:tdd` at test
+1. **Write a spec directly into the conversation** (Problem Statement / Solution /
+   User Stories / Implementation Decisions / Testing Decisions / Out of Scope) — no
+   `superpowers:brainstorming` interview, synthesize from what's already been discussed.
+2. **Implement directly** in the current session, using `superpowers:test-driven-development` at test
    seams — no separate plan doc, no per-task subagent dispatch. Typecheck and run affected tests
    regularly; run the full suite once at the end.
 3. **Test rigor scales to risk, not uniform depth**: full `TenantTestContext`-based integration
@@ -65,7 +63,7 @@ One item at a time, still confirm scope with the user before starting:
 4. **Security/quality review is risk-gated, not automatic**: run `security-review` or `/code-review`
    at `high` effort only for items touching auth, tenant isolation, PHI, or money (Billing
    qualifies; a pure Appointments/Admissions CRUD gap likely doesn't) — plus
-   `mattpocock-skills:code-review` (Standards + Spec) always, since that one's cheap.
+   `superpowers:requesting-code-review` (Standards + Spec) always, since that one's cheap.
 5. **Commit granularity**: one feature commit for the implementation, one separate `docs:` commit
    for the closing docs update (same three files as the heavyweight track's step 4, still never
    skipped) — not one commit per task.

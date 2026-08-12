@@ -26,6 +26,10 @@
 
 Lessons from building the shared libraries (`@hospital/tenant-context`, `@hospital/auth-guards`, `@hospital/audit-emitter`) — apply these to every future service in this monorepo.
 
+### Process & Planning
+
+- **Agent Workflows:** This file focuses strictly on code and workspace conventions. For agent workflows, including how and when to use the `superpowers:brainstorming` ("write spec") and `superpowers:writing-plans` ("write plan") skills (i.e. the Heavyweight Pipeline vs Fast Track), **always refer to the root `../../CLAUDE.md`**. It is the authoritative source for the project's task execution process.
+
 ### TypeScript / module resolution
 
 - `tsconfig.base.json` uses `"module"`/`"moduleResolution": "nodenext"`, and every library's `package.json` declares `"type": "module"`. **Every relative import needs an explicit `.js` extension**, even though the source files are `.ts` (e.g. `from './foo.service'` → `from './foo.service.js'`). Jest's transform does not enforce this — only `tsc --build` (the `typecheck` target) does. Always run `pnpm exec nx run-many -t typecheck test`, not just `test`, before considering a change done.
