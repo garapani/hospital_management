@@ -1,15 +1,22 @@
-```
+```gitignore
 # Dependencies
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+.pnpm-store/
+.npm/
+.yarn/
 
 # Build outputs
 dist/
 build/
 coverage/
 .nyc_output/
+.eslintcache
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Environment variables
 .env
@@ -22,13 +29,38 @@ coverage/
 .idea/
 *.swp
 *.swo
-*.tmp
+.DS_Store
+Thumbs.db
 
-# Logs
-*.log
+# Python specific (if applicable)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+.envrc
+.python-version
 
 # TypeScript/JavaScript specific
 *.tsbuildinfo
 .next/
-.nuxt/
+nuxt/dist/
+public/dist/
+
+# Testing
+coverage/
+.nyc_output/
+.jest/
+jest.config.js
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 ```
