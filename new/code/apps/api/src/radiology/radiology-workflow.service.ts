@@ -5,6 +5,7 @@ import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { RadiologyRequisition } from './entities/radiology-requisition.entity.js';
 import { RadiologyRequisitionNumberGeneratorService } from './radiology-requisition-number-generator.service.js';
 import { RadiologyCatalogService } from './radiology-catalog.service.js';
+import { InvoicesService } from '../billing/invoices.service.js';
 
 export interface CreateRequisitionInput {
   orderItemId: string;
@@ -26,6 +27,7 @@ export class RadiologyWorkflowService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly requisitionNumberGenerator: RadiologyRequisitionNumberGeneratorService,
     private readonly radiologyCatalogService: RadiologyCatalogService,
+    private readonly invoicesService: InvoicesService,
   ) {}
 
   async createRequisition(input: CreateRequisitionInput): Promise<RadiologyRequisition> {
@@ -170,7 +172,26 @@ export class RadiologyWorkflowService {
       requisition.status = 'Verified';
       requisition.verifiedBy = verifiedBy;
       requisition.verifiedAt = new Date();
-      return repository.save(requisition);
+      const savedRequisition = await repository.save(requisition);
+      
+      // Auto-charge: trigger billing for the completed order
+      const orderItem = await manager.getRepository(OrderItem).findOne({ where: { id: savedRequisition.orderItemId } });
+      if (orderItem && orderItem.status !== 'Completed') {
+        orderItem.status = 'Completed';
+        orderItem.completedBy = verifiedBy;
+        orderItem.completedAt = new Date();
+        await manager.getRepository(OrderItem).save(orderItem);
+        
+        // Trigger auto-billing
+        try {
+          await this.invoicesService.autoChargeForCompletedOrder(orderItem.id, verifiedBy);
+        } catch (billingError) {
+          // Log but don't fail the verification - billing issues should be handled separately
+          console.error(`Auto-charge failed for radiology order ${orderItem.id}:`, billingError);
+        }
+      }
+      
+      return savedRequisition;
     });
   }
 

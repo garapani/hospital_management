@@ -8,6 +8,7 @@ import { PharmacyDispensingNumberGeneratorService } from './pharmacy-dispensing-
 import { StockBatch } from '../inventory/entities/stock-batch.entity.js';
 import { StockBalance } from '../inventory/entities/stock-balance.entity.js';
 import { StockTransaction } from '../inventory/entities/stock-transaction.entity.js';
+import { InvoicesService } from '../billing/invoices.service.js';
 
 export interface CreateDispensingInput {
   orderItemId: string;
@@ -25,6 +26,7 @@ export class PharmacyDispensingService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly dispensingNumberGenerator: PharmacyDispensingNumberGeneratorService,
     private readonly inventoryCatalogService: InventoryCatalogService,
+    private readonly invoicesService: InvoicesService,
   ) {}
 
   async createDispensing(input: CreateDispensingInput): Promise<PharmacyDispensing> {
@@ -216,7 +218,27 @@ export class PharmacyDispensingService {
       dispensing.status = 'Dispensed';
       dispensing.dispensedBy = input.dispensedBy;
       dispensing.dispensedAt = new Date();
-      return dispensingRepository.save(dispensing);
+      const savedDispensing = await dispensingRepository.save(dispensing);
+      
+      // Mark order item as completed and trigger auto-billing
+      const orderItem = await manager.getRepository(OrderItem).findOne({ where: { id: savedDispensing.orderItemId } });
+      if (orderItem && orderItem.status !== 'Completed') {
+        orderItem.status = 'Completed';
+        orderItem.completedBy = input.dispensedBy;
+        orderItem.completedAt = new Date();
+        await manager.getRepository(OrderItem).save(orderItem);
+        
+        // Trigger auto-billing
+        try {
+          await this.invoicesService.autoChargeForCompletedOrder(orderItem.id, input.dispensedBy);
+        } catch (billingError) {
+          // Log but don't fail the dispensing - billing issues should be handled separately
+          console.error(`Auto-charge failed for pharmacy order ${orderItem.id}:`, billingError);
+        }
+      }
+      
+      return savedDispensing;
     });
   }
+}
 }
