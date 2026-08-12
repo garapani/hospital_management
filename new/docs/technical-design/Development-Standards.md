@@ -871,25 +871,47 @@ tracked there.
 
 ## 21. Frontend Theming and Screen Layout
 
-`staff-console`'s visual language (established 2026-08-09, see
-`new/docs/superpowers/specs/2026-08-09-frontend-design-refresh-design.md`):
+**Superseded 2026-08-12:** the navy theme below (established 2026-08-09) was replaced, in the same
+uncommitted session that built the Tenants/Users/Master Data/Global Catalog/Audit/Patients/Billing
+Settings screens, with a glassmorphism ("Ocean Breeze" teal/blue) look. That session was never
+committed or documented at the time; this section was rewritten after the fact, once the human
+partner confirmed keeping the new direction, to describe what's actually in the codebase rather
+than the superseded navy pattern. No new design spec doc exists for this pass — treat this section
+as the source of truth going forward.
 
-- **Theme:** a `definePreset(Aura, {...})` navy palette in `app.config.ts`, not the bare `Aura`
-  preset — `primary.700` (`#173b63`) is the exact brand navy, used via
-  `colorScheme.light.primary.color`. The `surface` scale stays PrimeNG's default. Any new brand
-  color needs the same `definePreset` treatment, not ad-hoc hex values in templates.
-- **Shell:** `AppShellComponent` is a fixed navy (`bg-primary-900`) sidebar + light
-  (`bg-surface-50`) content area. New nav entries get added to its `<nav>` list only when the
-  screen they point to actually ships — no placeholder links for unbuilt screens.
+`staff-console`'s visual language:
+
+- **Theme:** a `definePreset(Aura, {...})` sky/blue "Ocean Breeze" ramp in `app.config.ts`
+  (`OceanBreezePreset`), not the bare `Aura` preset — `primary.600` (`#0284c7`) is the button/brand
+  color, used via `colorScheme.light.primary.color`. The `surface` scale stays PrimeNG's default.
+  Any new brand color needs the same `definePreset` treatment, not ad-hoc hex values in templates.
+- **Shell:** `AppShellComponent` is a frosted-glass sidebar (`bg-white/60 backdrop-blur-xl`) over a
+  soft mesh-gradient page background (`body`'s `background-image` in `styles.css`), not a solid
+  navy sidebar. Nav links are pill-shaped (`rounded-full`) and use the `gradient-bg`
+  utility class (below) for the active/hover state, gated per-link by
+  `AuthService.hasPermission(...)` — a link only renders when the current user actually holds the
+  permission the screen's route guard requires (see `app.routes.ts`), and a permission string used
+  for gating must be one the backend's `seed-rbac-catalog.ts` actually seeds — a made-up permission
+  name silently disables a nav link for everyone. New nav entries get added only when the screen
+  they point to actually ships — no placeholder links for unbuilt screens.
+- **Glass utility classes** (`styles.css`, `@layer tailwind-utilities`): `.glass-panel` (page-level
+  content containers — tables, main cards), `.glass-card` (smaller nested cards), `.glass-input`
+  (text inputs sitting directly on the gradient background, e.g. the patient search box),
+  `.glass-modal` (applied via a PrimeNG component's `styleClass` to `p-dialog` panels). All four
+  must stay defined in `styles.css` — a class referenced in a template but not defined there is
+  silently unstyled (this happened to `.glass-input`/`.glass-modal` across ~10 templates in the
+  session that introduced them; caught only by grepping every glass-prefixed class name against
+  `styles.css`'s actual definitions, not by typecheck/lint/tests, since an unknown CSS class isn't
+  a compile error). `.gradient-text`/`.gradient-bg` (brand-gradient text and pill-button
+  backgrounds) round out the utility set.
 - **Screen styling:** Tailwind utility classes backed by the `tailwindcss-primeui` plugin
   (`bg-primary-*`, `text-surface-*`, etc. — see `node_modules/tailwindcss-primeui/v4/theme/colors.css`
-  for the full list), not raw hex values or a separate CSS file per component. Cards use
-  `rounded-xl border border-surface-200 bg-white p-6` for content cards (invoice list, invoice
-  detail); the standalone login card uses `rounded-xl bg-white p-8 shadow-md shadow-surface-200/60`
-  instead (no border, shadow for visual separation — it's an auth card, not a content card). Page
-  headers use `text-2xl font-semibold text-surface-900` + a `text-sm text-surface-500` subtitle
-  line — reuse these exact classes for consistency rather than inventing new spacing/sizing per
-  screen.
+  for the full list) plus the glass utilities above, not raw hex values or a separate CSS file per
+  component. Page headers use `text-3xl font-bold tracking-tight text-slate-900` (or `text-slate-800`
+  inside a glass panel) + a `text-sm text-slate-500` subtitle line — reuse these exact classes for
+  consistency rather than inventing new spacing/sizing per screen. The pre-existing Billing screens
+  (invoice list/detail, login) were restyled to match in the same session; new screens should match
+  their look, not the superseded navy one.
 - **PrimeIcons:** global CSS (`<i class="pi pi-{name}">`), no Angular module import needed — only
   import a PrimeNG *component* module (`ButtonModule`, `TagModule`, etc.) when using that
   component, not for icons alone.
