@@ -44,7 +44,10 @@ export class AdmissionsController {
   @Post('discharge-summaries')
   @RequirePermission('admission.manage')
   async createDischargeSummary(@Body() dto: CreateDischargeSummaryDto) {
-    return this.admissionsService.createDischargeSummary(dto);
+    return this.admissionsService.createDischargeSummary({
+      ...dto,
+      followUpAppointmentDate: dto.followUpAppointmentDate ? new Date(dto.followUpAppointmentDate) : undefined,
+    });
   }
 
   @Get('discharge-summaries')
@@ -74,7 +77,10 @@ export class AdmissionsController {
   @Patch('discharge-summaries/:id')
   @RequirePermission('admission.manage')
   async updateDischargeSummary(@Param('id') id: string, @Body() dto: UpdateDischargeSummaryDto) {
-    return this.admissionsService.updateDischargeSummary(id, dto);
+    return this.admissionsService.updateDischargeSummary(id, {
+      ...dto,
+      followUpAppointmentDate: dto.followUpAppointmentDate ? new Date(dto.followUpAppointmentDate) : undefined,
+    });
   }
 
   @Patch('discharge-summaries/:id/review')

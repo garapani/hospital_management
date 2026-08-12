@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, Query, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, HttpCode, HttpStatus, UseGuards, BadRequestException } from '@nestjs/common';
 import { RequirePermission, PermissionGuard } from '@hospital/auth-guards';
 import { AppointmentsService } from './appointments.service.js';
 import type { CreateAppointmentInput, UpdateAppointmentInput, AppointmentFilters } from './appointments.service.js';
@@ -43,5 +43,23 @@ export class AppointmentsController {
   @RequirePermission('appointment.manage')
   async cancelAppointment(@Param('id') id: string, @Body() body: { cancelledRemarks: string }) {
     return this.appointmentsService.cancel(id, body.cancelledRemarks);
+  }
+
+  @Get('doctors/:doctorId/schedule')
+  @RequirePermission('appointment.read')
+  async getDoctorSchedule(@Param('doctorId') doctorId: string, @Query('date') date: string) {
+    if (!date) {
+      throw new BadRequestException('date query parameter is required');
+    }
+    return this.appointmentsService.getDoctorSchedule(doctorId, date);
+  }
+
+  @Get('departments/:departmentId/schedule')
+  @RequirePermission('appointment.read')
+  async getDepartmentSchedule(@Param('departmentId') departmentId: string, @Query('date') date: string) {
+    if (!date) {
+      throw new BadRequestException('date query parameter is required');
+    }
+    return this.appointmentsService.getDepartmentSchedule(departmentId, date);
   }
 }

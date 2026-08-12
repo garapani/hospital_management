@@ -23,6 +23,7 @@ import { CreateInventoryTables0022 } from './0022-create-inventory-tables.js';
 import { CreateInventoryRequisitionTables0023 } from './0023-create-inventory-requisition-tables.js';
 import { CreatePharmacyTables0024 } from './0024-create-pharmacy-tables.js';
 import { AddBillingReturnsTable0025 } from './0025-add-billing-returns-table.js';
+import { AddDepartmentMaxDailyAppointments0026 } from './0026-add-department-max-daily-appointments.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -60,4 +61,5 @@ export const TENANT_MIGRATIONS = [
   CreateInventoryRequisitionTables0023,
   CreatePharmacyTables0024,
   AddBillingReturnsTable0025,
+  AddDepartmentMaxDailyAppointments0026,
 ];

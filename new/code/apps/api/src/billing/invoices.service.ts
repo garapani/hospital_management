@@ -341,7 +341,6 @@ export class InvoicesService {
       return returnRecord;
     });
   }
-}
 
   /**
    * Auto-charge: Create an invoice item when a Lab/Radiology/Pharmacy order completes.
