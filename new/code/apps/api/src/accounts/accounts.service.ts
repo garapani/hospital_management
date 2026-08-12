@@ -26,6 +26,19 @@ export interface AccountWithRoles {
   roleNames: string[];
 }
 
+export interface AccountQueryParams {
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 @Injectable()
 export class AccountsService {
   constructor(
@@ -123,10 +136,25 @@ export class AccountsService {
     );
   }
 
-  async listAccounts(limit: number, offset: number): Promise<Account[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Account).find({ take: limit, skip: offset, order: { createdAt: 'ASC' } }),
-    );
+  async listAccounts(params: AccountQueryParams): Promise<PaginatedResult<Account>> {
+    const { page = 1, limit = 10 } = params;
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const queryBuilder = repository.createQueryBuilder('account')
+        .orderBy('account.createdAt', 'ASC')
+        .skip((page - 1) * limit)
+        .take(limit);
+      
+      const [data, total] = await queryBuilder.getManyAndCount();
+      
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    });
   }
 
   async listRoles(): Promise<Role[]> {

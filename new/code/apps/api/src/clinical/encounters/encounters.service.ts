@@ -10,6 +10,20 @@ export type UpdateNoteInput = Partial<Omit<ClinicalNote, 'id' | 'createdAt' | 'u
 export type CreateDiagnosisInput = Omit<Diagnosis, 'id' | 'createdAt' | 'updatedAt'>;
 export type CreatePrescriptionInput = Omit<Prescription, 'id' | 'createdAt' | 'updatedAt' | 'status'>;
 
+export interface EncounterQueryParams {
+  patientId: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 @Injectable()
 export class EncountersService {
   constructor(private readonly tenantConnection: TenantConnectionService) {}
@@ -35,9 +49,25 @@ export class EncountersService {
     });
   }
 
-  async getNotesByPatient(patientId: string): Promise<ClinicalNote[]> {
+  async getNotesByPatient(params: EncounterQueryParams): Promise<PaginatedResult<ClinicalNote>> {
+    const { patientId, page = 1, limit = 10 } = params;
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      return manager.getRepository(ClinicalNote).find({ where: { patientId }, order: { createdAt: 'DESC' } });
+      const repository = manager.getRepository(ClinicalNote);
+      const queryBuilder = repository.createQueryBuilder('note')
+        .where('note.patientId = :patientId', { patientId })
+        .orderBy('note.createdAt', 'DESC')
+        .skip((page - 1) * limit)
+        .take(limit);
+      
+      const [data, total] = await queryBuilder.getManyAndCount();
+      
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
     });
   }
 
@@ -61,9 +91,25 @@ export class EncountersService {
     });
   }
 
-  async getDiagnosesByPatient(patientId: string): Promise<Diagnosis[]> {
+  async getDiagnosesByPatient(params: EncounterQueryParams): Promise<PaginatedResult<Diagnosis>> {
+    const { patientId, page = 1, limit = 10 } = params;
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      return manager.getRepository(Diagnosis).find({ where: { patientId }, order: { createdAt: 'DESC' } });
+      const repository = manager.getRepository(Diagnosis);
+      const queryBuilder = repository.createQueryBuilder('diagnosis')
+        .where('diagnosis.patientId = :patientId', { patientId })
+        .orderBy('diagnosis.createdAt', 'DESC')
+        .skip((page - 1) * limit)
+        .take(limit);
+      
+      const [data, total] = await queryBuilder.getManyAndCount();
+      
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
     });
   }
 
@@ -87,9 +133,25 @@ export class EncountersService {
     });
   }
 
-  async getPrescriptionsByPatient(patientId: string): Promise<Prescription[]> {
+  async getPrescriptionsByPatient(params: EncounterQueryParams): Promise<PaginatedResult<Prescription>> {
+    const { patientId, page = 1, limit = 10 } = params;
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      return manager.getRepository(Prescription).find({ where: { patientId }, order: { createdAt: 'DESC' } });
+      const repository = manager.getRepository(Prescription);
+      const queryBuilder = repository.createQueryBuilder('prescription')
+        .where('prescription.patientId = :patientId', { patientId })
+        .orderBy('prescription.createdAt', 'DESC')
+        .skip((page - 1) * limit)
+        .take(limit);
+      
+      const [data, total] = await queryBuilder.getManyAndCount();
+      
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
     });
   }
 }

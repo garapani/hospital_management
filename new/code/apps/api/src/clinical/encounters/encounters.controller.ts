@@ -1,7 +1,7 @@
-import { Controller, Post, Patch, Get, Body, Param, UseGuards, Delete } from '@nestjs/common';
+import { Controller, Post, Patch, Get, Body, Param, UseGuards, Delete, Query } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { EncountersService } from './encounters.service.js';
-import { CreateNoteDto, UpdateNoteDto, CreateDiagnosisDto, CreatePrescriptionDto } from './dto/encounter.dto.js';
+import { CreateNoteDto, UpdateNoteDto, CreateDiagnosisDto, CreatePrescriptionDto, EncounterQueryParamsDto } from './dto/encounter.dto.js';
 
 @Controller('encounters')
 @UseGuards(PermissionGuard)
@@ -23,8 +23,10 @@ export class EncountersController {
 
   @Get('notes/patient/:patientId')
   @RequirePermission('encounter.read')
-  async getNotesByPatient(@Param('patientId') patientId: string) {
-    return this.encountersService.getNotesByPatient(patientId);
+  async getNotesByPatient(@Param() params: EncounterQueryParamsDto, @Query() queryParams: { page?: string; limit?: string }) {
+    const page = queryParams.page ? parseInt(queryParams.page, 10) : 1;
+    const limit = queryParams.limit ? parseInt(queryParams.limit, 10) : 10;
+    return this.encountersService.getNotesByPatient({ patientId: params.patientId, page, limit });
   }
 
   // --- Diagnoses ---
@@ -43,8 +45,10 @@ export class EncountersController {
 
   @Get('diagnoses/patient/:patientId')
   @RequirePermission('encounter.read')
-  async getDiagnosesByPatient(@Param('patientId') patientId: string) {
-    return this.encountersService.getDiagnosesByPatient(patientId);
+  async getDiagnosesByPatient(@Param() params: EncounterQueryParamsDto, @Query() queryParams: { page?: string; limit?: string }) {
+    const page = queryParams.page ? parseInt(queryParams.page, 10) : 1;
+    const limit = queryParams.limit ? parseInt(queryParams.limit, 10) : 10;
+    return this.encountersService.getDiagnosesByPatient({ patientId: params.patientId, page, limit });
   }
 
   // --- Prescriptions ---
@@ -63,7 +67,9 @@ export class EncountersController {
 
   @Get('prescriptions/patient/:patientId')
   @RequirePermission('encounter.read')
-  async getPrescriptionsByPatient(@Param('patientId') patientId: string) {
-    return this.encountersService.getPrescriptionsByPatient(patientId);
+  async getPrescriptionsByPatient(@Param() params: EncounterQueryParamsDto, @Query() queryParams: { page?: string; limit?: string }) {
+    const page = queryParams.page ? parseInt(queryParams.page, 10) : 1;
+    const limit = queryParams.limit ? parseInt(queryParams.limit, 10) : 10;
+    return this.encountersService.getPrescriptionsByPatient({ patientId: params.patientId, page, limit });
   }
 }

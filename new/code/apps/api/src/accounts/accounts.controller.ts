@@ -50,12 +50,11 @@ export class AccountsController {
 
   @Get()
   @RequirePermission(REQUIRED_PERMISSION)
-  async list(@Query('limit') limit?: string, @Query('offset') offset?: string) {
-    const accounts = await this.accountsService.listAccounts(
-      limit ? Number(limit) : 50,
-      offset ? Number(offset) : 0,
-    );
-    return accounts.map(toAccountResponse);
+  async list(@Query('page') page?: string, @Query('limit') limit?: string) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    const result = await this.accountsService.listAccounts({ page: pageNum, limit: limitNum });
+    return { ...result, data: result.data.map(toAccountResponse) };
   }
 
   @Get(':id')

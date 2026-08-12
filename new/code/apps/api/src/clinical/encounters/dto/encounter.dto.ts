@@ -1,3 +1,5 @@
+import { IsString, IsOptional, IsInt, Min } from 'class-validator';
+
 export class CreateNoteDto {
   patientId!: string;
   appointmentId?: string;
@@ -35,4 +37,19 @@ export class CreatePrescriptionDto {
   route!: string;
   durationDays!: number;
   notes?: string;
+}
+
+export class EncounterQueryParamsDto {
+  @IsString()
+  patientId!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  limit?: number = 10;
 }

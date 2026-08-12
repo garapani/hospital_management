@@ -20,6 +20,20 @@ export interface DispenseDrugInput {
   dispensedBy: string;
 }
 
+export interface PharmacyQueryParams {
+  orderItemId: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 @Injectable()
 export class PharmacyDispensingService {
   constructor(
@@ -96,10 +110,26 @@ export class PharmacyDispensingService {
     });
   }
 
-  async listByOrderItem(orderItemId: string): Promise<PharmacyDispensing[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(PharmacyDispensing).find({ where: { orderItemId }, order: { createdAt: 'DESC' } }),
-    );
+  async listByOrderItem(params: PharmacyQueryParams): Promise<PaginatedResult<PharmacyDispensing>> {
+    const { orderItemId, page = 1, limit = 10 } = params;
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(PharmacyDispensing);
+      const queryBuilder = repository.createQueryBuilder('dispensing')
+        .where('dispensing.orderItemId = :orderItemId', { orderItemId })
+        .orderBy('dispensing.createdAt', 'DESC')
+        .skip((page - 1) * limit)
+        .take(limit);
+      
+      const [data, total] = await queryBuilder.getManyAndCount();
+      
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    });
   }
 
   async cancel(id: string, cancelReason?: string): Promise<PharmacyDispensing> {

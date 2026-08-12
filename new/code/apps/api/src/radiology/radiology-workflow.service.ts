@@ -19,6 +19,20 @@ export interface EnterReportInput {
   reportEnteredBy: string;
 }
 
+export interface RadiologyQueryParams {
+  orderItemId: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 const NON_TERMINAL_STATUSES = ['Pending', 'Scanned', 'ReportEntered'];
 
 @Injectable()
@@ -91,10 +105,26 @@ export class RadiologyWorkflowService {
     });
   }
 
-  async listByOrderItem(orderItemId: string): Promise<RadiologyRequisition[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(RadiologyRequisition).find({ where: { orderItemId }, order: { createdAt: 'DESC' } }),
-    );
+  async listByOrderItem(params: RadiologyQueryParams): Promise<PaginatedResult<RadiologyRequisition>> {
+    const { orderItemId, page = 1, limit = 10 } = params;
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(RadiologyRequisition);
+      const queryBuilder = repository.createQueryBuilder('requisition')
+        .where('requisition.orderItemId = :orderItemId', { orderItemId })
+        .orderBy('requisition.createdAt', 'DESC')
+        .skip((page - 1) * limit)
+        .take(limit);
+      
+      const [data, total] = await queryBuilder.getManyAndCount();
+      
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    });
   }
 
   async markScanned(id: string, scannedBy: string): Promise<RadiologyRequisition> {

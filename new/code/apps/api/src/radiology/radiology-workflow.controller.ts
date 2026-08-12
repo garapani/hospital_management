@@ -20,8 +20,10 @@ export class RadiologyWorkflowController {
 
   @Get()
   @RequirePermission('radiology.read')
-  async listByOrderItem(@Query('orderItemId') orderItemId: string) {
-    return this.radiologyWorkflowService.listByOrderItem(orderItemId);
+  async listByOrderItem(@Query('orderItemId') orderItemId: string, @Query('page') page?: string, @Query('limit') limit?: string) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    return this.radiologyWorkflowService.listByOrderItem({ orderItemId, page: pageNum, limit: limitNum });
   }
 
   @Get(':id')
