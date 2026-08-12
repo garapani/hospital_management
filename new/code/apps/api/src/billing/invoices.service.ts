@@ -12,6 +12,7 @@ import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { LabRequisition } from '../lab/entities/lab-requisition.entity.js';
 import { RadiologyRequisition } from '../radiology/entities/radiology-requisition.entity.js';
 import { PharmacyDispensing } from '../pharmacy/entities/pharmacy-dispensing.entity.js';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 export interface CreateInvoiceItemInput {
   description: string;
@@ -43,6 +44,15 @@ export interface CreateReturnInput {
   amount: number;
   reason: string;
   returnedBy: string;
+}
+
+export interface ListInvoicesFilters {
+  patientId?: string;
+  status?: string;
+  sourceAdmissionId?: string;
+  sourceAppointmentId?: string;
+  page?: number;
+  limit?: number;
 }
 
 export function getFinancialYearStart(date: Date): number {
@@ -203,21 +213,26 @@ export class InvoicesService {
     });
   }
 
-  async list(
-    patientId?: string,
-    page = 1,
-    limit = 20,
-  ): Promise<{ data: Invoice[]; total: number; page: number; limit: number }> {
-    const cappedLimit = Math.min(limit, 100);
-    const skip = (page - 1) * cappedLimit;
+  async list(filters: ListInvoicesFilters = {}): Promise<PaginatedResponseDto<Invoice>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      const [data, total] = await manager.getRepository(Invoice).findAndCount({
-        where: patientId ? { patientId } : {},
-        order: { createdAt: 'DESC' },
-        skip,
-        take: cappedLimit,
-      });
-      return { data, total, page, limit: cappedLimit };
+      const qb = manager.getRepository(Invoice).createQueryBuilder('invoice');
+      
+      if (filters.patientId) {
+        qb.andWhere('invoice.patientId = :patientId', { patientId: filters.patientId });
+      }
+      if (filters.status) {
+        qb.andWhere('invoice.status = :status', { status: filters.status });
+      }
+      if (filters.sourceAdmissionId) {
+        qb.andWhere('invoice.sourceAdmissionId = :sourceAdmissionId', { sourceAdmissionId: filters.sourceAdmissionId });
+      }
+      if (filters.sourceAppointmentId) {
+        qb.andWhere('invoice.sourceAppointmentId = :sourceAppointmentId', { sourceAppointmentId: filters.sourceAppointmentId });
+      }
+      
+      qb.orderBy('invoice.createdAt', 'DESC');
+      
+      return paginate(qb, filters);
     });
   }
 

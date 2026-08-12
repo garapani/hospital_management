@@ -5,6 +5,15 @@ import { CreateInvoiceDto } from './dto/create-invoice.dto.js';
 import { RecordPaymentDto } from './dto/record-payment.dto.js';
 import { CreateReturnDto } from './dto/create-return.dto.js';
 
+export class ListInvoicesQueryDto {
+  patientId?: string;
+  status?: string;
+  sourceAdmissionId?: string;
+  sourceAppointmentId?: string;
+  page?: number;
+  limit?: number;
+}
+
 @Controller('billing/invoices')
 @UseGuards(PermissionGuard)
 export class InvoicesController {
@@ -18,8 +27,8 @@ export class InvoicesController {
 
   @Get()
   @RequirePermission('billing.manage')
-  async list(@Query('patientId') patientId?: string, @Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.invoicesService.list(patientId, page ? Number(page) : undefined, limit ? Number(limit) : undefined);
+  async list(@Query() query: ListInvoicesQueryDto) {
+    return this.invoicesService.list(query);
   }
 
   @Get(':id')
