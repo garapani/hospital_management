@@ -3,6 +3,7 @@ import { QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Admission } from './entities/admission.entity.js';
 import { BedTransfer } from './entities/bed-transfer.entity.js';
+import { DischargeSummary } from './entities/discharge-summary.entity.js';
 import { Bed } from '../master-data/entities/bed.entity.js';
 import { TriageEntry } from '../clinical/triage/entities/triage-entry.entity.js';
 import { Patient } from '../patients/entities/patient.entity.js';
@@ -27,6 +28,40 @@ export interface DischargeAdmissionInput {
   dischargeType?: string;
   dischargeCondition?: string;
   dischargeSummary?: string;
+}
+
+export interface CreateDischargeSummaryInput {
+  admissionId: string;
+  patientId: string;
+  primaryDiagnosis?: string;
+  secondaryDiagnoses?: string[];
+  proceduresPerformed?: string[];
+  hospitalCourse?: string;
+  dischargeMedications?: string;
+  followUpInstructions?: string;
+  warningSigns?: string;
+  activityRestrictions?: string;
+  followUpAppointmentDate?: Date;
+  followUpDoctorId?: string;
+  dietRecommendations?: string;
+  additionalNotes?: string;
+  preparedBy: string;
+}
+
+export interface UpdateDischargeSummaryInput {
+  primaryDiagnosis?: string;
+  secondaryDiagnoses?: string[];
+  proceduresPerformed?: string[];
+  hospitalCourse?: string;
+  dischargeMedications?: string;
+  followUpInstructions?: string;
+  warningSigns?: string;
+  activityRestrictions?: string;
+  followUpAppointmentDate?: Date;
+  followUpDoctorId?: string;
+  dietRecommendations?: string;
+  additionalNotes?: string;
+  reviewedBy?: string;
 }
 
 @Injectable()
@@ -207,6 +242,112 @@ export class AdmissionsService {
       admission.dischargedBy = input.dischargedBy;
 
       return admissionRepository.save(admission);
+    });
+  }
+
+  async createDischargeSummary(input: CreateDischargeSummaryInput): Promise<DischargeSummary> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      // Verify admission exists and is discharged
+      const admission = await manager.getRepository(Admission).findOne({ where: { id: input.admissionId } });
+      if (!admission) {
+        throw new NotFoundException(`Admission ${input.admissionId} not found`);
+      }
+      if (admission.status !== 'Discharged') {
+        throw new ConflictException(`Discharge summary can only be created for discharged admissions. Admission ${input.admissionId} status: ${admission.status}`);
+      }
+      if (admission.patientId !== input.patientId) {
+        throw new BadRequestException(`Patient ${input.patientId} does not match admission ${input.admissionId}`);
+      }
+
+      // Check if summary already exists for this admission
+      const existing = await manager.getRepository(DischargeSummary).findOne({ where: { admissionId: input.admissionId } });
+      if (existing) {
+        throw new ConflictException(`Discharge summary already exists for admission ${input.admissionId}`);
+      }
+
+      const repository = manager.getRepository(DischargeSummary);
+      return repository.save(
+        repository.create({
+          admissionId: input.admissionId,
+          patientId: input.patientId,
+          primaryDiagnosis: input.primaryDiagnosis ?? null,
+          secondaryDiagnoses: input.secondaryDiagnoses ?? [],
+          proceduresPerformed: input.proceduresPerformed ?? [],
+          hospitalCourse: input.hospitalCourse ?? null,
+          dischargeMedications: input.dischargeMedications ?? null,
+          followUpInstructions: input.followUpInstructions ?? null,
+          warningSigns: input.warningSigns ?? null,
+          activityRestrictions: input.activityRestrictions ?? null,
+          followUpAppointmentDate: input.followUpAppointmentDate ?? null,
+          followUpDoctorId: input.followUpDoctorId ?? null,
+          dietRecommendations: input.dietRecommendations ?? null,
+          additionalNotes: input.additionalNotes ?? null,
+          preparedBy: input.preparedBy,
+        }),
+      );
+    });
+  }
+
+  async getDischargeSummaryByAdmission(admissionId: string): Promise<DischargeSummary> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const summary = await manager.getRepository(DischargeSummary).findOne({ where: { admissionId } });
+      if (!summary) {
+        throw new NotFoundException(`Discharge summary for admission ${admissionId} not found`);
+      }
+      return summary;
+    });
+  }
+
+  async listDischargeSummaries(patientId?: string): Promise<DischargeSummary[]> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager.getRepository(DischargeSummary).createQueryBuilder('ds');
+      if (patientId) {
+        qb.where('ds.patientId = :patientId', { patientId });
+      }
+      qb.orderBy('ds.createdAt', 'DESC');
+      return qb.getMany();
+    });
+  }
+
+  async updateDischargeSummary(id: string, input: UpdateDischargeSummaryInput): Promise<DischargeSummary> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(DischargeSummary);
+      const summary = await repository.findOne({ where: { id } });
+      if (!summary) {
+        throw new NotFoundException(`Discharge summary ${id} not found`);
+      }
+
+      if (input.primaryDiagnosis !== undefined) summary.primaryDiagnosis = input.primaryDiagnosis;
+      if (input.secondaryDiagnoses !== undefined) summary.secondaryDiagnoses = input.secondaryDiagnoses;
+      if (input.proceduresPerformed !== undefined) summary.proceduresPerformed = input.proceduresPerformed;
+      if (input.hospitalCourse !== undefined) summary.hospitalCourse = input.hospitalCourse;
+      if (input.dischargeMedications !== undefined) summary.dischargeMedications = input.dischargeMedications;
+      if (input.followUpInstructions !== undefined) summary.followUpInstructions = input.followUpInstructions;
+      if (input.warningSigns !== undefined) summary.warningSigns = input.warningSigns;
+      if (input.activityRestrictions !== undefined) summary.activityRestrictions = input.activityRestrictions;
+      if (input.followUpAppointmentDate !== undefined) summary.followUpAppointmentDate = input.followUpAppointmentDate;
+      if (input.followUpDoctorId !== undefined) summary.followUpDoctorId = input.followUpDoctorId;
+      if (input.dietRecommendations !== undefined) summary.dietRecommendations = input.dietRecommendations;
+      if (input.additionalNotes !== undefined) summary.additionalNotes = input.additionalNotes;
+      if (input.reviewedBy !== undefined) {
+        summary.reviewedBy = input.reviewedBy;
+        summary.reviewedAt = new Date();
+      }
+
+      return repository.save(summary);
+    });
+  }
+
+  async reviewDischargeSummary(id: string, reviewedBy: string): Promise<DischargeSummary> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(DischargeSummary);
+      const summary = await repository.findOne({ where: { id } });
+      if (!summary) {
+        throw new NotFoundException(`Discharge summary ${id} not found`);
+      }
+      summary.reviewedBy = reviewedBy;
+      summary.reviewedAt = new Date();
+      return repository.save(summary);
     });
   }
 }
