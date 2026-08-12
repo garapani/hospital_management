@@ -5,6 +5,13 @@ import { CreateAdmissionDto } from './dto/create-admission.dto.js';
 import { TransferAdmissionDto } from './dto/transfer-admission.dto.js';
 import { DischargeAdmissionDto } from './dto/discharge-admission.dto.js';
 
+export class ListAdmissionsQueryDto {
+  wardId?: string;
+  status?: string;
+  page?: number;
+  limit?: number;
+}
+
 @Controller('admissions')
 @UseGuards(PermissionGuard)
 export class AdmissionsController {
@@ -18,8 +25,8 @@ export class AdmissionsController {
 
   @Get()
   @RequirePermission('admission.read')
-  async list(@Query('wardId') wardId?: string) {
-    return this.admissionsService.listActive(wardId);
+  async list(@Query() query: ListAdmissionsQueryDto) {
+    return this.admissionsService.listActive(query);
   }
 
   @Get(':id')

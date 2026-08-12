@@ -6,6 +6,7 @@ import { BedTransfer } from './entities/bed-transfer.entity.js';
 import { Bed } from '../master-data/entities/bed.entity.js';
 import { TriageEntry } from '../clinical/triage/entities/triage-entry.entity.js';
 import { Patient } from '../patients/entities/patient.entity.js';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 export interface CreateAdmissionInput {
   patientId: string;
@@ -27,6 +28,13 @@ export interface DischargeAdmissionInput {
   dischargeType?: string;
   dischargeCondition?: string;
   dischargeSummary?: string;
+}
+
+export interface AdmissionFilters {
+  wardId?: string;
+  status?: string;
+  page?: number;
+  limit?: number;
 }
 
 @Injectable()
@@ -123,13 +131,23 @@ export class AdmissionsService {
     });
   }
 
-  async listActive(wardId?: string): Promise<Admission[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Admission).find({
-        where: wardId ? { status: 'Admitted', wardId } : { status: 'Admitted' },
-        order: { admissionDate: 'DESC' },
-      }),
-    );
+  async listActive(filters: AdmissionFilters = {}): Promise<PaginatedResponseDto<Admission>> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const qb = manager.getRepository(Admission).createQueryBuilder('admission');
+      
+      if (filters.wardId) {
+        qb.andWhere('admission.wardId = :wardId', { wardId: filters.wardId });
+      }
+      if (filters.status) {
+        qb.andWhere('admission.status = :status', { status: filters.status });
+      } else {
+        qb.andWhere('admission.status IN (:...statuses)', { statuses: ['Admitted'] });
+      }
+      
+      qb.orderBy('admission.admissionDate', 'DESC');
+      
+      return paginate(qb, filters);
+    });
   }
 
   async transfer(id: string, input: TransferAdmissionInput): Promise<Admission> {

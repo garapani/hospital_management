@@ -1,9 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
 import { Vital } from './entities/vital.entity.js';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 export type CreateVitalInput = Omit<Vital, 'id' | 'createdAt' | 'updatedAt' | 'bmi' | 'recordedAt'> & { recordedAt?: Date };
 export type UpdateVitalInput = Partial<CreateVitalInput>;
+
+export interface VitalFilters {
+  patientId?: string;
+  appointmentId?: string;
+  page?: number;
+  limit?: number;
+}
 
 @Injectable()
 export class VitalsService {
@@ -62,12 +70,20 @@ export class VitalsService {
     });
   }
 
-  async listByPatient(patientId: string): Promise<Vital[]> {
+  async listByPatient(filters: VitalFilters): Promise<PaginatedResponseDto<Vital>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      return manager.getRepository(Vital).find({
-        where: { patientId },
-        order: { recordedAt: 'DESC' },
-      });
+      const qb = manager.getRepository(Vital).createQueryBuilder('vital');
+      
+      if (filters.patientId) {
+        qb.andWhere('vital.patientId = :patientId', { patientId: filters.patientId });
+      }
+      if (filters.appointmentId) {
+        qb.andWhere('vital.appointmentId = :appointmentId', { appointmentId: filters.appointmentId });
+      }
+      
+      qb.orderBy('vital.recordedAt', 'DESC');
+      
+      return paginate(qb, filters);
     });
   }
 

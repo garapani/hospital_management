@@ -3,6 +3,15 @@ import { RequirePermission, PermissionGuard } from '@hospital/auth-guards';
 import { AppointmentsService } from './appointments.service.js';
 import type { CreateAppointmentInput, UpdateAppointmentInput, AppointmentFilters } from './appointments.service.js';
 
+export class ListAppointmentsQueryDto {
+  date?: string;
+  doctorId?: string;
+  departmentId?: string;
+  status?: string;
+  page?: number;
+  limit?: number;
+}
+
 @Controller('appointments')
 @UseGuards(PermissionGuard)
 export class AppointmentsController {
@@ -16,13 +25,8 @@ export class AppointmentsController {
 
   @Get()
   @RequirePermission('appointment.read')
-  async listAppointments(
-    @Query('date') date?: string,
-    @Query('doctorId') doctorId?: string,
-    @Query('departmentId') departmentId?: string,
-    @Query('status') status?: string,
-  ) {
-    const filters: AppointmentFilters = { date, doctorId, departmentId, status };
+  async listAppointments(@Query() query: ListAppointmentsQueryDto) {
+    const filters: AppointmentFilters = query;
     return this.appointmentsService.list(filters);
   }
 
@@ -43,5 +47,29 @@ export class AppointmentsController {
   @RequirePermission('appointment.manage')
   async cancelAppointment(@Param('id') id: string, @Body() body: { cancelledRemarks: string }) {
     return this.appointmentsService.cancel(id, body.cancelledRemarks);
+  }
+
+  @Get('doctors/:doctorId/schedule')
+  @RequirePermission('appointment.read')
+  async getDoctorSchedule(
+    @Param('doctorId') doctorId: string,
+    @Query('date') date: string,
+  ) {
+    if (!date) {
+      throw new Error('date query parameter is required');
+    }
+    return this.appointmentsService.getDoctorSchedule(doctorId, date);
+  }
+
+  @Get('departments/:departmentId/schedule')
+  @RequirePermission('appointment.read')
+  async getDepartmentSchedule(
+    @Param('departmentId') departmentId: string,
+    @Query('date') date: string,
+  ) {
+    if (!date) {
+      throw new Error('date query parameter is required');
+    }
+    return this.appointmentsService.getDepartmentSchedule(departmentId, date);
   }
 }

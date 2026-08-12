@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Appointment } from './entities/appointment.entity.js';
 import { Department } from '../master-data/entities/department.entity.js';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 export interface CreateAppointmentInput {
   patientId?: string;
@@ -35,6 +36,8 @@ export interface AppointmentFilters {
   doctorId?: string;
   departmentId?: string;
   status?: string;
+  page?: number;
+  limit?: number;
 }
 
 @Injectable()
@@ -133,7 +136,7 @@ export class AppointmentsService {
     });
   }
 
-  async list(filters: AppointmentFilters): Promise<Appointment[]> {
+  async list(filters: AppointmentFilters): Promise<PaginatedResponseDto<Appointment>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const qb = manager.getRepository(Appointment).createQueryBuilder('appointment');
       
@@ -153,7 +156,7 @@ export class AppointmentsService {
       qb.orderBy('appointment.appointmentDate', 'ASC');
       qb.addOrderBy('appointment.appointmentTime', 'ASC');
       
-      return qb.getMany();
+      return paginate(qb, filters);
     });
   }
   

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
 import { TriageEntry } from './entities/triage-entry.entity.js';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 const CLOSED_STATUSES = ['Discharged', 'Admitted', 'Deceased'];
 
@@ -22,6 +23,12 @@ export interface CreateTriageEntryInput {
   dischargeRemarks?: string | null;
 }
 export type UpdateTriageEntryInput = Partial<CreateTriageEntryInput>;
+
+export interface TriageFilters {
+  status?: string;
+  page?: number;
+  limit?: number;
+}
 
 @Injectable()
 export class TriageService {
@@ -79,15 +86,21 @@ export class TriageService {
     });
   }
 
-  async listActive(): Promise<TriageEntry[]> {
+  async listActive(filters: TriageFilters = {}): Promise<PaginatedResponseDto<TriageEntry>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      return manager
+      const qb = manager
         .getRepository(TriageEntry)
         .createQueryBuilder('t')
-        .where('t.status NOT IN (:...closedStatuses)', { closedStatuses: CLOSED_STATUSES })
-        .orderBy('t.acuityLevel', 'ASC')
-        .addOrderBy('t.triagedAt', 'ASC')
-        .getMany();
+        .where('t.status NOT IN (:...closedStatuses)', { closedStatuses: CLOSED_STATUSES });
+      
+      if (filters.status) {
+        qb.andWhere('t.status = :status', { status: filters.status });
+      }
+      
+      qb.orderBy('t.acuityLevel', 'ASC');
+      qb.addOrderBy('t.triagedAt', 'ASC');
+      
+      return paginate(qb, filters);
     });
   }
 }
