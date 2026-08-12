@@ -13,7 +13,7 @@ describe('MasterDataService (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'masterdata_svc' });
-    masterDataService = new MasterDataService(ctx.tenantConnection);
+    masterDataService = new MasterDataService(ctx.tenantConnection, ctx.dataSource);
   });
 
   afterAll(() => teardownTenantTestContext(ctx));

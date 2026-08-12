@@ -18,7 +18,7 @@ describe('InventoryRequisitionService.listByDepartment (integration)', () => {
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'inv_requisition_list' });
     catalogService = new InventoryCatalogService(ctx.tenantConnection);
-    masterDataService = new MasterDataService(ctx.tenantConnection);
+    masterDataService = new MasterDataService(ctx.tenantConnection, ctx.dataSource);
     requisitionService = new InventoryRequisitionService(
       ctx.tenantConnection,
       new StockRequisitionNumberGeneratorService(ctx.tenantConnection),

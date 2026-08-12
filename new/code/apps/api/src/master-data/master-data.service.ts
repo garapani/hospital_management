@@ -3,6 +3,9 @@ import { TenantConnectionService } from '../database/tenant-connection.service.j
 import { Department } from './entities/department.entity.js';
 import { Ward } from './entities/ward.entity.js';
 import { Bed } from './entities/bed.entity.js';
+import { DataSource } from 'typeorm';
+import { Role } from '../rbac/entities/role.entity.js';
+import { DepartmentCatalog } from './entities/department-catalog.entity.js';
 
 export interface CreateDepartmentInput {
   departmentCode: string;
@@ -29,7 +32,10 @@ export interface CreateBedInput {
 
 @Injectable()
 export class MasterDataService {
-  constructor(private readonly tenantConnection: TenantConnectionService) {}
+  constructor(
+    private readonly tenantConnection: TenantConnectionService,
+    private readonly dataSource: DataSource,
+  ) {}
 
   async createDepartment(input: CreateDepartmentInput): Promise<Department> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
@@ -221,5 +227,65 @@ export class MasterDataService {
       bed.isActive = true;
       return repository.save(bed);
     });
+  }
+
+  async listRoles(): Promise<Role[]> {
+    return this.dataSource.getRepository(Role).find({
+      order: { priority: 'DESC', name: 'ASC' },
+    });
+  }
+
+  async createRole(input: {
+    name: string;
+    description: string;
+    priority: number;
+    isCrossTenant?: boolean;
+    bypassesPermissionChecks?: boolean;
+  }): Promise<Role> {
+    const repository = this.dataSource.getRepository(Role);
+    const existing = await repository.findOne({ where: { name: input.name } });
+    if (existing) {
+      throw new ConflictException(`Role with name ${input.name} already exists`);
+    }
+
+    return repository.save(
+      repository.create({
+        name: input.name,
+        description: input.description,
+        priority: input.priority,
+        isCrossTenant: input.isCrossTenant ?? false,
+        bypassesPermissionChecks: input.bypassesPermissionChecks ?? false,
+        isActive: true,
+      }),
+    );
+  }
+
+  async listDepartmentCatalogs(): Promise<DepartmentCatalog[]> {
+    return this.dataSource.getRepository(DepartmentCatalog).find({
+      order: { departmentName: 'ASC' }
+    });
+  }
+
+  async createDepartmentCatalog(input: {
+    departmentCode: string;
+    departmentName: string;
+    description: string | null;
+    isAppointmentApplicable: boolean;
+  }): Promise<DepartmentCatalog> {
+    const repository = this.dataSource.getRepository(DepartmentCatalog);
+    const existing = await repository.findOne({ where: { departmentCode: input.departmentCode } });
+    if (existing) {
+      throw new ConflictException(`Catalog Department code ${input.departmentCode} already exists`);
+    }
+
+    return repository.save(
+      repository.create({
+        departmentCode: input.departmentCode,
+        departmentName: input.departmentName,
+        description: input.description,
+        isAppointmentApplicable: input.isAppointmentApplicable,
+        isActive: true,
+      })
+    );
   }
 }
