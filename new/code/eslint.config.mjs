@@ -131,6 +131,12 @@ export default [
               allow: { to: { element: { type: 'domain:patients' } } },
             },
             {
+              // Tenant provisioning seeds a new tenant's initial departments from the global
+              // department catalog (master-data's DepartmentCatalog/Department entities).
+              from: { element: { type: 'domain:tenants' } },
+              allow: { to: { element: { type: 'domain:master-data' } } },
+            },
+            {
               from: { element: { type: 'domain:orders' } },
               allow: { to: { element: { type: 'domain:patients' } } },
             },

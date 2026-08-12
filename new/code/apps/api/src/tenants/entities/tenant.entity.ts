@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Entity, PrimaryColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryColumn, ManyToMany, JoinTable } from 'typeorm';
+import { Role } from '../../rbac/entities/role.entity.js';
 
 @Entity('tenants')
 export class Tenant {
@@ -22,4 +23,12 @@ export class Tenant {
 
   @Column({ type: 'varchar', nullable: true })
   createdBy!: string | null;
+
+  @ManyToMany(() => Role)
+  @JoinTable({
+    name: 'tenant_roles',
+    joinColumn: { name: 'tenantId', referencedColumnName: 'hospitalId' },
+    inverseJoinColumn: { name: 'roleId', referencedColumnName: 'id' }
+  })
+  roles!: Role[];
 }

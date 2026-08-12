@@ -13,7 +13,12 @@ describe('TenantsService (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'tenant_svc' });
-    tenantsService = new TenantsService(ctx.dataSource, new TenantProvisioningService(ctx.dataSource));
+    tenantsService = new TenantsService(
+      ctx.dataSource,
+      new TenantProvisioningService(ctx.dataSource),
+      ctx.tenantConnection,
+      ctx.tenantContext,
+    );
   });
 
   afterAll(async () => {

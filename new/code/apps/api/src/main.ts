@@ -15,6 +15,15 @@ async function bootstrap() {
   // Without this, OnModuleDestroy hooks (e.g. closing the database connection pools) never run
   // on SIGTERM/SIGINT — only when something explicitly calls app.close() (as tests do).
   app.enableShutdownHooks();
+  // Defaults to allowing localhost:4200 and its subdomains; CORS_ORIGIN is a comma-separated allow-list
+  // for any other origin (e.g. a real deployed frontend) once one exists.
+  const corsOrigins = process.env['CORS_ORIGIN'] 
+    ? process.env['CORS_ORIGIN'].split(',') 
+    : [/^http:\/\/(.*?\.)?localhost:4200$/];
+  app.enableCors({
+    origin: corsOrigins,
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id'],
+  });
   const globalPrefix = 'api';
   app.setGlobalPrefix(globalPrefix);
 

@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
 import { DataSource, In } from 'typeorm';
+import { TenantContextService } from '@hospital/tenant-context';
 import { Account } from './entities/account.entity.js';
 import { AccountRole } from './entities/account-role.entity.js';
 import { Role } from '../rbac/entities/role.entity.js';
@@ -30,6 +31,7 @@ export class AccountsService {
   constructor(
     private readonly tenantConnection: TenantConnectionService,
     private readonly dataSource: DataSource,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async createStaffAccount(input: CreateStaffAccountInput): Promise<Account> {
@@ -125,6 +127,22 @@ export class AccountsService {
     return this.tenantConnection.runInTenantSchema((manager) =>
       manager.getRepository(Account).find({ take: limit, skip: offset, order: { createdAt: 'ASC' } }),
     );
+  }
+
+  async listRoles(): Promise<Role[]> {
+    const query = this.dataSource.getRepository(Role)
+      .createQueryBuilder('role')
+      .orderBy('role.priority', 'DESC')
+      .addOrderBy('role.name', 'ASC');
+
+    const tenantId = this.tenantContext.getTenantId();
+    if (tenantId) {
+      query
+        .innerJoin('tenant_roles', 'tr', 'tr."roleId" = role.id')
+        .where('tr."tenantId" = :tenantId', { tenantId });
+    }
+
+    return query.getMany();
   }
 
   async getAccountWithRoles(accountId: string): Promise<AccountWithRoles | null> {

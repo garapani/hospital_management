@@ -41,6 +41,13 @@ export class AccountsController {
     return toAccountResponse(account);
   }
 
+  @Get('roles')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async listRoles() {
+    const roles = await this.accountsService.listRoles();
+    return roles.map(r => ({ name: r.name, description: r.description }));
+  }
+
   @Get()
   @RequirePermission(REQUIRED_PERMISSION)
   async list(@Query('limit') limit?: string, @Query('offset') offset?: string) {

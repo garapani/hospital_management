@@ -96,7 +96,7 @@ export async function setupTenantTestContext(
   const tenantContext = new TenantContextService();
   const tenantConnection = new TenantConnectionService(dataSource, tenantContext);
   const tenantProvisioning = new TenantProvisioningService(dataSource);
-  const accountsService = new AccountsService(tenantConnection, dataSource);
+  const accountsService = new AccountsService(tenantConnection, dataSource, tenantContext);
   const sequence = { next: 1 };
 
   const ctx = buildContext(
