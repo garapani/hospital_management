@@ -1,0 +1,39 @@
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { AuditService } from './audit.service.js';
+import { SearchAuditRecordsDto } from './dto/search-audit-records.dto.js';
+import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
+import { PaginatedResponseDto } from '@hospital/pagination';
+import { AuditRecord } from './entities/audit-record.entity.js';
+
+@Controller('audit')
+@UseGuards(PermissionGuard)
+export class AuditController {
+  constructor(private readonly auditService: AuditService) {}
+
+  @Get()
+  @RequirePermission('reporting.read')
+  async search(@Query() query: SearchAuditRecordsDto): Promise<PaginatedResponseDto<AuditRecord>> {
+    const { data, total, page, limit } = await this.auditService.getAuditRecords(
+      {
+        startDate: query.startDate ? new Date(query.startDate) : undefined,
+        endDate: query.endDate ? new Date(query.endDate) : undefined,
+        tableName: query.tableName,
+        action: query.action,
+        changedByAccountId: query.changedByAccountId,
+        correlationId: query.correlationId,
+      },
+      query.page,
+      query.limit,
+    );
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+}
