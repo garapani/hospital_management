@@ -5,6 +5,7 @@ import { LabRequisitionNumberGeneratorService } from './lab-requisition-number-g
 import { OrdersService } from '../orders/orders.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
+import { InvoicesService } from '../billing/invoices.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -25,6 +26,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
       ctx.tenantConnection,
       new LabRequisitionNumberGeneratorService(ctx.tenantConnection),
       catalogService,
+      new InvoicesService(ctx.tenantConnection),
     );
     ordersService = new OrdersService(ctx.tenantConnection);
     patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection));

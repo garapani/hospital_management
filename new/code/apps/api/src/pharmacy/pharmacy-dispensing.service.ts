@@ -221,8 +221,7 @@ export class PharmacyDispensingService {
       const savedDispensing = await dispensingRepository.save(dispensing);
       
       // Mark order item as completed and trigger auto-billing
-      const orderItem = await manager.getRepository(OrderItem).findOne({ where: { id: savedDispensing.orderItemId } });
-      if (orderItem && orderItem.status !== 'Completed') {
+      if (orderItem.status !== 'Completed') {
         orderItem.status = 'Completed';
         orderItem.completedBy = input.dispensedBy;
         orderItem.completedAt = new Date();
@@ -240,5 +239,4 @@ export class PharmacyDispensingService {
       return savedDispensing;
     });
   }
-}
 }
