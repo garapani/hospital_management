@@ -4,6 +4,7 @@ import { OrdersService } from './orders.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 import { CompleteOrderItemDto } from './dto/complete-order-item.dto.js';
 import { CancelOrderItemDto } from './dto/cancel-order-item.dto.js';
+import { SearchOrdersDto } from './dto/search-orders.dto.js';
 
 @Controller('orders')
 @UseGuards(PermissionGuard)
@@ -18,8 +19,8 @@ export class OrdersController {
 
   @Get()
   @RequirePermission('order.read')
-  async list(@Query('patientId') patientId?: string, @Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.ordersService.list(patientId, page ? Number(page) : undefined, limit ? Number(limit) : undefined);
+  async list(@Query() query: SearchOrdersDto) {
+    return this.ordersService.list(query);
   }
 
   @Get(':id')

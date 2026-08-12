@@ -96,6 +96,7 @@
     "@hospital/audit-emitter": "workspace:*",
     "@hospital/auth-guards": "workspace:*",
     "@hospital/observability": "workspace:*",
+    "@hospital/pagination": "workspace:*",
     "@hospital/tenant-context": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",

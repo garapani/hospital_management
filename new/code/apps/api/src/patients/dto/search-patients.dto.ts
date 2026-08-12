@@ -1,7 +1,7 @@
-export class SearchPatientsDto {
+import { PaginationQueryDto } from '@hospital/pagination';
+
+export class SearchPatientsDto extends PaginationQueryDto {
   q?: string;
   phoneNumber?: string;
   patientNo?: string;
-  page?: number;
-  limit?: number;
 }

@@ -7,6 +7,7 @@ import { PatientKin } from './entities/patient-kin.entity.js';
 import { CreatePatientDto } from './dto/create-patient.dto.js';
 import { UpdatePatientDto } from './dto/update-patient.dto.js';
 import { SearchPatientsDto } from './dto/search-patients.dto.js';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 @Injectable()
 export class PatientsService {
@@ -78,11 +79,7 @@ export class PatientsService {
     });
   }
 
-  async findAll(query: SearchPatientsDto): Promise<{ data: Patient[]; total: number; page: number; limit: number }> {
-    const page = Number(query.page ?? 1);
-    const limit = Number(query.limit ?? 20);
-    const skip = (page - 1) * limit;
-
+  async findAll(query: SearchPatientsDto): Promise<PaginatedResponseDto<Patient>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const qb = manager
         .createQueryBuilder(Patient, 'p')
@@ -103,10 +100,9 @@ export class PatientsService {
         );
       }
 
-      qb.orderBy('p.createdAt', 'DESC').skip(skip).take(limit);
+      qb.orderBy('p.createdAt', 'DESC');
 
-      const [data, total] = await qb.getManyAndCount();
-      return { data, total, page, limit };
+      return paginate(qb, query);
     });
   }
 

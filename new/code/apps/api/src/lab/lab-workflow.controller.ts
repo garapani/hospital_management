@@ -6,6 +6,7 @@ import { CollectSampleDto } from './dto/collect-sample.dto.js';
 import { EnterResultDto } from './dto/enter-result.dto.js';
 import { VerifyRequisitionDto } from './dto/verify-requisition.dto.js';
 import { CancelRequisitionDto } from './dto/cancel-requisition.dto.js';
+import { SearchLabRequisitionsDto } from './dto/search-lab-requisitions.dto.js';
 
 @Controller('lab/requisitions')
 @UseGuards(PermissionGuard)
@@ -20,8 +21,8 @@ export class LabWorkflowController {
 
   @Get()
   @RequirePermission('lab.read')
-  async listByOrderItem(@Query('orderItemId') orderItemId: string) {
-    return this.labWorkflowService.listByOrderItem(orderItemId);
+  async listByOrderItem(@Query() query: SearchLabRequisitionsDto) {
+    return this.labWorkflowService.listByOrderItem(query);
   }
 
   @Get(':id')

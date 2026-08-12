@@ -4,6 +4,8 @@ import { InventoryProcurementService } from './inventory-procurement.service.js'
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto.js';
 import { RecordGoodsReceiptDto } from './dto/record-goods-receipt.dto.js';
 import { CancelPurchaseOrderDto } from './dto/cancel-purchase-order.dto.js';
+import { SearchPurchaseOrdersDto } from './dto/search-purchase-orders.dto.js';
+import { SearchStockBalancesDto } from './dto/search-stock-balances.dto.js';
 
 @Controller('inventory/purchase-orders')
 @UseGuards(PermissionGuard)
@@ -18,14 +20,14 @@ export class InventoryProcurementController {
 
   @Get()
   @RequirePermission('inventory.read')
-  async listByVendor(@Query('vendorId') vendorId: string) {
-    return this.inventoryProcurementService.listByVendor(vendorId);
+  async listByVendor(@Query() query: SearchPurchaseOrdersDto) {
+    return this.inventoryProcurementService.listByVendor(query);
   }
 
   @Get('stock-balances')
   @RequirePermission('inventory.read')
-  async listStockBalances(@Query('itemId') itemId?: string) {
-    return this.inventoryProcurementService.listStockBalances(itemId);
+  async listStockBalances(@Query() query: SearchStockBalancesDto) {
+    return this.inventoryProcurementService.listStockBalances(query);
   }
 
   @Get(':id')

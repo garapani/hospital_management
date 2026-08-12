@@ -3,6 +3,7 @@ import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { InventoryRequisitionService } from './inventory-requisition.service.js';
 import { CreateStockRequisitionDto } from './dto/create-stock-requisition.dto.js';
 import { CancelStockRequisitionDto } from './dto/cancel-stock-requisition.dto.js';
+import { SearchStockRequisitionsDto } from './dto/search-stock-requisitions.dto.js';
 
 @Controller('inventory/requisitions')
 @UseGuards(PermissionGuard)
@@ -17,8 +18,8 @@ export class InventoryRequisitionController {
 
   @Get()
   @RequirePermission('inventory.read')
-  async listByDepartment(@Query('departmentId') departmentId: string) {
-    return this.inventoryRequisitionService.listByDepartment(departmentId);
+  async listByDepartment(@Query() query: SearchStockRequisitionsDto) {
+    return this.inventoryRequisitionService.listByDepartment(query);
   }
 
   @Get(':id')
