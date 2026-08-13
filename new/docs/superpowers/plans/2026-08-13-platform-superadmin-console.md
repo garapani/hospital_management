@@ -129,7 +129,7 @@ Add cleanup for the inserted row to the existing `afterAll`, immediately before 
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pnpm exec nx test api --testPathPattern=tenants.controller`
+Run: `pnpm exec nx test api --testPathPatterns=tenants.controller`
 Expected: FAIL — `Cannot find module './platform-tenant.js'`.
 
 - [ ] **Step 3: Create the constant**
@@ -197,7 +197,7 @@ Add the refusal as the first statement in `suspendTenant` (currently line 109):
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `pnpm exec nx test api --testPathPattern=tenants.controller`
+Run: `pnpm exec nx test api --testPathPatterns=tenants.controller`
 Expected: PASS, including the four pre-existing provisioning/duplicate cases.
 
 - [ ] **Step 6: Typecheck**
@@ -322,7 +322,7 @@ describe('seed-initial-setup (integration)', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm exec nx test api --testPathPattern=seed-initial-setup`
+Run: `pnpm exec nx test api --testPathPatterns=seed-initial-setup`
 Expected: FAIL — `seed-initial-setup.js` exports neither `seedPlatformAdmin` nor `seedDemoHospitalAdmin`.
 
 - [ ] **Step 3: Rewrite the seed's config and account functions**
@@ -500,7 +500,7 @@ Expected: no matches. If `seed-initial-setup-runner.ts` references it, repoint i
 
 - [ ] **Step 7: Run the test to verify it passes**
 
-Run: `pnpm exec nx test api --testPathPattern=seed-initial-setup`
+Run: `pnpm exec nx test api --testPathPatterns=seed-initial-setup`
 Expected: PASS — all three cases.
 
 - [ ] **Step 8: Run the full backend suite and typecheck**
@@ -534,57 +534,46 @@ git commit -m "feat: seed platform admin into __platform, demo admin into demo t
 
 Append to `libs/auth/src/lib/auth.service.spec.ts`, inside the existing top-level `describe`:
 
+`setSession` is **private** on `AuthService` (`auth.service.ts:123`), so a test cannot seed a session
+directly. Establish it the way the existing spec already does — `login()` plus an
+`HttpTestingController` flush — and reuse the `fakeAccessToken(overrides)` helper already defined at
+the top of the file (`auth.service.spec.ts:12-28`). Add no new helper. The file's existing
+`beforeEach` already provides `service`, `httpMock`, `API_BASE_URL` (`https://gateway.example/api`)
+and `TENANT_ID`, and its `afterEach` calls `httpMock.verify()`.
+
 ```typescript
   describe('isPlatformAdmin', () => {
+    function loginAsTenant(hospitalId: string): void {
+      service.login('jdoe', 'secret').subscribe();
+      httpMock
+        .expectOne('https://gateway.example/api/auth/login')
+        .flush({
+          accessToken: fakeAccessToken({ hospitalId }),
+          refreshToken: 'refresh-token-1',
+        });
+    }
+
     it('is true when the token claims the platform tenant', () => {
-      const service = TestBed.inject(AuthService);
-      service.setSession(
-        signClaims({ hospitalId: '__platform', permissions: [] }),
-        'refresh-token',
-      );
+      loginAsTenant('__platform');
 
       expect(service.isPlatformAdmin()).toBe(true);
     });
 
     it('is false when the token claims a hospital tenant', () => {
-      const service = TestBed.inject(AuthService);
-      service.setSession(
-        signClaims({ hospitalId: 'demo', permissions: [] }),
-        'refresh-token',
-      );
+      loginAsTenant('demo');
 
       expect(service.isPlatformAdmin()).toBe(false);
     });
 
     it('is false when unauthenticated', () => {
-      const service = TestBed.inject(AuthService);
-
       expect(service.isPlatformAdmin()).toBe(false);
     });
   });
 ```
 
-Reuse the file's existing TestBed setup and token-building helper. If the existing spec builds tokens inline rather than through a `signClaims` helper, add one at the top of the file matching the shape already used there:
-
-```typescript
-  function signClaims(overrides: Partial<AccessTokenClaims>): string {
-    const claims: AccessTokenClaims = {
-      sub: 'test-user',
-      hospitalId: 'demo',
-      roles: [],
-      permissions: [],
-      type: 'access',
-      exp: Math.floor(Date.now() / 1000) + 3600,
-      ...overrides,
-    };
-    const encode = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, '');
-    return `${encode({ alg: 'none' })}.${encode(claims)}.sig`;
-  }
-```
-
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm nx test auth --testPathPattern=auth.service`
+Run: `pnpm nx test auth --testPathPatterns=auth.service`
 Expected: FAIL — `service.isPlatformAdmin is not a function`.
 
 - [ ] **Step 3: Create the constant**
@@ -629,7 +618,7 @@ export * from './lib/platform-tenant.js';
 
 - [ ] **Step 6: Run the test to verify it passes**
 
-Run: `pnpm nx test auth --testPathPattern=auth.service`
+Run: `pnpm nx test auth --testPathPatterns=auth.service`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -727,7 +716,7 @@ import { authGuard, permissionGuard, platformGuard, tenantGuard } from './auth.g
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `pnpm nx test auth --testPathPattern=auth.guard`
+Run: `pnpm nx test auth --testPathPatterns=auth.guard`
 Expected: FAIL — `platformGuard` is not exported.
 
 - [ ] **Step 3: Implement the guards**
@@ -764,7 +753,7 @@ export const tenantGuard: CanActivateFn = () => {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `pnpm nx test auth --testPathPattern=auth.guard`
+Run: `pnpm nx test auth --testPathPatterns=auth.guard`
 Expected: PASS — all six new cases plus the two pre-existing `authGuard` cases.
 
 - [ ] **Step 5: Commit**
@@ -1144,7 +1133,7 @@ Replace `apps/staff-console/src/app/app.routes.ts` entirely:
 
 ```typescript
 import { Route } from '@angular/router';
-import { authGuard, permissionGuard, platformGuard, tenantGuard, Permissions } from '@org/auth';
+import { permissionGuard, platformGuard, tenantGuard, Permissions } from '@org/auth';
 import { AppShell } from './shell/app-shell.js';
 import { PlatformShell } from './shell/platform-shell.js';
 import { Login } from './login/login.js';
@@ -1197,10 +1186,12 @@ export const appRoutes: Route[] = [
   {
     path: '',
     component: AppShell,
-    canActivate: [authGuard, tenantGuard],
+    // tenantGuard alone: its first branch already redirects unauthenticated users to /login, so
+    // pairing it with authGuard would be redundant and asymmetric with the platform tree above.
+    canActivate: [tenantGuard],
     // Angular reuses this parent route node across sibling-to-sibling navigation within the
     // shell and, by default, skips re-running canActivate when the node itself is reused —
-    // 'always' forces the guards to actually run on every navigation, not just first entry.
+    // 'always' forces the guard to actually run on every navigation, not just first entry.
     runGuardsAndResolvers: 'always',
     children: [
       {
@@ -1325,7 +1316,7 @@ describe('rootRedirectGuard', () => {
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `pnpm nx test staff-console --testPathPattern=root-redirect`
+Run: `pnpm nx test staff-console --testPathPatterns=root-redirect`
 Expected: FAIL — `root-redirect.guard.js` does not exist.
 
 - [ ] **Step 4: Implement the guard**
@@ -1352,7 +1343,7 @@ export const rootRedirectGuard: CanActivateFn = () => {
 
 - [ ] **Step 5: Run the tests and build**
 
-Run: `pnpm nx test staff-console --testPathPattern=root-redirect && pnpm nx run staff-console:build`
+Run: `pnpm nx test staff-console --testPathPatterns=root-redirect && pnpm nx run staff-console:build`
 Expected: PASS both.
 
 - [ ] **Step 6: Fix stale internal links to moved routes**
@@ -1463,7 +1454,7 @@ describe('Login redirect', () => {
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `pnpm nx test staff-console --testPathPattern=login`
+Run: `pnpm nx test staff-console --testPathPatterns=login`
 Expected: FAIL — the platform case navigates to `/billing/invoices`.
 
 - [ ] **Step 4: Make the redirect audience-aware**
@@ -1486,7 +1477,7 @@ Replace the `case 'success':` branch (currently lines 78-80) with:
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `pnpm nx test staff-console --testPathPattern=login`
+Run: `pnpm nx test staff-console --testPathPatterns=login`
 Expected: PASS.
 
 - [ ] **Step 6: Run the whole frontend suite and build**
