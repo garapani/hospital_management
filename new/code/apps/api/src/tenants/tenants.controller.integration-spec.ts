@@ -18,6 +18,12 @@ describe('TenantsController (integration)', () => {
   let app: INestApplication;
   let ctx: TenantTestContext;
   let adminToken: string;
+  // Set by the "omits the reserved platform tenant" test iff it inserted the __platform row
+  // itself. __platform is a single global literal (unlike the test_tenant_ctrl_% namespace), and
+  // Task 2 seeds a real __platform tenant into this same database — afterAll must only delete the
+  // row this suite created, never a pre-existing one, or it breaks platform-admin login on
+  // developer machines that already ran the seed.
+  let platformTenantInsertedByThisSuite = false;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'tenant_ctrl', seedRbac: true });
@@ -49,7 +55,14 @@ describe('TenantsController (integration)', () => {
       await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "${name}" CASCADE`);
       await ctx.dataSource.query(`DROP ROLE IF EXISTS "${name}"`);
     }
-    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, [PLATFORM_TENANT_ID]);
+    // Conditional on purpose: __platform is a single global literal, not a test_tenant_ctrl_%
+    // namespaced row. Task 2 seeds a real __platform tenant into this same database, so an
+    // unconditional delete here would silently remove a developer's real platform-tenant row and
+    // break their platform-admin login until they re-seed. Only remove it if this suite is the one
+    // that inserted it.
+    if (platformTenantInsertedByThisSuite) {
+      await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, [PLATFORM_TENANT_ID]);
+    }
     await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_ctrl_%'`);
     await teardownTenantTestContext(ctx);
     await app.close();
@@ -140,12 +153,19 @@ describe('TenantsController (integration)', () => {
   });
 
   it('omits the reserved platform tenant from the tenant list', async () => {
-    await ctx.dataSource.query(
+    const inserted: { hospitalId: string }[] = await ctx.dataSource.query(
       `INSERT INTO tenants ("hospitalId", "hospitalName", status, "createdBy")
        VALUES ($1, 'Platform', 'active', 'test')
-       ON CONFLICT ("hospitalId") DO NOTHING`,
+       ON CONFLICT ("hospitalId") DO NOTHING
+       RETURNING "hospitalId"`,
       [PLATFORM_TENANT_ID],
     );
+    // ON CONFLICT DO NOTHING returns no row when __platform already existed (e.g. seeded by
+    // Task 2's provisioning) — only claim ownership of the row when we actually created it, so
+    // afterAll knows whether it's safe to delete.
+    if (inserted.length > 0) {
+      platformTenantInsertedByThisSuite = true;
+    }
 
     const response = await request(app.getHttpServer())
       .get('/tenants')
