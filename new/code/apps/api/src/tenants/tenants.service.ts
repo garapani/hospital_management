@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, Not } from 'typeorm';
 import { TenantContextService } from '@hospital/tenant-context';
 import { Tenant } from './entities/tenant.entity.js';
 import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
@@ -7,6 +7,7 @@ import { Role } from '../rbac/entities/role.entity.js';
 import { DepartmentCatalog } from '../master-data/entities/department-catalog.entity.js';
 import { Department } from '../master-data/entities/department.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { PLATFORM_TENANT_ID } from './platform-tenant.js';
 
 const SAFE_HOSPITAL_ID = /^[a-z0-9_]+$/;
 
@@ -30,6 +31,12 @@ export class TenantsService {
   async provisionTenant(input: ProvisionTenantInput): Promise<Tenant> {
     if (!SAFE_HOSPITAL_ID.test(input.hospitalId)) {
       throw new BadRequestException(`Invalid hospitalId format: ${input.hospitalId}`);
+    }
+
+    if (input.hospitalId === PLATFORM_TENANT_ID) {
+      throw new BadRequestException(
+        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be provisioned`,
+      );
     }
 
     const repository = this.dataSource.getRepository(Tenant);
@@ -98,14 +105,26 @@ export class TenantsService {
   }
 
   async listTenants(): Promise<Tenant[]> {
-    return this.dataSource.getRepository(Tenant).find({ order: { createdAt: 'ASC' } });
+    // The platform tenant is not a hospital — it must never surface in a customer listing.
+    return this.dataSource.getRepository(Tenant).find({
+      where: { hospitalId: Not(PLATFORM_TENANT_ID) },
+      order: { createdAt: 'ASC' },
+    });
   }
 
   async getTenant(hospitalId: string): Promise<Tenant | null> {
+    if (hospitalId === PLATFORM_TENANT_ID) {
+      return null;
+    }
     return this.dataSource.getRepository(Tenant).findOne({ where: { hospitalId } });
   }
 
   async suspendTenant(hospitalId: string): Promise<Tenant> {
+    if (hospitalId === PLATFORM_TENANT_ID) {
+      throw new BadRequestException(
+        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be suspended`,
+      );
+    }
     const repository = this.dataSource.getRepository(Tenant);
     const tenant = await repository.findOne({ where: { hospitalId } });
     if (!tenant) {

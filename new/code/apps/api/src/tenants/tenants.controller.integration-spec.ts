@@ -12,6 +12,7 @@ import {
 } from '../testing/tenant-test-context.js';
 import { signTestToken } from '../testing/test-jwt.js';
 import { resolveJwtSecret } from '../auth/jwt-secret.js';
+import { PLATFORM_TENANT_ID } from './platform-tenant.js';
 
 describe('TenantsController (integration)', () => {
   let app: INestApplication;
@@ -48,6 +49,7 @@ describe('TenantsController (integration)', () => {
       await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "${name}" CASCADE`);
       await ctx.dataSource.query(`DROP ROLE IF EXISTS "${name}"`);
     }
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, [PLATFORM_TENANT_ID]);
     await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_ctrl_%'`);
     await teardownTenantTestContext(ctx);
     await app.close();
@@ -126,5 +128,47 @@ describe('TenantsController (integration)', () => {
       .set('Authorization', `Bearer ${adminToken}`);
     expect(reactivated.status).toBe(200);
     expect(reactivated.body.status).toBe('active');
+  });
+
+  it('rejects provisioning the reserved platform tenant id with 400', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/tenants')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ hospitalId: PLATFORM_TENANT_ID, hospitalName: 'Should Not Exist' });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('omits the reserved platform tenant from the tenant list', async () => {
+    await ctx.dataSource.query(
+      `INSERT INTO tenants ("hospitalId", "hospitalName", status, "createdBy")
+       VALUES ($1, 'Platform', 'active', 'test')
+       ON CONFLICT ("hospitalId") DO NOTHING`,
+      [PLATFORM_TENANT_ID],
+    );
+
+    const response = await request(app.getHttpServer())
+      .get('/tenants')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(200);
+    const ids = response.body.map((t: { hospitalId: string }) => t.hospitalId);
+    expect(ids).not.toContain(PLATFORM_TENANT_ID);
+  });
+
+  it('returns 404 for a direct fetch of the reserved platform tenant', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/tenants/${PLATFORM_TENANT_ID}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(404);
+  });
+
+  it('refuses to suspend the reserved platform tenant with 400', async () => {
+    const response = await request(app.getHttpServer())
+      .patch(`/tenants/${PLATFORM_TENANT_ID}/suspend`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(400);
   });
 });
