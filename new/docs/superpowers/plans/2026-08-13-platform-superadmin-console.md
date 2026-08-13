@@ -232,7 +232,6 @@ Create `apps/api/src/database/seed-initial-setup.integration-spec.ts`:
 
 ```typescript
 import { TenantContextService } from '@hospital/tenant-context';
-import { PLATFORM_TENANT_ID } from '../tenants/platform-tenant.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { TenantConnectionService } from './tenant-connection.service.js';
 import { seedPlatformAdmin, seedDemoHospitalAdmin } from './seed-initial-setup.js';
@@ -242,26 +241,34 @@ import {
   TenantTestContext,
 } from '../testing/tenant-test-context.js';
 
+// These specs run against the SAME database as local dev. Both seeded tenants are therefore
+// redirected to test_-scoped ids via env overrides, and teardown drops only those — the real
+// __platform schema and its Super Admin must survive a test run untouched.
+const TEST_PLATFORM_TENANT = 'test_seed_split_platform';
+const TEST_DEMO_TENANT = 'test_seed_split_demo';
+
 describe('seed-initial-setup (integration)', () => {
   let ctx: TenantTestContext;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'seed_split', seedRbac: true });
-    process.env['MASTER_ADMIN_TENANT_ID'] = 'test_seed_split_demo';
+    process.env['PLATFORM_ADMIN_TENANT_ID'] = TEST_PLATFORM_TENANT;
+    process.env['MASTER_ADMIN_TENANT_ID'] = TEST_DEMO_TENANT;
     await seedPlatformAdmin(ctx.dataSource);
     await seedDemoHospitalAdmin(ctx.dataSource);
   });
 
   afterAll(async () => {
+    delete process.env['PLATFORM_ADMIN_TENANT_ID'];
     delete process.env['MASTER_ADMIN_TENANT_ID'];
-    for (const id of [PLATFORM_TENANT_ID, 'test_seed_split_demo']) {
+    for (const id of [TEST_PLATFORM_TENANT, TEST_DEMO_TENANT]) {
       await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${id}" CASCADE`);
       await ctx.dataSource.query(`DROP ROLE IF EXISTS "tenant_${id}"`);
     }
-    await ctx.dataSource.query(
-      `DELETE FROM tenants WHERE "hospitalId" IN ($1, 'test_seed_split_demo')`,
-      [PLATFORM_TENANT_ID],
-    );
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" IN ($1, $2)`, [
+      TEST_PLATFORM_TENANT,
+      TEST_DEMO_TENANT,
+    ]);
     await teardownTenantTestContext(ctx);
   });
 
@@ -281,20 +288,20 @@ describe('seed-initial-setup (integration)', () => {
   }
 
   it('creates the superadmin account inside the platform tenant with the Super Admin role', async () => {
-    const account = await accountsIn(PLATFORM_TENANT_ID).find('superadmin');
+    const account = await accountsIn(TEST_PLATFORM_TENANT).find('superadmin');
 
     expect(account).not.toBeNull();
     expect(account?.roles.map((r) => r.name)).toContain('Super Admin');
   });
 
   it('does not create a Super Admin inside the demo hospital tenant', async () => {
-    const account = await accountsIn('test_seed_split_demo').find('superadmin');
+    const account = await accountsIn(TEST_DEMO_TENANT).find('superadmin');
 
     expect(account).toBeNull();
   });
 
   it('creates the demo hospital administrator with the Hospital Admin role', async () => {
-    const account = await accountsIn('test_seed_split_demo').find('demoadmin');
+    const account = await accountsIn(TEST_DEMO_TENANT).find('demoadmin');
 
     expect(account).not.toBeNull();
     expect(account?.roles.map((r) => r.name)).toContain('Hospital Admin');
@@ -304,8 +311,8 @@ describe('seed-initial-setup (integration)', () => {
   // hospital user's queries never reach the platform schema. Asserted here against the new tenant
   // because this is the seam the whole design leans on.
   it('does not expose the platform admin account to a hospital tenant lookup', async () => {
-    const fromDemo = await accountsIn('test_seed_split_demo').find('superadmin');
-    const fromPlatform = await accountsIn(PLATFORM_TENANT_ID).find('superadmin');
+    const fromDemo = await accountsIn(TEST_DEMO_TENANT).find('superadmin');
+    const fromPlatform = await accountsIn(TEST_PLATFORM_TENANT).find('superadmin');
 
     expect(fromDemo).toBeNull();
     expect(fromPlatform).not.toBeNull();
@@ -342,7 +349,11 @@ interface SeededAdminConfig {
 /** The platform operator. Lives in the reserved system tenant, never inside a customer hospital. */
 function getPlatformAdminConfig(): SeededAdminConfig {
   return {
-    tenantId: PLATFORM_TENANT_ID,
+    // Overridable ONLY so integration tests can seed into a test-scoped tenant: specs run against
+    // the same database as local dev, so a test must never touch the real __platform schema.
+    // Tenant reservation in TenantsService keys off the PLATFORM_TENANT_ID constant, never this
+    // variable, so overriding it cannot un-reserve the real id.
+    tenantId: process.env['PLATFORM_ADMIN_TENANT_ID'] ?? PLATFORM_TENANT_ID,
     hospitalName: 'Platform Administration',
     username: process.env['PLATFORM_ADMIN_USERNAME'] ?? 'superadmin',
     email: process.env['PLATFORM_ADMIN_EMAIL'] ?? 'superadmin@hospital.local',
