@@ -89,6 +89,27 @@
           "command": "tsx src/database/migrate-tenants.ts",
           "cwd": "apps/api"
         }
+      },
+      "seed-rbac": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "tsx src/database/seed-rbac-catalog-runner.ts",
+          "cwd": "apps/api"
+        }
+      },
+      "seed-initial-setup": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "tsx src/database/seed-initial-setup-runner.ts",
+          "cwd": "apps/api"
+        }
+      },
+      "seed-all": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "tsx src/database/seed-rbac-catalog-runner.ts && tsx src/database/seed-initial-setup-runner.ts",
+          "cwd": "apps/api"
+        }
       }
     }
   },

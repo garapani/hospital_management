@@ -106,3 +106,63 @@ Join the Nx community:
 - [LinkedIn](https://www.linkedin.com/company/nrwl)
 - [YouTube](https://www.youtube.com/@nxdevtools)
 - [Blog](https://nx.dev/blog)
+
+---
+
+## 🏥 Hospital Management System - Initial Setup
+
+### Quick Start
+
+After setting up your database and running migrations, seed the initial data:
+
+```bash
+# Run migrations
+npx nx migrate-tenants api
+
+# Seed RBAC catalog and create master admin account
+npx nx seed-all api
+```
+
+### Default Credentials
+
+After running the initial setup script, you can login with:
+
+- **Username:** `superadmin`
+- **Password:** `SuperAdmin@123!`
+- **Email:** `superadmin@hospital.local`
+- **Display Name:** `System Administrator`
+
+⚠️ **IMPORTANT:** Change the default password immediately after first login!
+
+### Customizing Admin Credentials
+
+You can override the default credentials using environment variables:
+
+```bash
+MASTER_ADMIN_USERNAME=admin \
+MASTER_ADMIN_EMAIL=admin@hospital.local \
+MASTER_ADMIN_PASSWORD=YourSecurePassword123! \
+MASTER_ADMIN_DISPLAY_NAME="Hospital Administrator" \
+npx nx seed-initial-setup api
+```
+
+### Available Roles
+
+The system comes pre-configured with 14 roles:
+- Super Admin
+- Hospital Admin
+- Receptionist
+- Doctor
+- Nurse
+- Pharmacist
+- Lab Technician
+- Radiology Technician
+- Billing Specialist
+- Inventory Manager
+- Ward Manager
+- Accountant
+- HR Manager
+- IT Support
+
+For more details, see [SETUP.md](/workspace/new/code/apps/api/SETUP.md)
+
