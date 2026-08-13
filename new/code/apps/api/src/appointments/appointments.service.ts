@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Appointment } from './entities/appointment.entity.js';
 import { Department } from '../master-data/entities/department.entity.js';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
+import { SearchAppointmentsDto } from './dto/search-appointments.dto.js';
 
 export interface CreateAppointmentInput {
   patientId?: string;
@@ -133,27 +135,27 @@ export class AppointmentsService {
     });
   }
 
-  async list(filters: AppointmentFilters): Promise<Appointment[]> {
+  async list(query: SearchAppointmentsDto): Promise<PaginatedResponseDto<Appointment>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const qb = manager.getRepository(Appointment).createQueryBuilder('appointment');
       
-      if (filters.date) {
-        qb.andWhere('appointment.appointmentDate = :date', { date: filters.date });
+      if (query.date) {
+        qb.andWhere('appointment.appointmentDate = :date', { date: query.date });
       }
-      if (filters.doctorId) {
-        qb.andWhere('appointment.doctorId = :doctorId', { doctorId: filters.doctorId });
+      if (query.doctorId) {
+        qb.andWhere('appointment.doctorId = :doctorId', { doctorId: query.doctorId });
       }
-      if (filters.departmentId) {
-        qb.andWhere('appointment.departmentId = :departmentId', { departmentId: filters.departmentId });
+      if (query.departmentId) {
+        qb.andWhere('appointment.departmentId = :departmentId', { departmentId: query.departmentId });
       }
-      if (filters.status) {
-        qb.andWhere('appointment.status = :status', { status: filters.status });
+      if (query.status) {
+        qb.andWhere('appointment.status = :status', { status: query.status });
       }
       
       qb.orderBy('appointment.appointmentDate', 'ASC');
       qb.addOrderBy('appointment.appointmentTime', 'ASC');
       
-      return qb.getMany();
+      return paginate(qb, query);
     });
   }
   

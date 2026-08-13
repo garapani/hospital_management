@@ -12,6 +12,7 @@ import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { LabRequisition } from '../lab/entities/lab-requisition.entity.js';
 import { RadiologyRequisition } from '../radiology/entities/radiology-requisition.entity.js';
 import { PharmacyDispensing } from '../pharmacy/entities/pharmacy-dispensing.entity.js';
+import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 
 export interface CreateInvoiceItemInput {
   description: string;
@@ -203,21 +204,16 @@ export class InvoicesService {
     });
   }
 
-  async list(
-    patientId?: string,
-    page = 1,
-    limit = 20,
-  ): Promise<{ data: Invoice[]; total: number; page: number; limit: number }> {
-    const cappedLimit = Math.min(limit, 100);
-    const skip = (page - 1) * cappedLimit;
+  async list(query: PaginationQueryDto & { patientId?: string }): Promise<PaginatedResponseDto<Invoice>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      const [data, total] = await manager.getRepository(Invoice).findAndCount({
-        where: patientId ? { patientId } : {},
-        order: { createdAt: 'DESC' },
-        skip,
-        take: cappedLimit,
-      });
-      return { data, total, page, limit: cappedLimit };
+      const qb = manager.getRepository(Invoice).createQueryBuilder('invoice');
+      
+      if (query.patientId) {
+        qb.andWhere('invoice.patientId = :patientId', { patientId: query.patientId });
+      }
+
+      qb.orderBy('invoice.createdAt', 'DESC');
+      return paginate(qb, query);
     });
   }
 

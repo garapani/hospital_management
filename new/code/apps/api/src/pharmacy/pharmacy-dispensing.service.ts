@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Not, QueryFailedError } from 'typeorm';
+import { Not, QueryFailedError, SelectQueryBuilder } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { InventoryCatalogService } from '../inventory/inventory-catalog.service.js';
@@ -9,6 +9,8 @@ import { StockBatch } from '../inventory/entities/stock-batch.entity.js';
 import { StockBalance } from '../inventory/entities/stock-balance.entity.js';
 import { StockTransaction } from '../inventory/entities/stock-transaction.entity.js';
 import { InvoicesService } from '../billing/invoices.service.js';
+import { ListPharmacyDispensingDto } from './dto/list-pharmacy-dispensing.dto.js';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 export interface CreateDispensingInput {
   orderItemId: string;
@@ -100,6 +102,24 @@ export class PharmacyDispensingService {
     return this.tenantConnection.runInTenantSchema((manager) =>
       manager.getRepository(PharmacyDispensing).find({ where: { orderItemId }, order: { createdAt: 'DESC' } }),
     );
+  }
+
+  async findAll(query: ListPharmacyDispensingDto): Promise<PaginatedResponseDto<PharmacyDispensing>> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const qb = manager.getRepository(PharmacyDispensing).createQueryBuilder('dispensing')
+        .leftJoinAndSelect('dispensing.orderItem', 'orderItem')
+        .orderBy('dispensing.createdAt', 'DESC');
+
+      if (query.orderItemId) {
+        qb.andWhere('dispensing.orderItemId = :orderItemId', { orderItemId: query.orderItemId });
+      }
+
+      if (query.status) {
+        qb.andWhere('dispensing.status = :status', { status: query.status });
+      }
+
+      return paginate(qb, { page: query.page, limit: query.limit });
+    });
   }
 
   async cancel(id: string, cancelReason?: string): Promise<PharmacyDispensing> {

@@ -4,6 +4,7 @@ import { PharmacyDispensingService } from './pharmacy-dispensing.service.js';
 import { CreatePharmacyDispensingDto } from './dto/create-pharmacy-dispensing.dto.js';
 import { DispenseDrugDto } from './dto/dispense-drug.dto.js';
 import { CancelPharmacyDispensingDto } from './dto/cancel-pharmacy-dispensing.dto.js';
+import { ListPharmacyDispensingDto } from './dto/list-pharmacy-dispensing.dto.js';
 
 @Controller('pharmacy/dispensings')
 @UseGuards(PermissionGuard)
@@ -18,8 +19,8 @@ export class PharmacyDispensingController {
 
   @Get()
   @RequirePermission('pharmacy.read')
-  async listByOrderItem(@Query('orderItemId') orderItemId: string) {
-    return this.pharmacyDispensingService.listByOrderItem(orderItemId);
+  async findAll(@Query() query: ListPharmacyDispensingDto) {
+    return this.pharmacyDispensingService.findAll(query);
   }
 
   @Get(':id')

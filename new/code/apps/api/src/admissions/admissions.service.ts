@@ -7,6 +7,8 @@ import { DischargeSummary } from './entities/discharge-summary.entity.js';
 import { Bed } from '../master-data/entities/bed.entity.js';
 import { TriageEntry } from '../clinical/triage/entities/triage-entry.entity.js';
 import { Patient } from '../patients/entities/patient.entity.js';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
+import { SearchAdmissionsDto } from './dto/search-admissions.dto.js';
 
 export interface CreateAdmissionInput {
   patientId: string;
@@ -155,6 +157,25 @@ export class AdmissionsService {
         throw new NotFoundException(`Admission ${id} not found`);
       }
       return admission;
+    });
+  }
+
+  async list(query: SearchAdmissionsDto): Promise<PaginatedResponseDto<Admission>> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager.getRepository(Admission).createQueryBuilder('admission');
+      
+      if (query.wardId) {
+        qb.andWhere('admission.wardId = :wardId', { wardId: query.wardId });
+      }
+      if (query.patientId) {
+        qb.andWhere('admission.patientId = :patientId', { patientId: query.patientId });
+      }
+      if (query.status) {
+        qb.andWhere('admission.status = :status', { status: query.status });
+      }
+      
+      qb.orderBy('admission.admissionDate', 'DESC');
+      return paginate(qb, query);
     });
   }
 

@@ -6,6 +6,7 @@ import { MarkScannedDto } from './dto/mark-scanned.dto.js';
 import { EnterReportDto } from './dto/enter-report.dto.js';
 import { VerifyRadiologyRequisitionDto } from './dto/verify-radiology-requisition.dto.js';
 import { CancelRadiologyRequisitionDto } from './dto/cancel-radiology-requisition.dto.js';
+import { ListRadiologyRequisitionDto } from './dto/list-radiology-requisition.dto.js';
 
 @Controller('radiology/requisitions')
 @UseGuards(PermissionGuard)
@@ -20,8 +21,8 @@ export class RadiologyWorkflowController {
 
   @Get()
   @RequirePermission('radiology.read')
-  async listByOrderItem(@Query('orderItemId') orderItemId: string) {
-    return this.radiologyWorkflowService.listByOrderItem(orderItemId);
+  async findAll(@Query() query: ListRadiologyRequisitionDto) {
+    return this.radiologyWorkflowService.findAll(query);
   }
 
   @Get(':id')

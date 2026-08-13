@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { AuditRecord } from './entities/audit-record.entity.js';
 import { Between, FindOptionsWhere } from 'typeorm';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
+import { SearchAuditRecordsDto } from './dto/search-audit-records.dto.js';
 
 export interface AuditRecordFilter {
   startDate?: Date;
@@ -16,11 +18,7 @@ export interface AuditRecordFilter {
 export class AuditService {
   constructor(private readonly tenantConnection: TenantConnectionService) {}
 
-  async getAuditRecords(
-    filter: AuditRecordFilter,
-    page = 1,
-    limit = 50,
-  ): Promise<{ data: AuditRecord[]; total: number; page: number; limit: number }> {
+  async getAuditRecords(filter: AuditRecordFilter, query: SearchAuditRecordsDto): Promise<PaginatedResponseDto<AuditRecord>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(AuditRecord);
 
@@ -37,14 +35,11 @@ export class AuditService {
       if (filter.changedByAccountId) where.changedByAccountId = filter.changedByAccountId;
       if (filter.correlationId) where.correlationId = filter.correlationId;
 
-      const [data, total] = await repository.findAndCount({
-        where,
-        order: { occurredAt: 'DESC' },
-        take: limit,
-        skip: (page - 1) * limit,
-      });
-
-      return { data, total, page, limit };
+      const qb = repository.createQueryBuilder('audit');
+      qb.where(where);
+      qb.orderBy('audit.occurredAt', 'DESC');
+      
+      return paginate(qb, query);
     });
   }
 }
