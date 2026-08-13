@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Not, QueryFailedError, SelectQueryBuilder } from 'typeorm';
+import { Not, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { InventoryCatalogService } from '../inventory/inventory-catalog.service.js';
