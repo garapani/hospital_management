@@ -3,6 +3,7 @@ import { TenantConnectionService } from '../database/tenant-connection.service.j
 import { Deposit } from './entities/deposit.entity.js';
 import { Patient } from '../patients/entities/patient.entity.js';
 import { roundMoney } from './money.util.js';
+import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 
 export interface CreateDepositInput {
   patientId: string;
@@ -42,21 +43,16 @@ export class DepositsService {
     });
   }
 
-  async list(
-    patientId?: string,
-    page = 1,
-    limit = 20,
-  ): Promise<{ data: Deposit[]; total: number; page: number; limit: number }> {
-    const cappedLimit = Math.min(limit, 100);
-    const skip = (page - 1) * cappedLimit;
+  async list(query: PaginationQueryDto & { patientId?: string }): Promise<PaginatedResponseDto<Deposit>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      const [data, total] = await manager.getRepository(Deposit).findAndCount({
-        where: patientId ? { patientId } : {},
-        order: { receivedAt: 'DESC' },
-        skip,
-        take: cappedLimit,
-      });
-      return { data, total, page, limit: cappedLimit };
+      const qb = manager.getRepository(Deposit).createQueryBuilder('deposit');
+      
+      if (query.patientId) {
+        qb.andWhere('deposit.patientId = :patientId', { patientId: query.patientId });
+      }
+
+      qb.orderBy('deposit.receivedAt', 'DESC');
+      return paginate(qb, query);
     });
   }
 

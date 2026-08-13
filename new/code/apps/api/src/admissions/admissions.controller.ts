@@ -5,6 +5,7 @@ import { CreateAdmissionDto } from './dto/create-admission.dto.js';
 import { TransferAdmissionDto } from './dto/transfer-admission.dto.js';
 import { DischargeAdmissionDto } from './dto/discharge-admission.dto.js';
 import { CreateDischargeSummaryDto, UpdateDischargeSummaryDto, ReviewDischargeSummaryDto } from './dto/discharge-summary.dto.js';
+import { SearchAdmissionsDto } from './dto/search-admissions.dto.js';
 
 @Controller('admissions')
 @UseGuards(PermissionGuard)
@@ -19,7 +20,13 @@ export class AdmissionsController {
 
   @Get()
   @RequirePermission('admission.read')
-  async list(@Query('wardId') wardId?: string) {
+  async list(@Query() query: SearchAdmissionsDto) {
+    return this.admissionsService.list(query);
+  }
+
+  @Get('active')
+  @RequirePermission('admission.read')
+  async listActive(@Query('wardId') wardId?: string) {
     return this.admissionsService.listActive(wardId);
   }
 

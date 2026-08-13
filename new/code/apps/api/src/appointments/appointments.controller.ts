@@ -1,7 +1,8 @@
 import { Controller, Get, Post, Put, Body, Param, Query, HttpCode, HttpStatus, UseGuards, BadRequestException } from '@nestjs/common';
 import { RequirePermission, PermissionGuard } from '@hospital/auth-guards';
 import { AppointmentsService } from './appointments.service.js';
-import type { CreateAppointmentInput, UpdateAppointmentInput, AppointmentFilters } from './appointments.service.js';
+import type { CreateAppointmentInput, UpdateAppointmentInput } from './appointments.service.js';
+import { SearchAppointmentsDto } from './dto/search-appointments.dto.js';
 
 @Controller('appointments')
 @UseGuards(PermissionGuard)
@@ -16,14 +17,8 @@ export class AppointmentsController {
 
   @Get()
   @RequirePermission('appointment.read')
-  async listAppointments(
-    @Query('date') date?: string,
-    @Query('doctorId') doctorId?: string,
-    @Query('departmentId') departmentId?: string,
-    @Query('status') status?: string,
-  ) {
-    const filters: AppointmentFilters = { date, doctorId, departmentId, status };
-    return this.appointmentsService.list(filters);
+  async listAppointments(@Query() query: SearchAppointmentsDto) {
+    return this.appointmentsService.list(query);
   }
 
   @Get(':id')

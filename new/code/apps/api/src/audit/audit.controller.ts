@@ -13,7 +13,7 @@ export class AuditController {
   @Get()
   @RequirePermission('reporting.read')
   async search(@Query() query: SearchAuditRecordsDto): Promise<PaginatedResponseDto<AuditRecord>> {
-    const { data, total, page, limit } = await this.auditService.getAuditRecords(
+    return this.auditService.getAuditRecords(
       {
         startDate: query.startDate ? new Date(query.startDate) : undefined,
         endDate: query.endDate ? new Date(query.endDate) : undefined,
@@ -22,18 +22,7 @@ export class AuditController {
         changedByAccountId: query.changedByAccountId,
         correlationId: query.correlationId,
       },
-      query.page,
-      query.limit,
+      query,
     );
-
-    return {
-      data,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
   }
 }

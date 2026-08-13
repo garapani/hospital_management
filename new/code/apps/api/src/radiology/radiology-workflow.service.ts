@@ -6,6 +6,8 @@ import { RadiologyRequisition } from './entities/radiology-requisition.entity.js
 import { RadiologyRequisitionNumberGeneratorService } from './radiology-requisition-number-generator.service.js';
 import { RadiologyCatalogService } from './radiology-catalog.service.js';
 import { InvoicesService } from '../billing/invoices.service.js';
+import { ListRadiologyRequisitionDto } from './dto/list-radiology-requisition.dto.js';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 export interface CreateRequisitionInput {
   orderItemId: string;
@@ -95,6 +97,28 @@ export class RadiologyWorkflowService {
     return this.tenantConnection.runInTenantSchema((manager) =>
       manager.getRepository(RadiologyRequisition).find({ where: { orderItemId }, order: { createdAt: 'DESC' } }),
     );
+  }
+
+  async findAll(query: ListRadiologyRequisitionDto): Promise<PaginatedResponseDto<RadiologyRequisition>> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const qb = manager.getRepository(RadiologyRequisition).createQueryBuilder('requisition')
+        .leftJoinAndSelect('requisition.orderItem', 'orderItem')
+        .orderBy('requisition.createdAt', 'DESC');
+
+      if (query.orderItemId) {
+        qb.andWhere('requisition.orderItemId = :orderItemId', { orderItemId: query.orderItemId });
+      }
+
+      if (query.status) {
+        qb.andWhere('requisition.status = :status', { status: query.status });
+      }
+
+      if (query.imagingItemId) {
+        qb.andWhere('requisition.imagingItemId = :imagingItemId', { imagingItemId: query.imagingItemId });
+      }
+
+      return paginate(qb, { page: query.page, limit: query.limit });
+    });
   }
 
   async markScanned(id: string, scannedBy: string): Promise<RadiologyRequisition> {
