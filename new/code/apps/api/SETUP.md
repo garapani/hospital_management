@@ -46,18 +46,26 @@ Or directly:
 tsx src/database/seed-rbac-catalog-runner.ts
 ```
 
-### 3. Seed Initial Setup (Master Admin Account)
+### 3. Seed Initial Setup (Platform Admin + Demo Hospital Admin)
 
 This script creates:
 - Essential roles (if not already present)
 - Essential permissions (if not already present)
-- Master admin account with Super Admin role
+- Platform administrator account, in the reserved `__platform` tenant, with the Super Admin role
+- Demo hospital administrator account, in the `demo` tenant, with the Hospital Admin role
 
-**Environment Variables (optional):**
-- `MASTER_ADMIN_USERNAME` (default: superadmin)
-- `MASTER_ADMIN_EMAIL` (default: superadmin@hospital.local)
-- `MASTER_ADMIN_PASSWORD` (default: SuperAdmin@123!)
-- `MASTER_ADMIN_DISPLAY_NAME` (default: System Administrator)
+**Environment Variables (optional) — platform administrator:**
+- `PLATFORM_ADMIN_USERNAME` (default: superadmin)
+- `PLATFORM_ADMIN_EMAIL` (default: superadmin@hospital.local)
+- `PLATFORM_ADMIN_PASSWORD` (default: SuperAdmin@123!)
+- `PLATFORM_ADMIN_DISPLAY_NAME` (default: System Administrator)
+- `PLATFORM_ADMIN_TENANT_ID` (default: `__platform`)
+
+**Environment Variables (optional) — demo hospital administrator:**
+- `MASTER_ADMIN_USERNAME` (default: demoadmin)
+- `MASTER_ADMIN_EMAIL` (default: demoadmin@hospital.local)
+- `MASTER_ADMIN_PASSWORD` (default: DemoAdmin@123!)
+- `MASTER_ADMIN_DISPLAY_NAME` (default: Demo Hospital Administrator)
 
 **Command:**
 ```bash
@@ -96,12 +104,23 @@ npx nx seed-all api
 
 ## Default Credentials
 
-After running the initial setup, you can login with:
+After running the initial setup, two accounts exist:
 
-- **Username:** `superadmin` (or value of `MASTER_ADMIN_USERNAME`)
-- **Password:** `SuperAdmin@123!` (or value of `MASTER_ADMIN_PASSWORD`)
+**Platform administrator** (reserved `__platform` tenant, Super Admin role — reaches the platform
+console):
+- **Username:** `superadmin` (or value of `PLATFORM_ADMIN_USERNAME`)
+- **Password:** `SuperAdmin@123!` (or value of `PLATFORM_ADMIN_PASSWORD`)
 
-⚠️ **IMPORTANT:** Change the default password immediately after first login!
+**Demo hospital administrator** (`demo` tenant, Hospital Admin role — scoped to that tenant only):
+- **Username:** `demoadmin` (or value of `MASTER_ADMIN_USERNAME`)
+- **Password:** `DemoAdmin@123!` (or value of `MASTER_ADMIN_PASSWORD`)
+
+⚠️ **IMPORTANT:** Change both default passwords immediately after first login!
+
+In local dev, log in to the platform console at `http://admin.localhost:4200` (the `admin`
+subdomain resolves to the `__platform` tenant) and to hospital-facing screens at
+`http://localhost:4200`. All major browsers resolve `*.localhost` to `127.0.0.1` with no
+hosts-file entry required.
 
 ## Idempotency
 
@@ -109,6 +128,11 @@ All seeding scripts are idempotent:
 - Running them multiple times won't create duplicate data
 - Existing records are skipped
 - Safe to run during development or testing
+
+⚠️ **Upgrading an existing database:** because existing records are skipped, re-running this seed
+against a database created before the platform-admin/demo-admin split will **not** relocate an
+existing `superadmin` account out of the `demo` tenant — that stale account keeps full access to
+`demo`'s data. Wipe and reseed the database rather than seeding in place.
 
 ## Troubleshooting
 

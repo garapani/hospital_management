@@ -125,18 +125,52 @@ npx nx seed-all api
 
 ### Default Credentials
 
-After running the initial setup script, you can login with:
+The seed script creates **two** accounts:
+
+**Platform administrator** — reserved `__platform` tenant, role `Super Admin`, can reach the
+platform console:
 
 - **Username:** `superadmin`
 - **Password:** `SuperAdmin@123!`
 - **Email:** `superadmin@hospital.local`
 - **Display Name:** `System Administrator`
 
-⚠️ **IMPORTANT:** Change the default password immediately after first login!
+**Demo hospital administrator** — `demo` tenant, role `Hospital Admin`, scoped to that tenant's
+data only:
+
+- **Username:** `demoadmin`
+- **Password:** `DemoAdmin@123!`
+- **Email:** `demoadmin@hospital.local`
+- **Display Name:** `Demo Hospital Administrator`
+
+⚠️ **IMPORTANT:** Change both default passwords immediately after first login!
+
+In local dev, the platform console is served at `http://admin.localhost:4200` (the `admin`
+subdomain resolves to the `__platform` tenant); hospital users log in at `http://localhost:4200`.
+All major browsers resolve `*.localhost` to `127.0.0.1` with no hosts-file entry required.
+
+⚠️ **Upgrading an existing database:** the seed skips accounts that already exist, so re-running it
+against a database seeded before this two-account split will **not** relocate an existing
+`superadmin` out of the `demo` tenant — that stale account keeps full access to `demo`'s data and
+still cannot reach the platform console. Wipe and reseed the database instead of running the seed
+in place.
 
 ### Customizing Admin Credentials
 
-You can override the default credentials using environment variables:
+You can override the default credentials using environment variables.
+
+Platform administrator:
+
+```bash
+PLATFORM_ADMIN_USERNAME=admin \
+PLATFORM_ADMIN_EMAIL=admin@hospital.local \
+PLATFORM_ADMIN_PASSWORD=YourSecurePassword123! \
+PLATFORM_ADMIN_DISPLAY_NAME="Platform Administrator" \
+PLATFORM_ADMIN_TENANT_ID=__platform \
+npx nx seed-initial-setup api
+```
+
+Demo hospital administrator:
 
 ```bash
 MASTER_ADMIN_USERNAME=admin \
