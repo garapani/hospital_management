@@ -40,7 +40,16 @@ scope, not merely lower priority.
       Lab/Radiology/Pharmacy order item completes. For a real registration→visit→bill flow this
       needs either a subscriber (matching the `@hospital/audit-emitter` in-process pattern already
       used for Reporting/Audit) or a billing-staff UI that reads completed order items. See
-      `mvp-status.md`'s "No automatic charge-capture" discrepancy.
+      `mvp-status.md`'s "No automatic charge-capture" discrepancy. **Update (2026-08-14):** a prior
+      pass had actually built a version of this — `InvoicesService.autoChargeForCompletedOrder()` plus
+      a dead `OrderBillingAdapter` interface — but it queried catalog tables/columns
+      (`lab_catalog_tests`, `radiology_catalog_items`, `inventory_catalog_items`, a `price`/`salePrice`
+      column) that don't exist anywhere in the schema; it has almost certainly never produced a real
+      invoice, silently swallowed by its own `catch`. Removed outright during the 2026-08-14
+      architecture-review fix pass (`Development-Standards.md` §23) rather than half-fixed, since
+      making it real needs a pricing data model on the Lab/Radiology/Inventory catalog entities first —
+      a product decision, not just an architecture fix. This item is still exactly as undone as it
+      looks; don't be misled by code that resembles a working implementation.
 - [ ] **Appointments: doctor-schedule/availability endpoints.** Create/list/get/update/cancel exist;
       PRD's module description implies "doctor schedules" as in-scope. Confirm with the human
       partner whether the MVP workflow actually needs scheduling-conflict checks or just appointment
@@ -259,6 +268,29 @@ Follow the PRD's own phase ordering as-is:
   investigated further; worth a focused look, possibly related to the structured-logging change
   (Phase 3 item 6) altering how/whether `Logger.prototype.error` gets called once
   `app.useLogger()` is active.
+- [x] **Resolved**: `database/migrations/0008-create-patient-tables.ts`'s migration `name` had a
+  malformed timestamp suffix (`CreatePatientTables0008200000000008`, parsing to `8200000000008`),
+  sorting it dead-last among all 28 migrations instead of 8th and breaking every migration with an
+  FK on `patients` on any freshly-provisioned schema. Found and fixed during the 2026-08-14
+  architecture-review pass; see `Development-Standards.md` §23 for the full analysis.
+- **New gap, not yet its own item**: `apps/api/src/clinical/encounters/encounters.controller.integration-spec.ts`
+  hangs indefinitely when run in isolation — confirmed not a parallel-suite resource-contention
+  artifact (reproduces with a freshly-cleared Postgres session table). Found incidentally during the
+  2026-08-14 architecture-review pass; unrelated to that pass's changes (Clinical/Encounters wasn't
+  touched). Not investigated further — worth a focused look.
+- **New gap, not yet its own item**: `DepositsService.list`/`InvoicesService.list` both take a single
+  `PaginationQueryDto & { patientId?: string }` object, but `deposits.service.integration-spec.ts` and
+  `invoices.service.integration-spec.ts` call them with positional arguments
+  (`list(patientA.id)`, `list(patient.id, 1, 500)`) — a pre-existing signature mismatch, not something
+  the 2026-08-14 architecture-review pass touched. 3 tests fail as a result; confirmed unrelated via
+  sanity-check (same failures with that pass's changes fully reverted). Worth a focused look — either
+  the tests or the callers they meant to exercise are wrong.
+- [x] **Resolved**: `eslint.config.mjs`'s `boundaries/elements` never tagged `lab`/`radiology`/
+  `pharmacy`/`inventory` — the module-boundary lint had zero coverage of the four newest, most
+  cross-coupled domains, and (exploiting that blind spot) Lab/Radiology/Pharmacy were bypassing
+  `OrdersService` to mutate `OrderItem` directly and calling `InvoicesService` directly (an
+  unsanctioned, wrong-direction `→ billing` edge). Fixed during the 2026-08-14 architecture-review
+  pass; see `Development-Standards.md` §23.
 - [x] **Cross-cutting gap, resolved**: `InventoryProcurementService.listByVendor`,
   `InventoryRequisitionService.listByDepartment`, `LabWorkflowService.listByOrderItem`, and
   `OrdersService.list` used to silently return ALL tenant rows when their filter query param was

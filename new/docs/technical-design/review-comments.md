@@ -182,6 +182,81 @@ bare `amount <= 0` check silently passes for `undefined`/`NaN`, since that compa
 unfixed, in the pre-existing `recordPayment`/`cancel` methods — see `pending-tasks.md`'s
 "Dependencies worth calling out explicitly" for that follow-up item.
 
+### High: Module-boundary lint had zero coverage of Lab/Radiology/Pharmacy/Inventory, and they were exploiting exactly the violations it would have caught
+
+**Resolved:** `eslint.config.mjs`'s `boundaries/elements` now tags all four domains (manually applied
+by the human partner — `eslint.config.mjs` is protected from agent edits by `guard-config.sh`), with
+`lab`/`radiology`/`pharmacy → orders` and `pharmacy → inventory` sanctioned in the allow-list.
+Lab/Radiology/Pharmacy's workflow services now route order-item completion through
+`OrdersService.completeItemInTransaction()` instead of mutating `OrderItem` via raw repository access,
+and no longer depend on Billing at all (see the next finding). See `Development-Standards.md` §23.
+
+`Development-Standards.md` §7 documents the module-boundary system in detail, including a "verified
+negative example" proving it blocks an unsanctioned `patients → admissions` import — but Lab,
+Radiology, Pharmacy, and Inventory (§14–§18, all added after §7 was written) were never added to the
+`boundaries/elements` tag list, so `eslint-plugin-boundaries` had no opinion on anything in those four
+directories:
+
+- `new/code/eslint.config.mjs` (`boundaries/elements`, before this fix)
+- `new/code/apps/api/src/lab/lab-workflow.service.ts` (`verify()`, direct `OrderItem` repository mutation)
+- `new/code/apps/api/src/radiology/radiology-workflow.service.ts` (`verify()`, same pattern)
+- `new/code/apps/api/src/pharmacy/pharmacy-dispensing.service.ts` (`dispenseDrug()`, same pattern)
+
+### Medium: A dead, tenant-unsafe `OrderBillingAdapter` and a broken `autoChargeForCompletedOrder` masked that automatic charge-capture was never actually implemented
+
+**Resolved:** `InvoicesService.autoChargeForCompletedOrder()` and the `OrderBillingAdapter` interface
+plus its three implementations (`LabBillingAdapter`, `RadiologyBillingAdapter`,
+`PharmacyBillingAdapter`) were removed outright. See `Development-Standards.md` §23 and
+`pending-tasks.md`'s "Billing: automatic charge-capture" item, which was corrected rather than closed.
+
+`autoChargeForCompletedOrder()` queried `lab_catalog_tests`/`radiology_catalog_items`/
+`inventory_catalog_items` and a `price`/`salePrice` column — none of which exist; the real catalog
+tables (`lab_tests`, `radiology_imaging_items`, `inventory_items`) have no pricing column at all. Every
+call was silently swallowed by the calling workflow service's own `catch (billingError) {
+console.error(...) }`, so this had almost certainly never produced a real invoice. Separately, the
+never-wired `OrderBillingAdapter` implementations (landed in `c416f0a`, survived that commit's own
+revert of unrelated fallout) used a raw `dataSource.createQueryRunner()` with no
+`TenantConnectionService.runInTenantSchema()` wrapping — had they ever been wired up, they would have
+violated `Development-Standards.md` §2's tenant-isolation boundary:
+
+- `new/code/apps/api/src/billing/invoices.service.ts` (`autoChargeForCompletedOrder`, before removal)
+- `new/code/apps/api/src/billing/adapters/order-billing.adapter.ts` (before deletion)
+- `new/code/apps/api/src/lab/lab-billing.adapter.ts`, `radiology/radiology-billing.adapter.ts`,
+  `pharmacy/pharmacy-billing.adapter.ts` (before deletion)
+
+### High: A malformed migration timestamp broke tenant provisioning for every schema created after Patients
+
+**Resolved:** `database/migrations/0008-create-patient-tables.ts`'s `name` field corrected to
+`CreatePatientTables0008_2000000000005`. See `Development-Standards.md` §23 and `pending-tasks.md`'s
+"Dependencies worth calling out explicitly" for the full analysis.
+
+The migration's `name` (`CreatePatientTables0008200000000008`) parsed via TypeORM's
+`migrationClassName.slice(-13)` to `8200000000008` — sorting it dead last among all 28 tracked
+migrations instead of 8th, after every migration with a foreign key on `patients` (Appointments,
+Vitals, Orders, Billing, and more). Every freshly-provisioned tenant schema — including every
+integration test's — would fail partway through migration with `relation "patients" does not exist`,
+which looked exactly like a flaky local Postgres/Docker environment issue until traced to its root
+cause:
+
+- `new/code/apps/api/src/database/migrations/0008-create-patient-tables.ts` (`name`, before fix)
+- `new/code/apps/api/src/database/migrations/index.ts` (correct array order; irrelevant to execution
+  order, since TypeORM sorts by parsed timestamp, not array position or file-number prefix)
+
+### Low: Two duplicated implementations (number generators, FEFO stock decrement) collapsed into shared services
+
+**Resolved:** `database/sequence-number-generator.service.ts` and
+`inventory/fefo-stock-decrement.service.ts`. See `Development-Standards.md` §23.
+
+Six near-identical number-generator services (Patients, Lab, Radiology, Pharmacy, Inventory's
+purchase-order and stock-requisition sequences) and two identical FEFO locked-batch-walk
+implementations (Inventory's `fulfillRequisitionItem`, Pharmacy's `dispenseDrug`) — both examples of
+this codebase's documented "mirror-don't-extract" convention (§18) reaching a scale where a shared
+implementation paid for itself, particularly for the FEFO logic given its locking/tuple-shape
+correctness history (§17). Both extractions preserve every existing call site's public surface — the
+number-generator wrappers keep their original class/method names and constructor signatures entirely;
+the FEFO extraction required updating both callers' constructors (and their integration specs' manual
+construction) since the shared service needs the caller's own transaction `manager` passed in.
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.

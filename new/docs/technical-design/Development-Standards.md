@@ -948,3 +948,91 @@ never from a role name, which is renameable and not authoritative. A new screen 
 does not add an `@if` to a shared sidebar. Screens meaningful at both altitudes (`UserList`,
 `AuditList`) are routed into both trees pointing at the same component, unparameterized, because
 they already scope themselves by the JWT's tenant.
+
+## 23. Architecture review fixes (2026-08-14): module-boundary coverage, dead billing coupling, migration ordering, and two dedup extractions
+
+A senior-architect-level review of `apps/api` surfaced four issues, all fixed in the same pass.
+
+**Module-boundary lint had a blind spot covering exactly the modules that most needed it.**
+`eslint.config.mjs`'s `boundaries/elements` tagged 11 domains but never tagged `lab`, `radiology`,
+`pharmacy`, or `inventory` — the four newest, most cross-coupled domains (§14–§18) sat completely
+outside `eslint-plugin-boundaries`' coverage; nothing there could ever fail lint for a domain-to-domain
+violation. Fixed: all four are now tagged, with a `pharmacy → inventory` edge sanctioned in the
+allow-list (Pharmacy legitimately consumes Inventory's `stock_balances`/`stock_batches`, per §18) and
+`lab`/`radiology`/`pharmacy` each sanctioned to depend on `orders` (all three read `OrderItem` to
+validate/reclassify it in `createRequisition`/`createDispensing`). **This edit is manual, not agent-applied**
+— `eslint.config.mjs` is a protected config file per this repo's `guard-config.sh` hook, which has no
+programmatic bypass condition (its own "use explicit instruction" error text is aspirational, not
+implemented); the human partner applied the diff by hand.
+
+**Lab/Radiology/Pharmacy were bypassing `OrdersService` and calling Billing directly — both violations
+the new tagging would have caught.** Each workflow service's `verify()`/`dispenseDrug()` reached into
+`manager.getRepository(OrderItem)` directly to mark the order item Completed (violating §1's "inject the
+corresponding Service" rule), then called `InvoicesService.autoChargeForCompletedOrder()` directly — a
+`lab/radiology/pharmacy → billing` dependency in the wrong direction, never sanctioned, and one the
+codebase's own abandoned `OrderBillingAdapter` interface (`billing/adapters/`, added in `c416f0a` and
+never wired up) had already correctly identified as the wrong shape. Fixed two ways:
+
+- `OrdersService.completeItemInTransaction(manager, itemId, input)` — a new method taking a
+  caller-supplied `manager` so Lab/Radiology/Pharmacy can complete an order item in the *same*
+  transaction as their own status transition, through the service, without reaching into the
+  repository. The existing public `completeItem()` (the direct `/orders/:id/items/:itemId/complete`
+  endpoint) is unchanged — different caller, different semantics (strict Pending-only vs. this
+  method's idempotent already-Completed-is-a-no-op behavior, matching what each workflow service was
+  already tolerant of inline).
+- **`autoChargeForCompletedOrder()` was deleted, not rewired.** Investigation found it (and the dead
+  `OrderBillingAdapter` implementations) queried tables that don't exist —
+  `lab_catalog_tests`/`radiology_catalog_items`/`inventory_catalog_items` — the real tables are
+  `lab_tests`/`radiology_imaging_items`/`inventory_items`, none of which carry a price column at all.
+  This means auto-charge has almost certainly never produced a real invoice in this codebase's
+  history; every call was silently swallowed by its own `catch (billingError) { console.error(...) }`
+  block. Rather than half-fix a feature with no underlying pricing data model (a product/schema
+  decision, not an architecture fix), the dead code was removed outright and Lab/Radiology/Pharmacy
+  no longer depend on Billing at all. `pending-tasks.md`'s "Billing: automatic charge-capture" item
+  remains open and accurate — it was never actually done, despite code that looked like it existed.
+
+**Migration ordering was broken.** `database/migrations/0008-create-patient-tables.ts`'s `name` field
+(`CreatePatientTables0008200000000008`) had a malformed timestamp suffix: TypeORM's migration runner
+sorts by `name.slice(-13)` parsed as an integer (`MigrationExecutor.js`), and that migration's suffix
+parsed to `8200000000008` — sorting it **dead last** among all 28 migrations instead of 8th, after
+every migration with an FK on `patients` (Appointments, Vitals, Orders, Billing, ...). Fixed by
+correcting the `name` to `CreatePatientTables0008_2000000000005`, sorting it correctly between
+`CreateMasterDataTables` (`...004`) and `CreateAppointmentsTable` (`...006`). This was silently
+breaking tenant provisioning generally, not just test setup — confirmed by re-running the previously-failing
+suite (which had misleadingly looked like a Postgres/Docker environment issue) clean afterward.
+
+**Two extractions, both zero-call-site-change wrapper patterns, not signature changes:**
+
+- `database/sequence-number-generator.service.ts` (`SequenceNumberGeneratorService.generateNext(table,
+  prefix)`) replaces the identical SQL/padding/formatting logic duplicated across all 6 number
+  generators (Patients, Lab, Radiology, Pharmacy, Inventory's purchase-order and stock-requisition
+  sequences — six, not the four §18 named, since Patients and Inventory's second generator were missed
+  in that count). Each domain's generator class (`LabRequisitionNumberGeneratorService`, etc.) is now a
+  thin wrapper naming its own sequence table and default prefix; it still takes `TenantConnectionService`
+  in its constructor and constructs its own `SequenceNumberGeneratorService` internally, so **no DI
+  wiring or call site anywhere changed** — same class names, same public methods, same constructor
+  signatures.
+- `inventory/fefo-stock-decrement.service.ts` (`FefoStockDecrementService.decrementInTransaction(manager,
+  input)`) replaces the FEFO locked-batch-walk previously duplicated line-for-line between
+  `InventoryRequisitionService.fulfillRequisitionItem` and `PharmacyDispensingService.dispenseDrug`
+  (§17/§18) — same locking, same `UPDATE ... RETURNING` tuple-shape handling, now in one place. Unlike
+  the number-generator wrappers, this one **does** change both callers' constructors (a new
+  `FefoStockDecrementService` parameter) since it needs the caller's own `manager` to stay in the same
+  transaction — every manual-construction call site in integration specs was updated accordingly.
+  `pharmacy.module.ts` needed no change: it already imports `InventoryModule`, which now exports
+  `FefoStockDecrementService` alongside its other providers.
+
+New test coverage added as part of this pass: `radiology-workflow.service.integration-spec.ts` (7
+tests) and `pharmacy-dispensing.service.integration-spec.ts` (12 tests, including FEFO
+nearest-expiry-first ordering across split batches and null-expiry-consumed-last) — both modules
+previously had zero test files despite carrying the same correctness-critical locking logic Lab and
+Inventory needed fix-rounds for.
+
+**New gaps found, not yet their own items:** `encounters.controller.integration-spec.ts` hangs
+indefinitely when run in isolation (not a resource-contention artifact of running the full suite in
+parallel — confirmed by clearing all Postgres sessions and re-running alone) — unrelated to this
+pass's changes (Clinical/Encounters, not touched), not investigated further, worth a focused look.
+`InvoicesService.autoChargeForCompletedOrder` also reached into `Order`/`OrderItem` via raw repository
+access rather than `OrdersService` before its removal — moot now that the method is gone, but the same
+"Billing reaches into Orders directly" pattern still exists in the surviving `list()`/other methods
+and should be kept in mind if Billing ever needs Orders data again.
