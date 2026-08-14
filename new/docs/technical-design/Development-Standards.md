@@ -941,7 +941,7 @@ against the empty `__platform` schema. Do **not** add per-endpoint "is this a pl
 | Guard | `platformGuard` | `tenantGuard` |
 | URLs | `/platform/*` | `/clinical/*`, `/billing/*`, `/admin/*` |
 | Landing | `/platform/dashboard` | `/billing/invoices` |
-| Dev URL | `http://admin.localhost:4200` | `http://localhost:4200` |
+| Dev URL | `http://admin.localhost:4200` | `http://<hospitalId>.localhost:4200` (e.g. `demo.`) |
 
 Audience is decided by `AuthService.isPlatformAdmin`, derived from the JWT's `hospitalId` claim —
 never from a role name, which is renameable and not authoritative. A new screen picks a tree; it

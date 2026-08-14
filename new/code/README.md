@@ -145,9 +145,19 @@ data only:
 
 ⚠️ **IMPORTANT:** Change both default passwords immediately after first login!
 
-In local dev, the platform console is served at `http://admin.localhost:4200` (the `admin`
-subdomain resolves to the `__platform` tenant); hospital users log in at `http://localhost:4200`.
+In local dev, the tenant is taken from the subdomain:
+
+| URL | Tenant | Log in as |
+| --- | --- | --- |
+| `http://admin.localhost:4200` | `__platform` | `superadmin` |
+| `http://demo.localhost:4200` | `demo` | `demoadmin` |
+| `http://<hospitalId>.localhost:4200` | that hospital | one of its staff accounts |
+
 All major browsers resolve `*.localhost` to `127.0.0.1` with no hosts-file entry required.
+
+Bare `http://localhost:4200` still works and falls back to `environment.tenantId` (currently
+`demo`), but prefer the subdomain form: it is the mechanism production actually uses, and the bare
+host silently keeps meaning `demo` however many hospitals you provision.
 
 ⚠️ **Upgrading an existing database:** the seed skips accounts that already exist, so re-running it
 against a database seeded before this two-account split will **not** relocate an existing

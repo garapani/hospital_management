@@ -117,10 +117,15 @@ console):
 
 ⚠️ **IMPORTANT:** Change both default passwords immediately after first login!
 
-In local dev, log in to the platform console at `http://admin.localhost:4200` (the `admin`
-subdomain resolves to the `__platform` tenant) and to hospital-facing screens at
-`http://localhost:4200`. All major browsers resolve `*.localhost` to `127.0.0.1` with no
-hosts-file entry required.
+In local dev, the tenant is taken from the subdomain: the platform console at
+`http://admin.localhost:4200` (the `admin` subdomain resolves to the `__platform` tenant), the demo
+hospital at `http://demo.localhost:4200`, and any provisioned hospital at
+`http://<hospitalId>.localhost:4200`. All major browsers resolve `*.localhost` to `127.0.0.1` with
+no hosts-file entry required.
+
+Bare `http://localhost:4200` still works and falls back to `environment.tenantId` (currently
+`demo`), but prefer the subdomain form — it is the mechanism production uses, and the bare host
+silently keeps meaning `demo` however many hospitals you provision.
 
 ## Idempotency
 
