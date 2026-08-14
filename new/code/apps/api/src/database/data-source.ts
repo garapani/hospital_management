@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
+import { Logger } from '@nestjs/common';
 import { Role } from '../rbac/entities/role.entity.js';
 import { Permission } from '../rbac/entities/permission.entity.js';
 import { RolePermission } from '../rbac/entities/role-permission.entity.js';
@@ -55,8 +56,10 @@ import { StockRequisitionItem } from '../inventory/entities/stock-requisition-it
 import { PharmacyDispensing } from '../pharmacy/entities/pharmacy-dispensing.entity.js';
 import { PLATFORM_MIGRATIONS } from './migrations/index.js';
 
+const logger = new Logger('DataSource');
+
 export function createDataSource(): DataSource {
-  return new DataSource({
+  const ds = new DataSource({
     type: 'postgres',
     host: process.env['DB_HOST'] ?? 'localhost',
     port: Number(process.env['DB_PORT'] ?? 5433),
@@ -81,6 +84,38 @@ export function createDataSource(): DataSource {
       statement_timeout: Number(process.env['DB_STATEMENT_TIMEOUT_MS'] ?? 30000),
     },
   });
+
+  // Add periodic pool monitoring for observability
+  if (process.env['NODE_ENV'] !== 'test') {
+    const monitorPool = () => {
+      try {
+        const pool = (ds.driver as any).queryRunner?.connection?.pool;
+        if (pool) {
+          const pendingCount = pool.pendingCount ?? 0;
+          const activeCount = pool.activeCount ?? 0;
+          const idleCount = pool.idleCount ?? 0;
+          const totalCount = pool.max ?? Number(process.env['DB_POOL_MAX'] ?? 20);
+          
+          logger.log(`DB Pool Stats: active=${activeCount}, idle=${idleCount}, pending=${pendingCount}, max=${totalCount}`);
+          
+          // Log warning if pool is near exhaustion
+          if (pendingCount > 0 || activeCount > totalCount * 0.8) {
+            logger.warn(`DB Pool approaching capacity: ${activeCount}/${totalCount} active, ${pendingCount} pending`);
+          }
+        }
+      } catch (error) {
+        logger.debug('Unable to read pool stats', error);
+      }
+    };
+
+    // Monitor every 30 seconds after initialization
+    setTimeout(() => {
+      monitorPool();
+      setInterval(monitorPool, 30000);
+    }, 5000);
+  }
+
+  return ds;
 }
 
 export const dataSource = createDataSource();

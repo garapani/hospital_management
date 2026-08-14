@@ -3,9 +3,9 @@ import { CreateTenantAccountTables } from './0002-create-tenant-account-tables.j
 import { AddRolePermissionsUniqueConstraint } from './0003-add-role-permissions-unique-constraint.js';
 import { AddAccountRolesUniqueActiveAssignment } from './0004-add-account-roles-unique-active-assignment.js';
 import { CreateTenantsTable } from './0005-create-tenants-table.js';
-import { CreatePatientTables005 } from './005_create_patient_tables.js';
 import { CreateAuditRecordsTable } from './0006-create-audit-records-table.js';
 import { CreateMasterDataTables } from './0007-create-master-data-tables.js';
+import { CreatePatientTables0008 } from './0008-create-patient-tables.js';
 import { CreateAppointmentsTable0009 } from './0009-create-appointments-table.js';
 import { CreateVitalsTable0010 } from './0010-create-vitals-table.js';
 import { CreateEncounterTables011 } from './0011_create_encounter_tables.js';
@@ -43,7 +43,7 @@ export const TENANT_MIGRATIONS = [
   AddAccountRolesUniqueActiveAssignment,
   CreateAuditRecordsTable,
   CreateMasterDataTables,
-  CreatePatientTables005,
+  CreatePatientTables0008,
   CreateAppointmentsTable0009,
   CreateVitalsTable0010,
   CreateEncounterTables011,

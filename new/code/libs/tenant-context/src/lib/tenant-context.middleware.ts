@@ -1,4 +1,4 @@
-import { Injectable, NestMiddleware } from '@nestjs/common';
+import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
 import { NextFunction, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import type {} from '@hospital/auth-guards';
@@ -6,6 +6,8 @@ import { TenantContextService } from './tenant-context.service.js';
 
 @Injectable()
 export class TenantContextMiddleware implements NestMiddleware {
+  private readonly logger = new Logger(TenantContextMiddleware.name);
+  
   constructor(private readonly tenantContext: TenantContextService) {}
 
   use(req: Request, res: Response, next: NextFunction): void {
@@ -18,6 +20,12 @@ export class TenantContextMiddleware implements NestMiddleware {
     // two excluded routes, never on an authenticated one.
     const tenantId = req.authContext ? req.authContext.hospitalId : (req.header('x-tenant-id') || undefined);
     const accountId = req.authContext ? req.authContext.accountId : (req.header('x-account-id') || undefined);
+    
+    // Log when header fallback is used for security monitoring
+    if (!req.authContext && (req.header('x-tenant-id') || req.header('x-account-id'))) {
+      this.logger.warn(`Tenant context fallback to headers detected for path: ${req.path}, tenantId: ${req.header('x-tenant-id')}`);
+    }
+    
     const correlationId = req.header('x-correlation-id') || randomUUID();
 
     this.tenantContext.run({ tenantId, accountId, correlationId }, () =>

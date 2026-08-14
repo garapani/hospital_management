@@ -1,95 +1,71 @@
+```
 # Dependencies
 node_modules/
-# Left behind by a failed/interrupted install; never meant to be tracked.
-node_modules.corrupted-*/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Package manager stores
-.pnpm-store/
+# Build outputs
+dist/
+build/
+coverage/
+.nyc_output/
 
-# Secrets — never commit credentials, tokens or key material.
-# .env* covers the usual cases; the rest catch ad-hoc files people leave at the repo root.
+# Environment variables
 .env
 .env.local
 .env.*
-*credential*
-*credentials*
-# Misspelled variant ("credentails") — the transposed letters slip past the pattern above,
-# which is exactly why a filename pattern is a backstop and not a strategy. Keep secrets
-# out of the working tree entirely; do not rely on this list to catch them.
-*credentail*
-*secret*
-*.pem
-*.key
-*.p12
-*.pfx
-
-# Nested independent repositories.
-# `frontend/` is its own git repo (staff-console), not a submodule of this one.
-# `old/` is the legacy ASP.NET system kept on disk for reference only.
-/frontend/
-/old/
-
-# Agent/session scratch
-.claude/
-.superpowers/
 
 # IDE files
 .vscode/
 .idea/
-
-# Build artifacts
-dist/
-build/
-target/
-*.tsbuildinfo
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.swp
+*.swo
 
 # Logs
 *.log
 
 # Temporary files
 *.tmp
-*.swp
-*.swo
-
-# OS generated files
 .DS_Store
 Thumbs.db
 
-# Coverage reports
-coverage/
-htmlcov/
+# Python specific (if applicable)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
 .coverage
-
-# Testing
-.mypy_cache/
+htmlcov/
 .pytest_cache/
+.mypy_cache/
 
-# Archives
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+# Node.js specific (if applicable)
+node/
+npm/
+.npm
+.yarn-integrity
+.yarn/
+.cache/
+
+# TypeScript/JavaScript build
+*.tsbuildinfo
+.next/
+.nuxt/
+public/dist/
+
+# Database
+*.db
+*.db-journal
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+```

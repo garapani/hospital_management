@@ -29,7 +29,14 @@ const GLOBAL_RATE_LIMIT = process.env['NODE_ENV'] === 'test' ? 1_000_000 : 100;
   imports: [
     ThrottlerModule.forRootAsync({
       useFactory: () => ({
-        throttlers: [{ ttl: 60_000, limit: GLOBAL_RATE_LIMIT }],
+        // Role-based rate limiting: different limits for different user types
+        // Default throttler applies to all authenticated users
+        // Specific throttlers can be applied via @Throttle() decorator on routes
+        throttlers: [
+          { name: 'guest', ttl: 60000, limit: Number(process.env['RATE_LIMIT_GUEST'] ?? 20) },
+          { name: 'authenticated', ttl: 60000, limit: Number(process.env['RATE_LIMIT_AUTHENTICATED'] ?? 100) },
+          { name: 'admin', ttl: 60000, limit: Number(process.env['RATE_LIMIT_ADMIN'] ?? 1000) },
+        ],
         // Passing connection options (not a pre-built ioredis instance) so
         // ThrottlerStorageRedisService creates and owns the client itself — only then does its
         // onModuleDestroy() actually disconnect it (disconnectRequired is only set on the
@@ -37,7 +44,7 @@ const GLOBAL_RATE_LIMIT = process.env['NODE_ENV'] === 'test' ? 1_000_000 : 100;
         // here previously leaked an open connection on every app shutdown, hanging Jest.
         storage: new ThrottlerStorageRedisService({
           host: process.env['REDIS_HOST'] ?? 'localhost',
-          port: Number(process.env['REDIS_PORT'] ?? 6380),
+          port: Number(process.env['REDIS_PORT'] ?? 6379),
         }),
       }),
     }),
