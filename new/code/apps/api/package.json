@@ -5,7 +5,9 @@
   "type": "module",
   "nx": {
     "name": "api",
-    "tags": ["type:app"],
+    "tags": [
+      "type:app"
+    ],
     "targets": {
       "build": {
         "executor": "nx:run-commands",
@@ -83,31 +85,38 @@
           "passWithNoTests": true
         }
       },
+      "migrate": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/migrate.ts",
+          "cwd": "apps/api"
+        }
+      },
       "migrate-tenants": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "tsx src/database/migrate-tenants.ts",
+          "command": "SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/migrate-tenants.ts",
           "cwd": "apps/api"
         }
       },
       "seed-rbac": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "tsx src/database/seed-rbac-catalog-runner.ts",
+          "command": "SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-rbac-catalog-runner.ts",
           "cwd": "apps/api"
         }
       },
       "seed-initial-setup": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "tsx src/database/seed-initial-setup-runner.ts",
+          "command": "SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-initial-setup-runner.ts",
           "cwd": "apps/api"
         }
       },
       "seed-all": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "tsx src/database/seed-rbac-catalog-runner.ts && tsx src/database/seed-initial-setup-runner.ts",
+          "command": "SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/migrate.ts && SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-rbac-catalog-runner.ts && SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-initial-setup-runner.ts",
           "cwd": "apps/api"
         }
       }

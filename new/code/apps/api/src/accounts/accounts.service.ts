@@ -1,13 +1,13 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, In } from 'typeorm';
 import { TenantContextService } from '@hospital/tenant-context';
+import bcrypt from 'bcryptjs';
 import { Account } from './entities/account.entity.js';
 import { AccountRole } from './entities/account-role.entity.js';
 import { Role } from '../rbac/entities/role.entity.js';
 import { Permission } from '../rbac/entities/permission.entity.js';
 import { RolePermission } from '../rbac/entities/role-permission.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
-import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 
 const BCRYPT_SALT_ROUNDS = 12;
 
