@@ -1,15 +1,17 @@
 # Session Context
-Updated: 2026-08-14T13:07:40Z
-Session: a2fb5034-28bf-4c7a-9a10-0b96d3ad4bd7
+Updated: 2026-08-14T17:49:28Z
+Session: 3a19fc87-1834-45b4-b6b0-5a995f8f05e4
 
 ## Last Assistant Message
-Docs committed as `3741e67`. The code changes (`OrdersService`, adapter removal, migration fix, dedup services, new test specs) are still uncommitted in the working tree — say the word when you want that as the feature commit.
+Good — single word for both is the simpler, more common pattern (one name to maintain, no "brand vs. product" split to explain in every pitch deck).
+
+Two things that'd actually need doing to make this real rather than just decided:
+
+1. **Docs/config** — `new/docs/technical-design/PRD.md` currently has no product name at all (just "Hospital Management EMR" / legacy "Danphe EMR" references), and `new/code/package.json` likely uses a generic workspace name. Want me to thread "Vaidya" through those now?
 
 ## Git State
 Branch: main
-Uncommitted changes: 30
- .../api/src/radiology/radiology-billing.adapter.ts |  51 -------
- ...diology-requisition-number-generator.service.ts |  26 +---
- .../src/radiology/radiology-workflow.service.ts    |  30 ++---
- .../apps/api/src/radiology/radiology.module.ts     |   4 +-
- 26 files changed, 142 insertions(+), 654 deletions(-)
+Uncommitted changes: 5
+ .claude/session-context.md | 20 +++++++++++---------
+ .claude/session-end.md     |  2 +-
+ 2 files changed, 12 insertions(+), 10 deletions(-)
