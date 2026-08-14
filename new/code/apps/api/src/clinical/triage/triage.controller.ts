@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { TriageService } from './triage.service.js';
 import { CreateTriageEntryDto } from './dto/create-triage-entry.dto.js';
 import { UpdateTriageEntryDto } from './dto/update-triage-entry.dto.js';
 import { LinkPatientDto } from './dto/link-patient.dto.js';
+import { SearchTriageDto } from './dto/search-triage.dto.js';
 
 @Controller('triage/entries')
 @UseGuards(PermissionGuard)
@@ -18,8 +19,8 @@ export class TriageController {
 
   @Get()
   @RequirePermission('triage.read')
-  async list() {
-    return this.triageService.listActive();
+  async list(@Query() query: SearchTriageDto) {
+    return this.triageService.listActive(query);
   }
 
   @Get(':id')

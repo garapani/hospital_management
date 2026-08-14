@@ -116,10 +116,23 @@ describe('TriageService (integration)', () => {
       await triageService.update(closed.id, { acuityLevel: 2, status: 'Discharged' });
 
       const active = await triageService.listActive();
-      const ids = active.map((e) => e.id);
+      const ids = active.data.map((e) => e.id);
 
       expect(ids).not.toContain(closed.id);
       expect(ids.indexOf(high.id)).toBeLessThan(ids.indexOf(low.id));
+    });
+  });
+
+  it('paginates active entries', async () => {
+    await ctx.inTenant(async () => {
+      for (let i = 0; i < 3; i++) {
+        await triageService.create({ chiefComplaint: `Entry ${i}` });
+      }
+
+      const page1 = await triageService.listActive({ page: 1, limit: 2 });
+      expect(page1.data).toHaveLength(2);
+      expect(page1.meta.total).toBeGreaterThanOrEqual(3);
+      expect(page1.meta.totalPages).toBeGreaterThanOrEqual(2);
     });
   });
 

@@ -143,7 +143,7 @@ describe('AdmissionsService (integration)', () => {
     await ctx.inTenant(() => triageService.linkPatient(triageEntry.id, patient.id));
 
     const activeBefore = await ctx.inTenant(() => triageService.listActive());
-    expect(activeBefore.some((entry) => entry.id === triageEntry.id)).toBe(true);
+    expect(activeBefore.data.some((entry) => entry.id === triageEntry.id)).toBe(true);
 
     await ctx.inTenant(() =>
       admissionsService.admit({
@@ -159,7 +159,7 @@ describe('AdmissionsService (integration)', () => {
     expect(updatedEntry.status).toBe('Admitted');
 
     const activeAfter = await ctx.inTenant(() => triageService.listActive());
-    expect(activeAfter.some((entry) => entry.id === triageEntry.id)).toBe(false);
+    expect(activeAfter.data.some((entry) => entry.id === triageEntry.id)).toBe(false);
   });
 
   it('rejects admitting from an unlinked (anonymous) triage entry', async () => {

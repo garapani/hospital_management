@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { TenantContextMiddleware } from './tenant-context.middleware.js';
 import { TenantContextService } from './tenant-context.service.js';
 
@@ -5,8 +6,9 @@ describe('TenantContextMiddleware', () => {
   function buildRequest(
     headers: Record<string, string | undefined>,
     authContext?: { hospitalId?: string; accountId?: string },
+    originalUrl = '/api/auth/refresh',
   ) {
-    return { header: (name: string) => headers[name], authContext } as any;
+    return { header: (name: string) => headers[name], authContext, originalUrl } as any;
   }
 
   it('propagates tenant id and account id from req.authContext when present, ignoring headers', () => {
@@ -93,6 +95,41 @@ describe('TenantContextMiddleware', () => {
       accountId: undefined,
       correlationId: 'corr-1',
     });
+  });
+
+  it('does not warn when the header fallback happens on /auth/refresh or /auth/login', () => {
+    const service = new TenantContextService();
+    const middleware = new TenantContextMiddleware(service);
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    middleware.use(
+      buildRequest({ 'x-tenant-id': 'h1' }, undefined, '/api/auth/refresh'),
+      {} as any,
+      () => undefined,
+    );
+    middleware.use(
+      buildRequest({ 'x-tenant-id': 'h1' }, undefined, '/api/auth/login'),
+      {} as any,
+      () => undefined,
+    );
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('warns when the header fallback happens on any other route', () => {
+    const service = new TenantContextService();
+    const middleware = new TenantContextMiddleware(service);
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    middleware.use(
+      buildRequest({ 'x-tenant-id': 'h1' }, undefined, '/api/patients'),
+      {} as any,
+      () => undefined,
+    );
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('/api/patients'));
+    warnSpy.mockRestore();
   });
 
   it('calls next() even when tenant id and account id are absent from both authContext and headers', () => {

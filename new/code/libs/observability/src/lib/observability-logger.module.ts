@@ -42,6 +42,14 @@ const REDACT_PATHS = [
         return {
           pinoHttp: {
             level: isTest ? 'silent' : level,
+            // pino-http's default req/res serializers dump every header, query param, and the
+            // remote address on every single log line — the mixin below already carries the
+            // fields (tenantId/accountId/correlationId) actually needed to trace a request, so
+            // this trims the rest down to what's useful for reading logs day-to-day.
+            serializers: {
+              req: (req: { method: string; url: string }) => ({ method: req.method, url: req.url }),
+              res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
+            },
             redact: {
               paths: REDACT_PATHS,
               censor: '[REDACTED]',

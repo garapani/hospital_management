@@ -54,6 +54,7 @@ import { StockTransaction } from '../inventory/entities/stock-transaction.entity
 import { StockRequisition } from '../inventory/entities/stock-requisition.entity.js';
 import { StockRequisitionItem } from '../inventory/entities/stock-requisition-item.entity.js';
 import { PharmacyDispensing } from '../pharmacy/entities/pharmacy-dispensing.entity.js';
+import { Notification } from '../notifications/entities/notification.entity.js';
 import { PLATFORM_MIGRATIONS } from './migrations/index.js';
 
 const logger = new Logger('DataSource');
@@ -66,7 +67,7 @@ export function createDataSource(): DataSource {
     username: process.env['DB_USERNAME'] ?? 'identity_access',
     password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
     database: process.env['DB_DATABASE'] ?? 'identity_access',
-    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, DepartmentCatalog, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, Return, ReportingEvent, LabTestCategory, LabTest, LabTestComponent, LabRequisition, LabResult, RadiologyImagingType, RadiologyImagingItem, RadiologyRequisition, InventoryItemCategory, InventoryItemSubCategory, InventoryItem, InventoryVendor, PurchaseOrder, PurchaseOrderItem, StockBatch, StockBalance, StockTransaction, StockRequisition, StockRequisitionItem, PharmacyDispensing],
+    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, DepartmentCatalog, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, Return, ReportingEvent, LabTestCategory, LabTest, LabTestComponent, LabRequisition, LabResult, RadiologyImagingType, RadiologyImagingItem, RadiologyRequisition, InventoryItemCategory, InventoryItemSubCategory, InventoryItem, InventoryVendor, PurchaseOrder, PurchaseOrderItem, StockBatch, StockBalance, StockTransaction, StockRequisition, StockRequisitionItem, PharmacyDispensing, Notification],
     migrations: PLATFORM_MIGRATIONS,
     synchronize: false,
     // Bounds connection acquisition so pool exhaustion fails fast (a thrown, catchable error)

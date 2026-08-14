@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
 import { TriageEntry } from './entities/triage-entry.entity.js';
+import { SearchTriageDto } from './dto/search-triage.dto.js';
 
 const CLOSED_STATUSES = ['Discharged', 'Admitted', 'Deceased'];
 
@@ -79,15 +81,15 @@ export class TriageService {
     });
   }
 
-  async listActive(): Promise<TriageEntry[]> {
+  async listActive(query: SearchTriageDto = {}): Promise<PaginatedResponseDto<TriageEntry>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      return manager
+      const qb = manager
         .getRepository(TriageEntry)
         .createQueryBuilder('t')
         .where('t.status NOT IN (:...closedStatuses)', { closedStatuses: CLOSED_STATUSES })
         .orderBy('t.acuityLevel', 'ASC')
-        .addOrderBy('t.triagedAt', 'ASC')
-        .getMany();
+        .addOrderBy('t.triagedAt', 'ASC');
+      return paginate(qb, query);
     });
   }
 }
