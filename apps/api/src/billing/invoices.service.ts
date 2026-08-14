@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Invoice } from './entities/invoice.entity.js';
@@ -10,10 +10,8 @@ import { Return } from './entities/return.entity.js';
 import { roundMoney } from './money.util.js';
 import { Order } from '../orders/entities/order.entity.js';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
-import { LabRequisition } from '../lab/entities/lab-requisition.entity.js';
-import { RadiologyRequisition } from '../radiology/entities/radiology-requisition.entity.js';
-import { PharmacyDispensing } from '../pharmacy/entities/pharmacy-dispensing.entity.js';
 import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
+import { OrderBillingAdapter } from './adapters/order-billing.adapter';
 
 export interface CreateInvoiceItemInput {
   description: string;
@@ -65,7 +63,12 @@ export function formatFinancialYear(startYear: number): string {
 
 @Injectable()
 export class InvoicesService {
-  constructor(private readonly tenantConnection: TenantConnectionService) {}
+  constructor(
+    private readonly tenantConnection: TenantConnectionService,
+    @Inject('LAB_BILLING_ADAPTER') private readonly labAdapter: OrderBillingAdapter,
+    @Inject('RADIOLOGY_BILLING_ADAPTER') private readonly radiologyAdapter: OrderBillingAdapter,
+    @Inject('PHARMACY_BILLING_ADAPTER') private readonly pharmacyAdapter: OrderBillingAdapter
+  ) {}
 
   private static readonly PAYMENT_MODES = ['Cash', 'Card', 'UPI', 'Cheque', 'Deposit'] as const;
 
@@ -342,6 +345,7 @@ export class InvoicesService {
   /**
    * Auto-charge: Create an invoice item when a Lab/Radiology/Pharmacy order completes.
    * This is called by the respective workflow services when they mark an order as Completed.
+   * Uses adapters to decouple billing from clinical modules.
    */
   async autoChargeForCompletedOrder(
     orderItemId: string,
@@ -383,53 +387,17 @@ export class InvoicesService {
       
       const patientId = order.patientId;
       
-      // Determine price based on item type - in real implementation this would lookup from catalog
-      let unitPrice = 0;
-      let description = orderItem.itemDescription;
+      // Use adapter to get pricing based on item type - decoupled from clinical modules
+      const adapter = this.getAdapter(orderItem.itemType);
+      const priceInfo = await adapter.getItemPrice(manager, orderItem);
       
-      if (orderItem.itemType === 'Lab') {
-        const labRequisition = await manager.getRepository(LabRequisition).findOne({
-          where: { orderItemId },
-        });
-        if (labRequisition) {
-          // Lookup test price from lab_catalog_tests using TypeORM
-          const testPrice = await manager.query(
-            `SELECT price FROM lab_catalog_tests WHERE id = $1`,
-            [labRequisition.testId]
-          );
-          unitPrice = testPrice?.[0]?.price ?? 0;
-        }
-      } else if (orderItem.itemType === 'Radiology') {
-        const radiologyRequisition = await manager.getRepository(RadiologyRequisition).findOne({
-          where: { orderItemId },
-        });
-        if (radiologyRequisition) {
-          // Lookup imaging item price from radiology_catalog_items using TypeORM
-          const itemPrice = await manager.query(
-            `SELECT price FROM radiology_catalog_items WHERE id = $1`,
-            [radiologyRequisition.imagingItemId]
-          );
-          unitPrice = itemPrice?.[0]?.price ?? 0;
-        }
-      } else if (orderItem.itemType === 'Pharmacy') {
-        const pharmacyDispensing = await manager.getRepository(PharmacyDispensing).findOne({
-          where: { orderItemId },
-        });
-        if (pharmacyDispensing) {
-          // Lookup drug price from inventory_catalog_items using TypeORM
-          const drugPrice = await manager.query(
-            `SELECT salePrice FROM inventory_catalog_items WHERE id = $1`,
-            [pharmacyDispensing.inventoryItemId]
-          );
-          unitPrice = drugPrice?.[0]?.salePrice ?? 0;
-          description = `${description} (Qty: ${pharmacyDispensing.quantity})`;
-        }
-      }
-      
-      if (unitPrice <= 0) {
+      if (!priceInfo || priceInfo.unitPrice <= 0) {
         // No price configured, skip auto-billing but don't fail
         return null;
       }
+      
+      const unitPrice = priceInfo.unitPrice;
+      const description = priceInfo.description || orderItem.itemDescription;
       
       // Create or get invoice for this patient's active visit
       // For simplicity, create a new invoice per charge-capture event
@@ -482,5 +450,21 @@ export class InvoicesService {
       
       return { invoice, invoiceItem };
     });
+  }
+
+  /**
+   * Gets the appropriate adapter based on order type.
+   */
+  private getAdapter(itemType: string): OrderBillingAdapter {
+    switch (itemType) {
+      case 'Lab':
+        return this.labAdapter;
+      case 'Radiology':
+        return this.radiologyAdapter;
+      case 'Pharmacy':
+        return this.pharmacyAdapter;
+      default:
+        throw new Error(`Unknown order type: ${itemType}`);
+    }
   }
 }

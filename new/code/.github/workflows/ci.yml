@@ -13,6 +13,32 @@ permissions:
 jobs:
   main:
     runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: identity_access
+          POSTGRES_PASSWORD: identity_access_dev_password
+          POSTGRES_DB: identity_access
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v5
         with:
@@ -33,11 +59,27 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Wait for PostgreSQL to be ready
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U identity_access; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+
       - run: pnpm exec nx format:check --base="remotes/origin/main"
       # build/e2e are intentionally omitted: no build or e2e targets exist yet
       # for any project, so nx run-many would silently no-op on them. Add them
       # back once those targets are actually wired up.
       - run: pnpm exec nx run-many -t test typecheck lint
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USERNAME: identity_access
+          DB_PASSWORD: identity_access_dev_password
+          DB_DATABASE: identity_access
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
 
       # Nx Cloud self-healing CI is not connected yet.
       # When it is, re-add the corresponding `nx fix-ci` step here.
