@@ -191,4 +191,12 @@ describe('TenantsController (integration)', () => {
 
     expect(response.status).toBe(400);
   });
+
+  it('refuses to reactivate the reserved platform tenant with 400', async () => {
+    const response = await request(app.getHttpServer())
+      .patch(`/tenants/${PLATFORM_TENANT_ID}/reactivate`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(400);
+  });
 });

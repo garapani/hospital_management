@@ -139,6 +139,11 @@ export class TenantsService {
   }
 
   async reactivateTenant(hospitalId: string): Promise<Tenant> {
+    if (hospitalId === PLATFORM_TENANT_ID) {
+      throw new BadRequestException(
+        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be reactivated`,
+      );
+    }
     const repository = this.dataSource.getRepository(Tenant);
     const tenant = await repository.findOne({ where: { hospitalId } });
     if (!tenant) {
