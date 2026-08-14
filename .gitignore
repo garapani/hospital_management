@@ -1,11 +1,37 @@
-```
 # Dependencies
 node_modules/
+# Left behind by a failed/interrupted install; never meant to be tracked.
+node_modules.corrupted-*/
 
-# Environment variables
+# Package manager stores
+.pnpm-store/
+
+# Secrets — never commit credentials, tokens or key material.
+# .env* covers the usual cases; the rest catch ad-hoc files people leave at the repo root.
 .env
 .env.local
 .env.*
+*credential*
+*credentials*
+# Misspelled variant ("credentails") — the transposed letters slip past the pattern above,
+# which is exactly why a filename pattern is a backstop and not a strategy. Keep secrets
+# out of the working tree entirely; do not rely on this list to catch them.
+*credentail*
+*secret*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Nested independent repositories.
+# `frontend/` is its own git repo (staff-console), not a submodule of this one.
+# `old/` is the legacy ASP.NET system kept on disk for reference only.
+/frontend/
+/old/
+
+# Agent/session scratch
+.claude/
+.superpowers/
 
 # IDE files
 .vscode/
@@ -15,6 +41,7 @@ node_modules/
 dist/
 build/
 target/
+*.tsbuildinfo
 
 # Python cache
 __pycache__/
@@ -43,7 +70,7 @@ htmlcov/
 .mypy_cache/
 .pytest_cache/
 
-# Compression files
+# Archives
 *.zip
 *.gz
 *.tar
@@ -66,4 +93,3 @@ htmlcov/
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-```
