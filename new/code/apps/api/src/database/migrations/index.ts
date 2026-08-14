@@ -24,6 +24,7 @@ import { CreateInventoryRequisitionTables0023 } from './0023-create-inventory-re
 import { CreatePharmacyTables0024 } from './0024-create-pharmacy-tables.js';
 import { AddBillingReturnsTable0025 } from './0025-add-billing-returns-table.js';
 import { AddDepartmentMaxDailyAppointments0026 } from './0026-add-department-max-daily-appointments.js';
+import { CreateTenantRolesTable0027 } from './0027-create-tenant-roles-table.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -31,6 +32,7 @@ export const PLATFORM_MIGRATIONS = [
   CreateRbacCatalogTables,
   AddRolePermissionsUniqueConstraint,
   CreateTenantsTable,
+  CreateTenantRolesTable0027,
 ];
 
 // Tenant-scoped migrations: create per-tenant-schema tables. Run once per tenant by

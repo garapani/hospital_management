@@ -199,4 +199,105 @@ describe('TenantsController (integration)', () => {
 
     expect(response.status).toBe(400);
   });
+
+  describe('per-tenant role enablement', () => {
+    const hospitalId = 'test_tenant_ctrl_roles';
+
+    beforeAll(async () => {
+      await request(app.getHttpServer())
+        .post('/tenants')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ hospitalId, hospitalName: 'Roles Hospital' });
+    });
+
+    async function getRoles() {
+      const response = await request(app.getHttpServer())
+        .get(`/tenants/${hospitalId}/roles`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      return response;
+    }
+
+    it('returns the whole catalog with an enabled flag per role', async () => {
+      const response = await getRoles();
+
+      expect(response.status).toBe(200);
+      expect(response.body.length).toBeGreaterThan(1);
+      for (const role of response.body) {
+        expect(role).toEqual(
+          expect.objectContaining({
+            id: expect.any(String),
+            name: expect.any(String),
+            enabled: expect.any(Boolean),
+          }),
+        );
+      }
+    });
+
+    it('enables exactly the requested roles and disables the rest', async () => {
+      const all = (await getRoles()).body as { id: string; name: string }[];
+      const keep = all.slice(0, 2).map((role) => role.id);
+
+      const response = await request(app.getHttpServer())
+        .patch(`/tenants/${hospitalId}/roles`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ roleIds: keep });
+
+      expect(response.status).toBe(200);
+      const enabled = (response.body as { id: string; enabled: boolean }[])
+        .filter((role) => role.enabled)
+        .map((role) => role.id);
+      expect(enabled.sort()).toEqual([...keep].sort());
+    });
+
+    it('rejects an unknown roleId with 400', async () => {
+      const response = await request(app.getHttpServer())
+        .patch(`/tenants/${hospitalId}/roles`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ roleIds: ['00000000-0000-0000-0000-000000000000'] });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('refuses to disable a role that an account still holds, naming the holder', async () => {
+      const all = (await getRoles()).body as { id: string; name: string }[];
+      const doctor = all.find((role) => role.name === 'Doctor') ?? all[0];
+
+      // Enable everything, then give an account the role we are about to try to remove.
+      await request(app.getHttpServer())
+        .patch(`/tenants/${hospitalId}/roles`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ roleIds: all.map((role) => role.id) });
+
+      const schema = `tenant_${hospitalId}`;
+      const [account] = await ctx.dataSource.query(
+        `INSERT INTO "${schema}".accounts
+           ("accountType", "displayName", username, email, "passwordHash")
+         VALUES ('staff', 'Roles Blocker', 'rolesblocker', 'rolesblocker@test.local', 'x')
+         RETURNING id`,
+      );
+      await ctx.dataSource.query(
+        `INSERT INTO "${schema}".account_roles ("accountId", "roleId", "isActive")
+         VALUES ($1, $2, true)`,
+        [account.id, doctor.id],
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch(`/tenants/${hospitalId}/roles`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ roleIds: all.filter((role) => role.id !== doctor.id).map((role) => role.id) });
+
+      expect(response.status).toBe(409);
+      expect(response.body.blocked).toEqual([
+        expect.objectContaining({
+          roleId: doctor.id,
+          roleName: doctor.name,
+          accounts: ['rolesblocker'],
+        }),
+      ]);
+
+      // And the role really is still enabled — the refusal must not partially apply.
+      const after = (await getRoles()).body as { id: string; enabled: boolean }[];
+      expect(after.find((role) => role.id === doctor.id)?.enabled).toBe(true);
+    });
+  });
 });

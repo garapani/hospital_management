@@ -13,6 +13,7 @@ import {
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { TenantsService } from './tenants.service.js';
 import { ProvisionTenantDto } from './dto/provision-tenant.dto.js';
+import { SetTenantRolesDto } from './dto/set-tenant-roles.dto.js';
 
 const REQUIRED_PERMISSION = 'system-admin.tenants.manage';
 
@@ -42,6 +43,21 @@ export class TenantsController {
       throw new NotFoundException(`Tenant ${hospitalId} not found`);
     }
     return tenant;
+  }
+
+  @Get(':hospitalId/roles')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async listRoles(@Param('hospitalId') hospitalId: string) {
+    return this.tenantsService.listTenantRoles(hospitalId);
+  }
+
+  @Patch(':hospitalId/roles')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async setRoles(
+    @Param('hospitalId') hospitalId: string,
+    @Body() body: SetTenantRolesDto,
+  ) {
+    return this.tenantsService.setTenantRoles(hospitalId, body.roleIds);
   }
 
   @Patch(':hospitalId/suspend')

@@ -72,6 +72,7 @@ async function ensureSeededTenant(
     console.log(
       `Tenant '${config.tenantId}' already exists. Skipping tenant creation.`,
     );
+    await enableAllCatalogRoles(dataSource, config.tenantId);
     return;
   }
 
@@ -85,7 +86,27 @@ async function ensureSeededTenant(
       createdBy: 'seed-initial-setup',
     }),
   );
+  await enableAllCatalogRoles(dataSource, config.tenantId);
   console.log(`✓ Provisioned tenant: ${config.tenantId}`);
+}
+
+/**
+ * A tenant with no rows in `tenant_roles` has an empty role list everywhere, because
+ * `AccountsService.listRoles()` inner-joins that table whenever a tenant is in context — which
+ * means no role can be picked and no staff account can be created. A seeded tenant therefore
+ * starts with the whole catalog enabled; narrowing it is what the platform console's per-tenant
+ * role toggles are for. Runs on the already-exists path too, so re-seeding repairs a tenant that
+ * predates the tenant_roles migration.
+ */
+async function enableAllCatalogRoles(
+  dataSource: DataSource,
+  tenantId: string,
+): Promise<void> {
+  await dataSource.query(
+    `INSERT INTO tenant_roles ("tenantId", "roleId")
+     SELECT $1, r.id FROM roles r ON CONFLICT DO NOTHING`,
+    [tenantId],
+  );
 }
 
 async function seedAdminAccount(
