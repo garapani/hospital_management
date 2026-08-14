@@ -1,5 +1,7 @@
-# PRD: Hospital Management EMR — Modular Monolith Re-Platform
+# PRD: Vaidya — Hospital Management EMR Modular Monolith Re-Platform
 
+**Product name:** Vaidya (वैद्य, Sanskrit for "physician") — chosen 2026-08-14; no Ayurveda/telemedicine brand or government platform owns it outright, unlike "Arogya" (Aarogya Setu) or "Sanjeevani" (eSanjeevani, MoHFW's telemedicine platform), both of which were rejected for that reason.
+**Brand colors:** `#006D77` (deep teal, primary/accent — matches the logo mark) on `#F0FDFD` (near-white, page/surface background) — chosen 2026-08-14; `#006D77` with white text is 6.1:1 contrast, clears WCAG AA for both body and large text. No secondary/semantic (success/warning/error) colors chosen yet — needed once the frontend repo (PRD §3/§9.4, not yet split out) starts building real UI.
 **Status:** Draft v1
 **Source system:** `old/hospital-management-emr` (Danphe EMR — ASP.NET Core 2.0/net461 monolith, EF6/EF Core, MSSQL, Angular/TS frontend, ~40 modules, live in 50+ hospitals across India/Nepal/Bangladesh)
 **Decisions locked in for this PRD:** stack = Node.js + NestJS + TypeScript, one modular monolith application (`apps/api`); scope = phased rollout, greenfield build; deployment = Docker Compose, **hybrid multi-tenant hosted (default) + single-tenant on-prem** (§9); tenancy isolation = schema-per-tenant within one shared Postgres instance for the whole platform (§4).

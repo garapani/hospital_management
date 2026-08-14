@@ -109,7 +109,7 @@ Join the Nx community:
 
 ---
 
-## 🏥 Hospital Management System - Initial Setup
+## 🏥 Vaidya — Hospital Management Solution: Initial Setup
 
 ### Quick Start
 

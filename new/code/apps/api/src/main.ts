@@ -3,11 +3,17 @@
  * This is only a minimal backend to get started.
  */
 
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app/app.module.js';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger as PinoLogger } from 'nestjs-pino';
+
+// ESM has no ambient __dirname; assets/ is copied next to this compiled file
+// by NxAppWebpackPlugin's `assets: ['./src/assets']` (webpack.config.cjs).
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -28,13 +34,28 @@ async function bootstrap() {
   app.setGlobalPrefix(globalPrefix);
 
   const config = new DocumentBuilder()
-    .setTitle('Hospital API')
-    .setDescription('The Hospital Management API description')
+    .setTitle('Vaidya')
+    .setDescription('Vaidya Hospital Management Solution — API reference')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app as any, config);
-  SwaggerModule.setup('api/docs', app as any, document);
+  SwaggerModule.setup('api/docs', app as any, document, {
+    customSiteTitle: 'Vaidya API Docs',
+    customfavIcon: join(__dirname, 'assets', 'favicon.ico'),
+    customCss: `
+      body { background-color: #F0FDFD; }
+      .swagger-ui .topbar { background-color: #006D77; }
+      .swagger-ui .btn.authorize { border-color: #006D77; color: #006D77; }
+      .swagger-ui .btn.authorize svg { fill: #006D77; }
+      .swagger-ui .opblock-tag, .swagger-ui .opblock .opblock-summary-operation-id,
+      .swagger-ui .opblock .opblock-summary-path, .swagger-ui .opblock .opblock-summary-path__deprecated {
+        color: #006D77;
+      }
+      .swagger-ui .scheme-container { background-color: #F0FDFD; }
+      .swagger-ui a.nostyle, .swagger-ui .info a { color: #006D77; }
+    `,
+  });
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
