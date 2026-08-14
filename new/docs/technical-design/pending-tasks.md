@@ -140,6 +140,13 @@ scope, not merely lower priority.
     `Runbook.md` §7 documents the policy for when one exists).
 13. **India compliance roadmap** (new-features.md #14) — product-scoping work, not blocking
     engineering.
+14. [x] **Platform (Super Admin) console above tenants.** Super Admin accounts moved out of the
+    `demo` hospital into a reserved `__platform` system tenant; `staff-console` split into a platform
+    console (`/platform/*`, `PlatformShell`) and the tenant console (`AppShell`), guarded by
+    `platformGuard`/`tenantGuard` and reached at `admin.*` vs. the bare host. Platform users have no
+    access to tenant data — enforced structurally by JWT-derived schema resolution, not by new
+    per-endpoint guards. Spec: `new/docs/superpowers/specs/2026-08-13-platform-superadmin-console-design.md`.
+    Plan: `new/docs/superpowers/plans/2026-08-13-platform-superadmin-console.md`.
 
 ## Phase 6 — Product module backlog
 

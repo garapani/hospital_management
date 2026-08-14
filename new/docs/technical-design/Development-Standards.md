@@ -915,3 +915,36 @@ as the source of truth going forward.
 - **PrimeIcons:** global CSS (`<i class="pi pi-{name}">`), no Angular module import needed — only
   import a PrimeNG *component* module (`ButtonModule`, `TagModule`, etc.) when using that
   component, not for icons alone.
+
+## 22. Platform vs. tenant altitude
+
+The system has two audiences, and every new screen and endpoint belongs to exactly one.
+
+- **Platform (vendor/ops).** Accounts live in the reserved `__platform` tenant
+  (`apps/api/src/tenants/platform-tenant.ts`), never inside a customer hospital. `__platform` is
+  excluded from tenant listings and direct fetches, is not provisionable through the API, and
+  cannot be suspended. Seeded by `seedPlatformAdmin()`.
+- **Tenant (hospital staff).** Accounts live in their hospital's own schema. Seeded for the demo
+  hospital by `seedDemoHospitalAdmin()`.
+
+**Platform users have no access to tenant data, and this is structural rather than guarded.**
+Tenant scope derives from the JWT's `hospitalId` claim
+(`libs/tenant-context/src/lib/tenant-context.middleware.ts`), so a platform user's queries resolve
+against the empty `__platform` schema. Do **not** add per-endpoint "is this a platform user" checks
+— they are redundant, and adding them implies the boundary depends on remembering them.
+
+**Frontend.** Two shells over two route trees, both wrapping `ShellChrome`:
+
+| | Platform | Tenant |
+|---|---|---|
+| Shell | `PlatformShell` | `AppShell` |
+| Guard | `platformGuard` | `tenantGuard` |
+| URLs | `/platform/*` | `/clinical/*`, `/billing/*`, `/admin/*` |
+| Landing | `/platform/dashboard` | `/billing/invoices` |
+| Dev URL | `http://admin.localhost:4200` | `http://localhost:4200` |
+
+Audience is decided by `AuthService.isPlatformAdmin`, derived from the JWT's `hospitalId` claim —
+never from a role name, which is renameable and not authoritative. A new screen picks a tree; it
+does not add an `@if` to a shared sidebar. Screens meaningful at both altitudes (`UserList`,
+`AuditList`) are routed into both trees pointing at the same component, unparameterized, because
+they already scope themselves by the JWT's tenant.
