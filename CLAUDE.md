@@ -38,62 +38,28 @@ source of truth for scope and product phasing — read it, don't take this file'
   for understanding domain scope and legacy DB-field shapes — explicitly **not** a parity contract;
   the PRD and the specs/plans pipeline are what defines what actually gets built.
 
-## The MVP Fast Track
+## The Development Pipeline
 
-As of 2026-08-09, `pending-tasks.md`'s "MVP hardening (fast track)" section (Billing
-settlement/return + auto charge-capture, Appointments doctor-schedule endpoints, Admissions
-discharge-summary artifact — see `mvp-status.md` for how these were identified) is being worked
-under a **lighter** pipeline than the heavyweight one below, because the full four-stage ceremony
-(brainstorm-interview → separate spec doc → separate plan doc → one subagent dispatch per task) was
-costing more tokens/time than these items warrant. This track exists **alongside**, not instead of,
-the heavyweight pipeline — see "The Heavyweight Pipeline" below for everything else in
-`pending-tasks.md`.
+All work from `pending-tasks.md` follows a unified, lightweight pipeline focused on rapid delivery
+with safety gates. One item at a time; confirm scope with the user before starting:
 
-One item at a time, still confirm scope with the user before starting:
-
-1. **Write a spec directly into the conversation** (Problem Statement / Solution /
-   User Stories / Implementation Decisions / Testing Decisions / Out of Scope) — no
-   `superpowers:brainstorming` interview, synthesize from what's already been discussed.
-2. **Implement directly** in the current session, using `superpowers:test-driven-development` at test
-   seams — no separate plan doc, no per-task subagent dispatch. Typecheck and run affected tests
-   regularly; run the full suite once at the end.
+1. **Brainstorm scope in conversation** — clarify the problem, user stories, constraints, and test
+   surface (don't write a separate spec doc; keep the discussion in chat).
+2. **Implement via TDD** in the current session using test-driven development at test seams.
+   Typecheck and run affected tests regularly; run the full suite once at the end.
 3. **Test rigor scales to risk, not uniform depth**: full `TenantTestContext`-based integration
    specs (matching the existing codebase pattern) for anything touching tenant isolation, money
    (Billing), or clinical sign-off fields; lighter/unit-level tests are fine for low-risk CRUD.
 4. **Security/quality review is risk-gated, not automatic**: run `security-review` or `/code-review`
    at `high` effort only for items touching auth, tenant isolation, PHI, or money (Billing
-   qualifies; a pure Appointments/Admissions CRUD gap likely doesn't) — plus
-   `superpowers:requesting-code-review` (Standards + Spec) always, since that one's cheap.
-5. **Commit granularity**: one feature commit for the implementation, one separate `docs:` commit
-   for the closing docs update (same three files as the heavyweight track's step 4, still never
-   skipped) — not one commit per task.
-
-## The Heavyweight Pipeline
-
-Every item resolved from `pending-tasks.md` outside the MVP fast track above goes through the same
-four-stage pipeline, one item at a time (not batched — confirm scope with the user before
-starting):
-
-1. **Brainstorm a design** via the `superpowers:brainstorming` skill → write a spec to
-   `new/docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`, commit it.
-2. **Turn the spec into a plan** via the `superpowers:writing-plans` skill → task-by-task
-   implementation plan at `new/docs/superpowers/plans/YYYY-MM-DD-<topic>.md`, commit it. Plans
-   copy exact values (versions, tag vocabularies, allow-lists, etc.) verbatim from the spec into a
-   "Global Constraints" section, and size tasks to be independently testable/reviewable — see
-   `new/docs/superpowers/plans/2026-08-03-jwt-request-authentication.md` and
-   `new/docs/superpowers/plans/2026-08-04-nx-module-boundary-enforcement.md` as the fullest recent
-   examples of this shape.
-3. **Execute the plan** via the `superpowers:subagent-driven-development` skill: a fresh subagent
-   per task, task-level spec+quality review, fix loops, then a final whole-branch security/quality
-   review on the most capable model, then a fix wave for whatever it finds. That skill's own file
-   is the authority on its mechanics — this doc is a pointer, not a restatement.
-4. **The final task in every plan** updates three docs in the same commit: checks off the item in
-   `pending-tasks.md`, marks the originating finding resolved in `review-comments.md` (without
-   deleting it), and adds/updates a section in `Development-Standards.md` documenting the new
-   pattern.
+   qualifies; a pure Appointments/Admissions CRUD gap likely doesn't).
+5. **Commit granularity**: one feature commit for the implementation, then one separate `docs:`
+   commit updating three files: checks off the item in `pending-tasks.md`, marks the originating
+   finding resolved in `review-comments.md` (without deleting it), and adds/updates a section in
+   `Development-Standards.md` documenting the new pattern.
 
 Look at `git log --oneline` for how this becomes actual commit history: roughly one commit per
-task-level step group, conventional-commit prefixes, no AI co-authorship.
+task, conventional-commit prefixes, no AI co-authorship.
 
 ## Git Conventions
 

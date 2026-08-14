@@ -26,7 +26,15 @@ export class TenantProvisioningService {
     await setupRunner.connect();
     try {
       await setupRunner.query(`CREATE SCHEMA IF NOT EXISTS "${name}"`);
-      await setupRunner.query(`CREATE ROLE "${name}" NOLOGIN`);
+      await setupRunner.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${name}') THEN
+            CREATE ROLE "${name}" NOLOGIN;
+          END IF;
+        END
+        $$;
+      `);
       await setupRunner.query(`GRANT USAGE ON SCHEMA "${name}" TO "${name}"`);
       // Covers tables/sequences created by FUTURE migrations (migrate-tenants.ts backfills) —
       // does NOT cover the tables the migration run below is about to create; those need the
@@ -54,8 +62,12 @@ export class TenantProvisioningService {
     try {
       // Explicit grant for the tables/sequences the migration run above just created — default
       // privileges set earlier only apply to objects created after they were set.
-      await grantRunner.query(`GRANT ALL ON ALL TABLES IN SCHEMA "${name}" TO "${name}"`);
-      await grantRunner.query(`GRANT ALL ON ALL SEQUENCES IN SCHEMA "${name}" TO "${name}"`);
+      await grantRunner.query(
+        `GRANT ALL ON ALL TABLES IN SCHEMA "${name}" TO "${name}"`,
+      );
+      await grantRunner.query(
+        `GRANT ALL ON ALL SEQUENCES IN SCHEMA "${name}" TO "${name}"`,
+      );
       // Membership, not a login credential: lets identity_access SET ROLE into this tenant.
       await grantRunner.query(`GRANT "${name}" TO "${adminRole}"`);
     } finally {

@@ -9,7 +9,7 @@ services:
     ports:
       - '5433:5432'
     volumes:
-      - api-postgres-data:/var/lib/postgresql/data
+      - ./.data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U identity_access']
       interval: 5s
@@ -71,5 +71,56 @@ services:
     working_dir: /usr/src/app
     command: sh -c "corepack enable && pnpm install && pnpm nx serve api --host 0.0.0.0"
 
-volumes:
-  api-postgres-data:
+  seed-rbac:
+    profiles: ['seed']
+    image: node:22-alpine
+    depends_on:
+      api-postgres:
+        condition: service_healthy
+    environment:
+      CI: 'true'
+      DB_HOST: api-postgres
+      DB_PORT: 5432
+      DB_USERNAME: identity_access
+      DB_PASSWORD: identity_access_dev_password
+      DB_DATABASE: identity_access
+    volumes:
+      - .:/usr/src/app
+    working_dir: /usr/src/app
+    command: sh -c "corepack enable && pnpm install && pnpm nx run api:seed-rbac"
+
+  seed-initial-setup:
+    profiles: ['seed']
+    image: node:22-alpine
+    depends_on:
+      api-postgres:
+        condition: service_healthy
+    environment:
+      CI: 'true'
+      DB_HOST: api-postgres
+      DB_PORT: 5432
+      DB_USERNAME: identity_access
+      DB_PASSWORD: identity_access_dev_password
+      DB_DATABASE: identity_access
+    volumes:
+      - .:/usr/src/app
+    working_dir: /usr/src/app
+    command: sh -c "corepack enable && pnpm install && pnpm nx run api:seed-initial-setup"
+
+  seed-all:
+    profiles: ['seed']
+    image: node:22-alpine
+    depends_on:
+      api-postgres:
+        condition: service_healthy
+    environment:
+      CI: 'true'
+      DB_HOST: api-postgres
+      DB_PORT: 5432
+      DB_USERNAME: identity_access
+      DB_PASSWORD: identity_access_dev_password
+      DB_DATABASE: identity_access
+    volumes:
+      - .:/usr/src/app
+    working_dir: /usr/src/app
+    command: sh -c "corepack enable && pnpm install && pnpm nx run api:seed-all"
