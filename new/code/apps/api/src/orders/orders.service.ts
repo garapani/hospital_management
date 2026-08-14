@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { EntityManager } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Order } from './entities/order.entity.js';
 import { OrderItem } from './entities/order-item.entity.js';
@@ -117,6 +118,30 @@ export class OrdersService {
       item.completedAt = new Date();
       return repository.save(item);
     });
+  }
+
+  /**
+   * Marks an order item Completed using a caller-supplied manager, so the workflow services that
+   * finish a Lab/Radiology/Pharmacy order item can complete it in the same transaction as their
+   * own status transition, instead of reaching into the OrderItem repository directly. Idempotent
+   * (a no-op returning the existing row) if the item doesn't exist or is already Completed —
+   * matches the tolerant check every caller of this used to inline itself.
+   */
+  async completeItemInTransaction(
+    manager: EntityManager,
+    itemId: string,
+    input: CompleteOrderItemInput,
+  ): Promise<OrderItem | null> {
+    const repository = manager.getRepository(OrderItem);
+    const item = await repository.findOne({ where: { id: itemId } });
+    if (!item || item.status === 'Completed') {
+      return item;
+    }
+
+    item.status = 'Completed';
+    item.completedBy = input.completedBy;
+    item.completedAt = new Date();
+    return repository.save(item);
   }
 
   async cancelItem(orderId: string, itemId: string, input: CancelOrderItemInput): Promise<OrderItem> {

@@ -4,10 +4,10 @@ import { RadiologyCatalogController } from './radiology-catalog.controller.js';
 import { RadiologyWorkflowService } from './radiology-workflow.service.js';
 import { RadiologyWorkflowController } from './radiology-workflow.controller.js';
 import { RadiologyRequisitionNumberGeneratorService } from './radiology-requisition-number-generator.service.js';
-import { BillingModule } from '../billing/billing.module.js';
+import { OrdersModule } from '../orders/orders.module.js';
 
 @Module({
-  imports: [BillingModule],
+  imports: [OrdersModule],
   controllers: [RadiologyCatalogController, RadiologyWorkflowController],
   providers: [RadiologyCatalogService, RadiologyWorkflowService, RadiologyRequisitionNumberGeneratorService],
   exports: [RadiologyCatalogService, RadiologyWorkflowService],

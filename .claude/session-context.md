@@ -1,19 +1,15 @@
 # Session Context
-Updated: 2026-08-01T03:22:59Z
-Session: aa7b6c46-90fc-4ba6-a419-ed6b29206729
+Updated: 2026-08-14T13:07:40Z
+Session: a2fb5034-28bf-4c7a-9a10-0b96d3ad4bd7
 
 ## Last Assistant Message
-Plan complete and saved to `new/docs/superpowers/plans/2026-08-01-order.md` (4 tasks: Order/OrderItem entities+migration → `order.*` permissions → OrdersService → OrdersController/Module). Two execution options:
-
-**1. Subagent-Driven (recommended)** — fresh subagent per task, review between tasks, fast iteration.
-
-**2. Inline Execution** — execute tasks in this session using executing-plans, batch execution with checkpoints.
+Docs committed as `3741e67`. The code changes (`OrdersService`, adapter removal, migration fix, dedup services, new test specs) are still uncommitted in the working tree — say the word when you want that as the feature commit.
 
 ## Git State
 Branch: main
-Uncommitted changes: 25
- new/code/apps/api/webpack.config.cjs               |   6 +
- new/code/package.json                              |   5 +-
- new/code/pnpm-lock.yaml                            | 209 +++++++++++++++++----
- new/code/pnpm-workspace.yaml                       |   1 +
- 18 files changed, 351 insertions(+), 94 deletions(-)
+Uncommitted changes: 30
+ .../api/src/radiology/radiology-billing.adapter.ts |  51 -------
+ ...diology-requisition-number-generator.service.ts |  26 +---
+ .../src/radiology/radiology-workflow.service.ts    |  30 ++---
+ .../apps/api/src/radiology/radiology.module.ts     |   4 +-
+ 26 files changed, 142 insertions(+), 654 deletions(-)

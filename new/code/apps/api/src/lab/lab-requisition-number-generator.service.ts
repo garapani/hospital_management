@@ -1,28 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { SequenceNumberGeneratorService } from '../database/sequence-number-generator.service.js';
 
 @Injectable()
 export class LabRequisitionNumberGeneratorService {
-  constructor(private readonly tenantConnection: TenantConnectionService) {}
+  private readonly sequenceGenerator: SequenceNumberGeneratorService;
 
-  async generateNextRequisitionNumber(prefix = 'LAB'): Promise<string> {
-    const currentYear = new Date().getFullYear();
+  constructor(tenantConnection: TenantConnectionService) {
+    this.sequenceGenerator = new SequenceNumberGeneratorService(tenantConnection);
+  }
 
-    return this.tenantConnection.runInTenantSchema(async (manager) => {
-      const result = await manager.query(
-        `
-        INSERT INTO lab_requisition_sequences (prefix, year, "lastSequence")
-        VALUES ($1, $2, 1)
-        ON CONFLICT (prefix, year)
-        DO UPDATE SET "lastSequence" = lab_requisition_sequences."lastSequence" + 1
-        RETURNING "lastSequence"
-        `,
-        [prefix, currentYear],
-      );
-
-      const nextSeq = result[0].lastSequence as number;
-      const paddedSeq = String(nextSeq).padStart(5, '0');
-      return `${prefix}-${currentYear}-${paddedSeq}`;
-    });
+  generateNextRequisitionNumber(prefix = 'LAB'): Promise<string> {
+    return this.sequenceGenerator.generateNext('lab_requisition_sequences', prefix);
   }
 }

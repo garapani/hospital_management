@@ -2,10 +2,10 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Not, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
+import { OrdersService } from '../orders/orders.service.js';
 import { RadiologyRequisition } from './entities/radiology-requisition.entity.js';
 import { RadiologyRequisitionNumberGeneratorService } from './radiology-requisition-number-generator.service.js';
 import { RadiologyCatalogService } from './radiology-catalog.service.js';
-import { InvoicesService } from '../billing/invoices.service.js';
 import { ListRadiologyRequisitionDto } from './dto/list-radiology-requisition.dto.js';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
@@ -29,7 +29,7 @@ export class RadiologyWorkflowService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly requisitionNumberGenerator: RadiologyRequisitionNumberGeneratorService,
     private readonly radiologyCatalogService: RadiologyCatalogService,
-    private readonly invoicesService: InvoicesService,
+    private readonly ordersService: OrdersService,
   ) {}
 
   async createRequisition(input: CreateRequisitionInput): Promise<RadiologyRequisition> {
@@ -197,24 +197,14 @@ export class RadiologyWorkflowService {
       requisition.verifiedBy = verifiedBy;
       requisition.verifiedAt = new Date();
       const savedRequisition = await repository.save(requisition);
-      
-      // Auto-charge: trigger billing for the completed order
-      const orderItem = await manager.getRepository(OrderItem).findOne({ where: { id: savedRequisition.orderItemId } });
-      if (orderItem && orderItem.status !== 'Completed') {
-        orderItem.status = 'Completed';
-        orderItem.completedBy = verifiedBy;
-        orderItem.completedAt = new Date();
-        await manager.getRepository(OrderItem).save(orderItem);
-        
-        // Trigger auto-billing
-        try {
-          await this.invoicesService.autoChargeForCompletedOrder(orderItem.id, verifiedBy);
-        } catch (billingError) {
-          // Log but don't fail the verification - billing issues should be handled separately
-          console.error(`Auto-charge failed for radiology order ${orderItem.id}:`, billingError);
-        }
-      }
-      
+
+      // Completes the order item via OrdersService (in this same transaction) instead of
+      // mutating the OrderItem repository directly. Billing charge-capture is not wired to
+      // this event yet — see pending-tasks.md.
+      await this.ordersService.completeItemInTransaction(manager, savedRequisition.orderItemId, {
+        completedBy: verifiedBy,
+      });
+
       return savedRequisition;
     });
   }

@@ -9,6 +9,7 @@ import { InventoryRequisitionService } from './inventory-requisition.service.js'
 import { InventoryRequisitionController } from './inventory-requisition.controller.js';
 import { InventoryDispatchController } from './inventory-dispatch.controller.js';
 import { StockRequisitionNumberGeneratorService } from './stock-requisition-number-generator.service.js';
+import { FefoStockDecrementService } from './fefo-stock-decrement.service.js';
 
 @Module({
   imports: [MasterDataModule],
@@ -24,7 +25,8 @@ import { StockRequisitionNumberGeneratorService } from './stock-requisition-numb
     PurchaseOrderNumberGeneratorService,
     InventoryRequisitionService,
     StockRequisitionNumberGeneratorService,
+    FefoStockDecrementService,
   ],
-  exports: [InventoryCatalogService, InventoryProcurementService, InventoryRequisitionService],
+  exports: [InventoryCatalogService, InventoryProcurementService, InventoryRequisitionService, FefoStockDecrementService],
 })
 export class InventoryModule {}

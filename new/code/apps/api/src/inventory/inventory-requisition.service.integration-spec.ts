@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { InventoryRequisitionService } from './inventory-requisition.service.js';
 import { InventoryCatalogService } from './inventory-catalog.service.js';
 import { StockRequisitionNumberGeneratorService } from './stock-requisition-number-generator.service.js';
+import { FefoStockDecrementService } from './fefo-stock-decrement.service.js';
 import { MasterDataService } from '../master-data/master-data.service.js';
 import {
   setupTenantTestContext,
@@ -24,6 +25,7 @@ describe('InventoryRequisitionService.listByDepartment (integration)', () => {
       new StockRequisitionNumberGeneratorService(ctx.tenantConnection),
       catalogService,
       masterDataService,
+      new FefoStockDecrementService(),
     );
   });
 

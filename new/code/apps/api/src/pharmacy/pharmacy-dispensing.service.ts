@@ -2,13 +2,11 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Not, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
+import { OrdersService } from '../orders/orders.service.js';
 import { InventoryCatalogService } from '../inventory/inventory-catalog.service.js';
 import { PharmacyDispensing } from './entities/pharmacy-dispensing.entity.js';
 import { PharmacyDispensingNumberGeneratorService } from './pharmacy-dispensing-number-generator.service.js';
-import { StockBatch } from '../inventory/entities/stock-batch.entity.js';
-import { StockBalance } from '../inventory/entities/stock-balance.entity.js';
-import { StockTransaction } from '../inventory/entities/stock-transaction.entity.js';
-import { InvoicesService } from '../billing/invoices.service.js';
+import { FefoStockDecrementService } from '../inventory/fefo-stock-decrement.service.js';
 import { ListPharmacyDispensingDto } from './dto/list-pharmacy-dispensing.dto.js';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
@@ -28,7 +26,8 @@ export class PharmacyDispensingService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly dispensingNumberGenerator: PharmacyDispensingNumberGeneratorService,
     private readonly inventoryCatalogService: InventoryCatalogService,
-    private readonly invoicesService: InvoicesService,
+    private readonly ordersService: OrdersService,
+    private readonly fefoStockDecrement: FefoStockDecrementService,
   ) {}
 
   async createDispensing(input: CreateDispensingInput): Promise<PharmacyDispensing> {
@@ -173,89 +172,26 @@ export class PharmacyDispensingService {
 
       const quantity = Number(dispensing.quantity);
 
-      // FEFO: lock every StockBalance row for this item with available stock, ordered so
-      // nearer-expiry batches are consumed first and no-expiry batches are consumed last.
-      const balanceRows = await manager
-        .createQueryBuilder(StockBalance, 'balance')
-        .innerJoin(StockBatch, 'batch', 'batch.id = balance.stockBatchId')
-        .where('balance.itemId = :itemId', { itemId: dispensing.inventoryItemId })
-        .andWhere('balance.availableQuantity > 0')
-        .orderBy('batch.expiryDate', 'ASC', 'NULLS LAST')
-        .addOrderBy('batch.createdAt', 'ASC')
-        .addOrderBy('balance.id', 'ASC')
-        .setLock('pessimistic_write', undefined, ['balance'])
-        .getMany();
-
-      const totalAvailable = balanceRows.reduce((sum, row) => sum + Number(row.availableQuantity), 0);
-      if (totalAvailable < quantity) {
-        throw new BadRequestException(
-          `Insufficient stock for item ${dispensing.inventoryItemId}: requested ${quantity}, available ${totalAvailable}`,
-        );
-      }
-
-      let remaining = quantity;
-      const transactionRepository = manager.getRepository(StockTransaction);
-      for (const balanceRow of balanceRows) {
-        if (remaining <= 0) break;
-        const portion = Math.min(remaining, Number(balanceRow.availableQuantity));
-
-        const updated = await manager.query<[Array<{ id: string }>, number]>(
-          `
-          UPDATE stock_balances
-          SET "availableQuantity" = "availableQuantity" - $1, "updatedAt" = now()
-          WHERE id = $2 AND "availableQuantity" >= $1
-          RETURNING id
-          `,
-          [portion, balanceRow.id],
-        );
-        if (updated[1] === 0) {
-          throw new Error(
-            `Invariant violation: stock balance ${balanceRow.id} changed under lock during dispensing`,
-          );
-        }
-
-        await transactionRepository.save(
-          transactionRepository.create({
-            itemId: dispensing.inventoryItemId,
-            stockBatchId: balanceRow.stockBatchId,
-            transactionType: 'PharmacyDispense',
-            referenceId: dispensing.id,
-            quantity: String(portion),
-            recordedBy: input.dispensedBy,
-          }),
-        );
-
-        remaining -= portion;
-      }
-
-      if (remaining > 0) {
-        throw new Error(
-          `Invariant violation: ${remaining} units of item ${dispensing.inventoryItemId} remained ` +
-            `unfulfilled after consuming all locked stock balance rows`,
-        );
-      }
+      await this.fefoStockDecrement.decrementInTransaction(manager, {
+        itemId: dispensing.inventoryItemId,
+        quantity,
+        transactionType: 'PharmacyDispense',
+        referenceId: dispensing.id,
+        recordedBy: input.dispensedBy,
+      });
 
       dispensing.status = 'Dispensed';
       dispensing.dispensedBy = input.dispensedBy;
       dispensing.dispensedAt = new Date();
       const savedDispensing = await dispensingRepository.save(dispensing);
-      
-      // Mark order item as completed and trigger auto-billing
-      if (orderItem.status !== 'Completed') {
-        orderItem.status = 'Completed';
-        orderItem.completedBy = input.dispensedBy;
-        orderItem.completedAt = new Date();
-        await manager.getRepository(OrderItem).save(orderItem);
-        
-        // Trigger auto-billing
-        try {
-          await this.invoicesService.autoChargeForCompletedOrder(orderItem.id, input.dispensedBy);
-        } catch (billingError) {
-          // Log but don't fail the dispensing - billing issues should be handled separately
-          console.error(`Auto-charge failed for pharmacy order ${orderItem.id}:`, billingError);
-        }
-      }
-      
+
+      // Completes the order item via OrdersService (in this same transaction) instead of
+      // mutating the OrderItem repository directly. Billing charge-capture is not wired to
+      // this event yet — see pending-tasks.md.
+      await this.ordersService.completeItemInTransaction(manager, orderItem.id, {
+        completedBy: input.dispensedBy,
+      });
+
       return savedDispensing;
     });
   }

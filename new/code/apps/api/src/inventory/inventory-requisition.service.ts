@@ -5,9 +5,7 @@ import { StockRequisition } from './entities/stock-requisition.entity.js';
 import { StockRequisitionItem } from './entities/stock-requisition-item.entity.js';
 import { StockRequisitionNumberGeneratorService } from './stock-requisition-number-generator.service.js';
 import { InventoryCatalogService } from './inventory-catalog.service.js';
-import { StockBatch } from './entities/stock-batch.entity.js';
-import { StockBalance } from './entities/stock-balance.entity.js';
-import { StockTransaction } from './entities/stock-transaction.entity.js';
+import { FefoStockDecrementService } from './fefo-stock-decrement.service.js';
 import { paginate, PaginatedResponseDto, requireParam } from '@hospital/pagination';
 import { SearchStockRequisitionsDto } from './dto/search-stock-requisitions.dto.js';
 
@@ -37,6 +35,7 @@ export class InventoryRequisitionService {
     private readonly requisitionNumberGenerator: StockRequisitionNumberGeneratorService,
     private readonly inventoryCatalogService: InventoryCatalogService,
     private readonly masterDataService: MasterDataService,
+    private readonly fefoStockDecrement: FefoStockDecrementService,
   ) {}
 
   async createRequisition(
@@ -185,66 +184,13 @@ export class InventoryRequisitionService {
         );
       }
 
-      // FEFO: lock every StockBalance row for this item with available stock, ordered so
-      // nearer-expiry batches are consumed first and no-expiry batches are consumed last.
-      const balanceRows = await manager
-        .createQueryBuilder(StockBalance, 'balance')
-        .innerJoin(StockBatch, 'batch', 'batch.id = balance.stockBatchId')
-        .where('balance.itemId = :itemId', { itemId: reqItem.itemId })
-        .andWhere('balance.availableQuantity > 0')
-        .orderBy('batch.expiryDate', 'ASC', 'NULLS LAST')
-        .addOrderBy('batch.createdAt', 'ASC')
-        .addOrderBy('balance.id', 'ASC')
-        .setLock('pessimistic_write', undefined, ['balance'])
-        .getMany();
-
-      const totalAvailable = balanceRows.reduce((sum, row) => sum + Number(row.availableQuantity), 0);
-      if (totalAvailable < quantity) {
-        throw new BadRequestException(
-          `Insufficient stock for item ${reqItem.itemId}: requested ${quantity}, available ${totalAvailable}`,
-        );
-      }
-
-      let remaining = quantity;
-      const transactionRepository = manager.getRepository(StockTransaction);
-      for (const balanceRow of balanceRows) {
-        if (remaining <= 0) break;
-        const portion = Math.min(remaining, Number(balanceRow.availableQuantity));
-
-        const updated = await manager.query<[Array<{ id: string }>, number]>(
-          `
-          UPDATE stock_balances
-          SET "availableQuantity" = "availableQuantity" - $1, "updatedAt" = now()
-          WHERE id = $2 AND "availableQuantity" >= $1
-          RETURNING id
-          `,
-          [portion, balanceRow.id],
-        );
-        if (updated[1] === 0) {
-          throw new Error(
-            `Invariant violation: stock balance ${balanceRow.id} changed under lock during fulfillment`,
-          );
-        }
-
-        await transactionRepository.save(
-          transactionRepository.create({
-            itemId: reqItem.itemId,
-            stockBatchId: balanceRow.stockBatchId,
-            transactionType: 'Dispatch',
-            referenceId: reqItem.id,
-            quantity: String(portion),
-            recordedBy: input.fulfilledBy,
-          }),
-        );
-
-        remaining -= portion;
-      }
-
-      if (remaining > 0) {
-        throw new Error(
-          `Invariant violation: ${remaining} units of item ${reqItem.itemId} remained unfulfilled after consuming all locked stock balance rows`,
-        );
-      }
+      await this.fefoStockDecrement.decrementInTransaction(manager, {
+        itemId: reqItem.itemId,
+        quantity,
+        transactionType: 'Dispatch',
+        referenceId: reqItem.id,
+        recordedBy: input.fulfilledBy,
+      });
 
       reqItem.fulfilledQuantity = String(newFulfilledQuantity);
       const savedReqItem = await reqItemRepository.save(reqItem);
