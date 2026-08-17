@@ -44,9 +44,23 @@ const GLOBAL_RATE_LIMIT = process.env['NODE_ENV'] === 'test' ? 1_000_000 : 100;
         // onModuleDestroy() actually disconnect it (disconnectRequired is only set on the
         // constructor's own client, not one passed in already-built). Passing a pre-built client
         // here previously leaked an open connection on every app shutdown, hanging Jest.
+        //
+        // Default port is 6380, not Redis's usual 6379: docker-compose.dev.yml maps the dev
+        // container's 6379 to host port 6380 (host port 6379 has nothing listening), matching how
+        // database/data-source.ts already defaults DB_PORT to 5433 for the same reason. Without
+        // this, any code path that unsets REDIS_HOST/REDIS_PORT (host-run dev server, or any test
+        // that boots AppModule without .env loaded) connects nowhere, and every authenticated HTTP
+        // request — which passes through this globally-registered ThrottlerGuard before reaching
+        // any controller — hangs retrying (ioredis's default maxRetriesPerRequest) long enough to
+        // blow past Jest's 5000ms test timeout, then eventually rejects with
+        // MaxRetriesPerRequestError once given a longer runway. This is the actual cause of the
+        // "encounters.controller.integration-spec.ts hangs" finding: it was the only clinical
+        // controller spec exercising real authenticated HTTP end-to-end (see git history for
+        // 2026-08-17) — sibling specs only assert 401-unauthorized paths, which AuthContextMiddleware
+        // rejects before the request ever reaches this guard.
         storage: new ThrottlerStorageRedisService({
           host: process.env['REDIS_HOST'] ?? 'localhost',
-          port: Number(process.env['REDIS_PORT'] ?? 6379),
+          port: Number(process.env['REDIS_PORT'] ?? 6380),
         }),
       }),
     }),
