@@ -27,7 +27,7 @@ describe('AdmissionsService (integration)', () => {
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
     patientsService = new PatientsService(ctx.tenantConnection, patientSequence);
-    masterDataService = new MasterDataService(ctx.tenantConnection, ctx.dataSource);
+    masterDataService = new MasterDataService(ctx.tenantConnection);
     appointmentsService = new AppointmentsService(ctx.tenantConnection);
     triageService = new TriageService(ctx.tenantConnection);
     admissionsService = new AdmissionsService(ctx.tenantConnection);

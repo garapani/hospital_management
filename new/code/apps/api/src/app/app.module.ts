@@ -8,6 +8,7 @@ import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { AuthModule } from '../auth/auth.module.js';
 import { TenantsModule } from '../tenants/tenants.module.js';
 import { AuditModule } from '../audit/audit.module.js';
+import { RbacModule } from '../rbac/rbac.module.js';
 import { MasterDataModule } from '../master-data/master-data.module.js';
 import { PatientsModule } from '../patients/patients.module.js';
 import { AppointmentsModule } from '../appointments/appointments.module.js';
@@ -54,6 +55,7 @@ const GLOBAL_RATE_LIMIT = process.env['NODE_ENV'] === 'test' ? 1_000_000 : 100;
     AuthModule,
     TenantsModule,
     AuditModule,
+    RbacModule,
     MasterDataModule,
     PatientsModule,
     AppointmentsModule,

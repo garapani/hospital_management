@@ -127,46 +127,4 @@ export class MasterDataController {
   async reactivateBed(@Param('id') id: string) {
     return this.masterDataService.reactivateBed(id);
   }
-
-  @Get('roles')
-  @RequirePermission(REQUIRED_PERMISSION)
-  async listRoles() {
-    return this.masterDataService.listRoles();
-  }
-
-  @Post('roles')
-  @RequirePermission(REQUIRED_PERMISSION)
-  @HttpCode(HttpStatus.CREATED)
-  async createRole(
-    @Body()
-    body: {
-      name: string;
-      description: string;
-      priority: number;
-      isCrossTenant?: boolean;
-    },
-  ) {
-    return this.masterDataService.createRole(body);
-  }
-
-  @Get('catalogs/departments')
-  @RequirePermission(REQUIRED_PERMISSION)
-  async listDepartmentCatalogs() {
-    return this.masterDataService.listDepartmentCatalogs();
-  }
-
-  @Post('catalogs/departments')
-  @RequirePermission(REQUIRED_PERMISSION)
-  @HttpCode(HttpStatus.CREATED)
-  async createDepartmentCatalog(
-    @Body()
-    body: {
-      departmentCode: string;
-      departmentName: string;
-      description: string | null;
-      isAppointmentApplicable: boolean;
-    }
-  ) {
-    return this.masterDataService.createDepartmentCatalog(body);
-  }
 }
