@@ -1309,3 +1309,24 @@ machines + permissions + `TenantTestContext` spec), notable specifics:
 
 All three wired in `app.module.ts`; permissions in `seed-rbac-catalog.ts` (Nurse finally gets its
 own manage grants beyond triage); migrations `0036`–`0038`.
+
+## 33. Maternity, CSSD, and Employee modules (2026-08-20)
+
+Three more modules on the template (entities + migrations `0039`–`0041` + §25 actor derivation +
+permissions + `TenantTestContext` spec). Notable specifics:
+
+- **Maternity** — the "record-once delivery" rule: `recordDelivery` sets the outcome (date, type,
+  baby count, complications, `deliveredBy = resolveActor(...)`) and afterwards `updateRecord` and a
+  second `recordDelivery` both throw `ConflictException` — a delivery outcome is a clinical
+  sign-off and cannot be silently edited. Cross-module validation (admission exists AND belongs to
+  the patient) via raw query, same as insurance/OT.
+- **CSSD** — instrument catalog (soft-delete, §28) plus sterilization cycles with a computed
+  **sterile-expiry**: `completeCycle` sets `sterileExpiryAt = completedAt + sterileHours`; a
+  deactivated instrument rejects new cycles (`ConflictException`), and cycle transitions are
+  row-locked. `operatedBy` is a §25 actor field.
+- **Employee** — the payroll base: `monthlyBasicSalary` is the number Payroll will compute from
+  (next module), so it is validated (≥ 0) rather than free-form; `EMP-…` codes via the wrapped
+  sequence generator; department validated by raw query; soft-delete.
+
+All wired in `app.module.ts`; permissions in `seed-rbac-catalog.ts` (HR/Payroll Admin gets its
+first grants via `employee.read`/`employee.manage`).

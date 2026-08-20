@@ -289,7 +289,8 @@ Follow the PRD's own phase ordering as-is:
   Inventory & Store Manager. Migration `0033`. Not done (future items): depreciation
   schedules/periodic accrual, disposal/write-off, asset transfers between departments,
   maintenance/AMC tracking, and a frontend page.
-- Phase 4: Clinical/EMR long tail, Maternity, CSSD — not started. **Nursing** and **OT are done
+- Phase 4: Clinical/EMR long tail — not started. **Nursing**, **OT**, **Maternity**, and **CSSD**
+  are done for their MVP scopes; **Emergency is covered by the existing triage module** (ER intake/triage per PRD).
   (2026-08-20); Emergency is covered by the existing triage module** (ER intake/triage per PRD).
   - **Nursing:** nursing tasks (Pending -> InProgress -> Completed / Cancelled, row-locked,
     actor-derived createdBy/completedBy) + MAR medication-administration records
@@ -299,7 +300,21 @@ Follow the PRD's own phase ordering as-is:
   - **OT:** surgery scheduling (auto `SUR-…` numbers, patient + admission-ownership validation,
     Scheduled -> InProgress -> Completed / Cancelled, actor-derived scheduledBy). Permissions
     `ot.read`/`ot.manage` → Doctor, Nurse, Hospital Admin, Super Admin. Migration `0038`; 7 tests.
-- Phase 5: Employee, Payroll, Fraction and Incentive
+  - **Maternity (2026-08-20):** labor/delivery records per admission — antenatal info
+    (gravida/para/LMP/EDD) + delivery outcome (date, type Normal/C-Section/Instrumental, baby
+    count, complications) with a record-once guard (a recorded delivery cannot be re-edited) and
+    actor-derived deliveredBy. Permissions `maternity.read`/`maternity.manage` → Doctor, Nurse,
+    Hospital Admin, Super Admin. Migration `0039`; 10 tests.
+  - **CSSD (2026-08-20):** sterile supply tracking — instrument catalog (soft-delete) +
+    sterilization cycles (Steam/ETO/Chemical; InProgress -> Completed/Failed, sterile-expiry =
+    completion + sterileHours, actor-derived operatedBy); deactivated instruments reject new
+    cycles. Permissions `cssd.read`/`cssd.manage` → Nurse, Hospital Admin, Super Admin. Migration
+    `0040`; 11 tests.
+- Phase 5: Payroll, Fraction and Incentive — not started. **Employee is done (2026-08-20):** HR
+  employee master — auto `EMP-…` numbers, department reference, employment type, monthly basic
+  salary (the payroll base), searchable/paginated list, soft-delete. Permissions
+  `employee.read`/`employee.manage` → HR/Payroll Admin, Hospital Admin, Super Admin. Migration
+  `0041`; 8 tests.
 - Phase 6: Helpdesk, Marketing and Referral, Social Service Unit, Document and Print, full
   Reporting/Dashboard — not started. **Notification** is now started/done as a slice ahead of its
   phase slot: the module (CRUD + summary + mark-read/mark-all-read endpoints, in-app
