@@ -1446,3 +1446,42 @@ Verified and asserting `%PDF-` magic bytes, `application/pdf`, and the 409 pre-v
 Note actor fallbacks: `enteredBy` on `lab_results` is NOT NULL, so service-level setup outside the
 HTTP path must pass the fallback actor explicitly (`resolveActor` still prefers the authenticated
 principal when a tenant context with an accountId is active).
+
+## 38. SaaS packages / edition tiering (2026-08-21)
+
+Product decision: the product is sold in **editions chosen at tenant creation** — small hospitals
+get a Basic set of features, medium a Standard set, large the Enterprise set, so the MVP can
+launch selling only Basic while the rest of the codebase stays available to bigger tiers.
+
+**A package is a curated set of module permission groups, enforced at JWT-issue time.** The
+`packages` catalog (public schema, seeded by platform migration `0048`, like roles/permissions)
+maps each tier to module keys (`basic`: 14 modules incl. radiology/employee/payroll; `standard`:
++ward-supply/nursing/OT/maternity/CSSD/vaccination/fixed-assets/helpdesk/marketing/SSU/fraction;
+`enterprise`: +insurance/accounting/document-print). `tenants.packageCode` (FK, default `'basic'`)
+records each tenant's tier; **pre-existing tenants were grandfathered to `'enterprise'`** by the
+migration so nothing that ran before packages silently lost access, and the seeded demo/platform
+tenants are created on `'enterprise'` — new customer tenants default to `'basic'` (the MVP tier).
+
+**Enforcement is resolution-time, not registration-time.** `PackagesService.filterPermissions(
+hospitalId, permissions)` intersects a role-derived permission list with the tenant's package
+modules (module key → permission-name prefixes via `MODULE_PERMISSION_PREFIXES`; the always-on
+`identity`/`system-admin`/`master-data`/`users`/`system` prefixes survive every package). It is
+applied in `AuthService.login`/`refresh` right after `getPermissionNamesForRoles`, so an
+out-of-package feature 403s via the existing `PermissionGuard` and never renders in the
+permission-driven console menus — **no per-request machinery and no data partitioning; the schema
+stays uniform across tenants**. The platform tenant (`__platform`) is never filtered, and an
+unknown package code fails open (codes are validated at `POST /tenants` and
+`PATCH /tenants/:hospitalId/package`, so an unknown row means a legacy edge case).
+
+**Upgrade/downgrade is a single column update.** `PATCH /tenants/:hospitalId/package` swaps
+`packageCode`; the change takes effect at the next login/refresh — in-flight JWTs keep their old
+permission list until expiry (the same 15-minute staleness window role changes already have), and
+the tenant's data is never touched. Permissions are computed fresh on every login, so there are no
+permission rows to seed/revoke per package.
+
+**Adding a module to the tiering** = add a module key to the right package in
+`package-catalog.ts` (and to the `packages` seed rows for fresh environments) plus a
+`MODULE_PERMISSION_PREFIXES` entry if its permission names don't already match — then re-seed or
+re-run migration `0048` for existing DBs. **Not done:** the platform console's package picker
+(tenant-creation form) and any self-serve upgrade — the backend contract (`GET /packages`,
+`POST /tenants {packageCode}`, `PATCH /tenants/:id/package`) is ready for the frontend repo.

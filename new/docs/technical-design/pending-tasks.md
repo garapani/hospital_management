@@ -181,6 +181,23 @@ scope, not merely lower priority.
     access to tenant data — enforced structurally by JWT-derived schema resolution, not by new
     per-endpoint guards. Spec: `new/docs/superpowers/specs/2026-08-13-platform-superadmin-console-design.md`.
     Plan: `new/docs/superpowers/plans/2026-08-13-platform-superadmin-console.md`.
+15. [x] **SaaS packages / edition tiering** (product decision 2026-08-21) — a package is a curated
+    set of module permission groups; tenant creation picks one so only those features are
+    available. Basic (14 modules — the **MVP launch tier**, incl. radiology, employee, payroll) →
+    Standard (+25: ward-supply, nursing, OT, maternity, CSSD, vaccination, fixed-assets, helpdesk,
+    marketing, SSU, fraction) → Enterprise (+28: insurance, accounting, Document & Print).
+    Implemented as **resolution-time gating**: `packages` catalog table (public schema, seeded by
+    migration `0048`, with `tenants.packageCode` FK, default 'basic'; pre-existing tenants
+    grandfathered to 'enterprise'), `PackagesService.filterPermissions()` applied at
+    login/refresh so a tenant's JWTs only carry in-package permissions — 403 via the existing
+    PermissionGuard and permission-driven console menus, no per-request machinery, no data
+    partitioning. `POST /tenants` accepts `packageCode` (validated; 400 on unknown), `GET /packages`
+    lists the catalog, `PATCH /tenants/:hospitalId/package` upgrades/downgrades (takes effect at
+    next login/refresh — in-flight JWTs keep their list until expiry, same staleness as role
+    changes). Platform tenant (`__platform`) is never filtered; unknown codes fail open. 12 new
+    integration tests incl. end-to-end login JWT assertions. See `Development-Standards.md` §38.
+    **Not done:** the platform console's package picker in the tenant-creation form (frontend repo)
+    and a self-serve upgrade path (backend is ready; product chose platform-admin-only changes).
 
 ## Phase 6 — Product module backlog
 
