@@ -36,6 +36,9 @@ import { EmployeeModule } from '../employee/employee.module.js';
 import { PayrollModule } from '../payroll/payroll.module.js';
 import { FractionModule } from '../fraction/fraction.module.js';
 import { HelpdeskModule } from '../helpdesk/helpdesk.module.js';
+import { MarketingModule } from '../marketing/marketing.module.js';
+import { SsuModule } from '../ssu/ssu.module.js';
+import { VaccinationModule } from '../vaccination/vaccination.module.js';
 
 @Module({
   imports: [
@@ -118,6 +121,9 @@ import { HelpdeskModule } from '../helpdesk/helpdesk.module.js';
     PayrollModule,
     FractionModule,
     HelpdeskModule,
+    MarketingModule,
+    SsuModule,
+    VaccinationModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

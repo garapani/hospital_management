@@ -375,6 +375,30 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'helpdesk.manage',
     description: 'Manage helpdesk tickets',
   },
+  {
+    name: 'marketing.read',
+    description: 'View referral sources and patient referrals',
+  },
+  {
+    name: 'marketing.manage',
+    description: 'Manage referral sources and record patient referrals',
+  },
+  {
+    name: 'ssu.read',
+    description: 'View social service unit cases',
+  },
+  {
+    name: 'ssu.manage',
+    description: 'Manage social service unit cases',
+  },
+  {
+    name: 'vaccination.read',
+    description: 'View vaccination records',
+  },
+  {
+    name: 'vaccination.manage',
+    description: 'Record vaccinations',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -586,6 +610,22 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'helpdesk.manage' },
   { roleName: 'Helpdesk Agent', permissionName: 'helpdesk.read' },
   { roleName: 'Helpdesk Agent', permissionName: 'helpdesk.manage' },
+  { roleName: 'Super Admin', permissionName: 'marketing.read' },
+  { roleName: 'Super Admin', permissionName: 'marketing.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'marketing.read' },
+  { roleName: 'Hospital Admin', permissionName: 'marketing.manage' },
+  { roleName: 'Super Admin', permissionName: 'ssu.read' },
+  { roleName: 'Super Admin', permissionName: 'ssu.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'ssu.read' },
+  { roleName: 'Hospital Admin', permissionName: 'ssu.manage' },
+  { roleName: 'Super Admin', permissionName: 'vaccination.read' },
+  { roleName: 'Super Admin', permissionName: 'vaccination.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'vaccination.read' },
+  { roleName: 'Hospital Admin', permissionName: 'vaccination.manage' },
+  { roleName: 'Doctor', permissionName: 'vaccination.read' },
+  { roleName: 'Doctor', permissionName: 'vaccination.manage' },
+  { roleName: 'Nurse', permissionName: 'vaccination.read' },
+  { roleName: 'Nurse', permissionName: 'vaccination.manage' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
