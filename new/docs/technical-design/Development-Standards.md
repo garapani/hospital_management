@@ -1354,3 +1354,21 @@ shared Postgres. Jest's default worker count parallelizes that provisioning fast
 serve it, pushing `beforeAll` past the 60s timeout — `jest.config.cts` now caps `maxWorkers: 4` so
 the DB (not the timeouts) is the bottleneck. Revisit when the suite grows again or CI gets a
 bigger runner.
+
+## 35. Marketing & Referral, Social Service Unit, and Vaccination modules (2026-08-20)
+
+Three more modules on the template (entities + migrations `0045`–`0047` + §25 actor derivation +
+permissions + `TenantTestContext` spec):
+
+- **Marketing & Referral** — the source catalog is soft-deleted (§28), and a patient referral is
+  only recordable against an **active** source (`ConflictException` on a deactivated one) — the
+  same "deactivated masters reject new use" rule as catalog items.
+- **SSU** — charity/subsidized-care cases with a row-locked `Open → Approved/Rejected → Closed`
+  machine; `subsidyPercent` is validated 0–100 (it is the write-off the hospital grants against
+  bills); `SSU-…` numbers via the wrapped sequence generator.
+- **Vaccination** — the first slice of the Clinical/EMR long tail: patient vaccination records
+  with `administeredBy` as a §25 clinical sign-off.
+
+These three complete PRD Phases 2–6's CRUD-style module list except Document & Print (which maps to
+the reporting-export/object-storage infrastructure, not a CRUD module) and DICOM (the PACS-facing
+domain that still needs its own scoping conversation).

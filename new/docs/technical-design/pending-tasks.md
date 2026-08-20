@@ -289,8 +289,12 @@ Follow the PRD's own phase ordering as-is:
   Inventory & Store Manager. Migration `0033`. Not done (future items): depreciation
   schedules/periodic accrual, disposal/write-off, asset transfers between departments,
   maintenance/AMC tracking, and a frontend page.
-- Phase 4: Clinical/EMR long tail — not started. **Nursing**, **OT**, **Maternity**, and **CSSD**
-  are done for their MVP scopes; **Emergency is covered by the existing triage module** (ER intake/triage per PRD).
+- Phase 4: Clinical/EMR long tail — remaining slice is medical-records extras; **Vaccination is
+  done (2026-08-20)** (patient vaccination records: vaccine, dose number, date, batch,
+  actor-derived administeredBy; permissions `vaccination.read`/`vaccination.manage` → Doctor,
+  Nurse, Hospital Admin, Super Admin; migration `0047`; 5 tests). **Nursing**, **OT**,
+  **Maternity**, and **CSSD** are done for their MVP scopes; **Emergency is covered by the
+  existing triage module** (ER intake/triage per PRD).
   (2026-08-20); Emergency is covered by the existing triage module** (ER intake/triage per PRD).
   - **Nursing:** nursing tasks (Pending -> InProgress -> Completed / Cancelled, row-locked,
     actor-derived createdBy/completedBy) + MAR medication-administration records
@@ -327,8 +331,16 @@ Follow the PRD's own phase ordering as-is:
   salary (the payroll base), searchable/paginated list, soft-delete. Permissions
   `employee.read`/`employee.manage` → HR/Payroll Admin, Hospital Admin, Super Admin. Migration
   `0041`; 8 tests.
-- Phase 6: Marketing and Referral, Social Service Unit, Document and Print, full
-  Reporting/Dashboard — not started. **Helpdesk is done (2026-08-20):** internal ticketing — auto
+- Phase 6: Document and Print, full Reporting/Dashboard — not started. **Helpdesk**, **Marketing
+  & Referral**, and **Social Service Unit are done (2026-08-20)**.
+  - **Marketing & Referral:** referral-source catalog (typed, soft-delete) + patient referral
+    records (source must be active, optional referring doctor, actor-derived recordedBy).
+    Permissions `marketing.read`/`marketing.manage` → Hospital Admin, Super Admin. Migration
+    `0045`; 7 tests.
+  - **Social Service Unit:** charity/subsidized-care cases (auto `SSU-…` numbers, subsidy percent
+    0-100, Open -> Approved/Rejected -> Closed row-locked, actor-derived appliedBy/approvedBy).
+    Permissions `ssu.read`/`ssu.manage` → Hospital Admin, Super Admin. Migration `0046`; 5 tests.
+  - (Helpdesk shipped earlier this session — see the Phase 6 note above this one.) **Helpdesk is done (2026-08-20):** internal ticketing — auto
   `HLP-…` numbers, priority, Open -> InProgress -> Resolved -> Closed (row-locked, actor-derived
   requester/resolver), assignable, q-search. Permissions `helpdesk.read`/`helpdesk.manage` →
   Helpdesk Agent, Hospital Admin, Super Admin. Migration `0044`; 5 tests. **Notification** is now started/done as a slice ahead of its
