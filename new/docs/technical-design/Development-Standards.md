@@ -1260,3 +1260,30 @@ non-HTTP fallback, so the NOT NULL columns can never abort a caller that omits t
 policy's patient, but the claim tracks only the insurance reimbursement — patient-side settlement
 stays in Billing's own payment records. Reconciliation between approved claims and payments is a
 named future item (it would be the first real cross-module money flow beyond charge capture).
+
+## 31. Accounting module (2026-08-20)
+
+PRD Phase 3's third net-new module: chart of accounts + double-entry journal + read-only reports.
+All conventions apply (tenant-scoped services, wrapped sequence generator for `JRN-…` numbers,
+§25 actor derivation on `createdBy`/`postedBy`, `isActive` soft-delete for accounts, permissions →
+Billing/Accounts Staff, Hospital Admin, Super Admin, migration `0035`).
+
+**Double-entry invariants are enforced at creation and at posting:** every journal needs ≥ 2 lines,
+each line has exactly one non-zero side (never both debit and credit, never a zero line), and total
+debit must equal total credit — validated up front and re-checked on `postJournal`. Posted journals
+are immutable (`ConflictException` on re-post); corrections are new entries (a reversing-journal
+feature is a named future item).
+
+**Reports are read-only computed queries over posted journals** — no stored balances, no accrual
+job (same trade as Fixed Asset depreciation, §29):
+- trial balance: per-account debit/credit totals + balance (debit − credit), filtered by period;
+- income statement: Income rows reported as `-balance` (credit balances) and Expense rows as
+  `+balance` (debit balances) — get the signs right or revenue comes out negative;
+- balance sheet: Assets at `+balance`, Liabilities/Equity at `-balance`, **plus a retained-earnings
+  row equal to net income accumulated through the as-of date** — without it the sheet cannot
+  balance (`assets ≠ liabilities + equity`).
+
+**Test convention:** report tests that assert exact figures must run in a **dedicated tenant**
+(`ctx.createTenant()` + a service bound to that context) — reports aggregate the whole tenant, so
+sharing the suite's tenant leaks earlier tests' journals into the numbers. This doubles as an
+extra tenant-isolation assertion.

@@ -250,7 +250,9 @@ Follow the PRD's own phase ordering as-is:
   discharge summaries), Orders (place + detail), and Reporting (dashboard + events). 249 frontend
   tests pass; production build succeeds (commit `b89ad01` in the frontend repo). Not yet built:
   a notifications page, vitals/encounters pages, and patient-portal.
-- Phase 3: Accounting, Verification — not started. **Fixed Asset** and **Insurance & Claims** are
+- Phase 3: Verification — not started (its payer/eligibility checks substantially overlap the
+  insurance module's `checkCoverage`). **Fixed Asset**, **Insurance & Claims**, and **Accounting**
+  are done for their MVP scopes.
   done for their MVP scopes.
   - **Insurance & Claims (2026-08-20):** `insurance` module — payer master (Government/Private),
     patient insurance policies (coverage window, sum insured, copay, eligibility check
@@ -261,6 +263,17 @@ Follow the PRD's own phase ordering as-is:
     `0034`; 8 integration tests. Not done (future items): external referrals
     (`ExtReferralModels`), PM-JAY/Medicare-specific claim formats (deferred to the compliance
     adapter per PRD §5.7), payer-side settlement reconciliation, and a frontend page.
+  - **Accounting (2026-08-20):** `accounting` module — hierarchical chart of accounts
+    (Asset/Liability/Equity/Income/Expense + soft-delete), double-entry journal entries (balanced
+    lines, `Draft -> Posted` immutable, auto `JRN-…` numbers, actor-derived createdBy/postedBy per
+    §25), and read-only financial reports: trial balance (per-account debit/credit totals), income
+    statement (revenue − expenses = net income), and balance sheet (assets = liabilities + equity
+    + retained earnings). Permissions `accounting.read`/`accounting.manage` wired to Billing/
+    Accounts Staff, Hospital Admin, Super Admin. Migration `0035`; 7 integration tests (reports
+    tested hermetically in a dedicated tenant). Not done (future items): automatic journal posting
+    from Billing/charge-capture (ledger mapping — the old system's `DanpheEMR.AccTransfer`),
+    reversing/correcting posted journals, fiscal-year closing, account reconciliation, and a
+    frontend page.
   done for its MVP register scope (2026-08-20):** `fixed-assets` module with asset categories +
   asset register (auto asset codes, purchase date/cost, supplier, department assignment,
   condition In Service/Under Repair/Retired), paginated list, update, soft-delete
