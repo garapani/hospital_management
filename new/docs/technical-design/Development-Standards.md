@@ -1330,3 +1330,27 @@ permissions + `TenantTestContext` spec). Notable specifics:
 
 All wired in `app.module.ts`; permissions in `seed-rbac-catalog.ts` (HR/Payroll Admin gets its
 first grants via `employee.read`/`employee.manage`).
+
+## 34. Payroll, Fraction & Incentive, and Helpdesk modules (2026-08-20)
+
+Three more modules on the template (entities + migrations `0042`–`0044` + §25 actor derivation +
+permissions + `TenantTestContext` spec). Notable specifics:
+
+- **Payroll** — a payslip is a **snapshot, not a live formula**: `runMonthlyPayroll(month, year,
+  { allowancePercent, deductionPercent })` reads each active employee's `monthlyBasicSalary`,
+  computes basic/allowance/gross/deduction/net with 2dp rounding, and stores the amounts; the
+  employee master can change later without rewriting history. Re-running the same period is
+  idempotent (the `UNIQUE (employeeId, periodMonth, periodYear)` row is skipped, not recreated).
+- **Fraction & Incentive** — money-adjacent like billing: `recordEntry` resolves the percent from
+  an explicit rule (must be active and match the doctor) or the doctor's default null-department
+  rule, and snapshots percent + base so later rule edits don't change recorded shares. Invoice
+  existence is validated via raw query; the share math is `round(base * percent / 100)`.
+- **Helpdesk** — the full lifecycle (`Open → InProgress → Resolved → Closed`) is row-locked with
+  `ConflictException` naming current vs target status; the requester is the §25 actor at create
+  time and the resolver at resolve time. `HLP-…` numbers via the wrapped sequence generator.
+
+**Suite-size note:** the api suite is now ~78 suites, each provisioning tenant schemas against one
+shared Postgres. Jest's default worker count parallelizes that provisioning faster than the DB can
+serve it, pushing `beforeAll` past the 60s timeout — `jest.config.cts` now caps `maxWorkers: 4` so
+the DB (not the timeouts) is the bottleneck. Revisit when the suite grows again or CI gets a
+bigger runner.

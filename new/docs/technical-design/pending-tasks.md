@@ -310,13 +310,28 @@ Follow the PRD's own phase ordering as-is:
     completion + sterileHours, actor-derived operatedBy); deactivated instruments reject new
     cycles. Permissions `cssd.read`/`cssd.manage` → Nurse, Hospital Admin, Super Admin. Migration
     `0040`; 11 tests.
-- Phase 5: Payroll, Fraction and Incentive — not started. **Employee is done (2026-08-20):** HR
+- Phase 5: done (2026-08-20) — **Employee**, **Payroll**, and **Fraction & Incentive** all shipped.
+  - **Payroll:** monthly payslips computed from the employee master's `monthlyBasicSalary`
+    (allowance%/deduction% config, gross/net, 2dp rounding), unique per employee+period
+    (idempotent re-runs skip existing), Draft -> Paid (row-locked), actor-derived processedBy.
+    Permissions `payroll.read`/`payroll.manage` → HR/Payroll Admin, Hospital Admin, Super Admin.
+    Migration `0042`; 10 tests.
+  - **Fraction & Incentive:** doctor revenue-share rules (percent 0-100, optional department,
+    soft-delete) + fraction entries computed against real invoices (explicit rule or the doctor's
+    default rule, snapshot of percent+base, actor-derived recordedBy). Permissions
+    `fraction.read`/`fraction.manage` → Billing/Accounts Staff, Hospital Admin, Super Admin.
+    Migration `0043`; 9 tests.
+  - (Employee shipped earlier this session — see the Phase 5 note above this one.)
+  **Employee was done (2026-08-20):** HR
   employee master — auto `EMP-…` numbers, department reference, employment type, monthly basic
   salary (the payroll base), searchable/paginated list, soft-delete. Permissions
   `employee.read`/`employee.manage` → HR/Payroll Admin, Hospital Admin, Super Admin. Migration
   `0041`; 8 tests.
-- Phase 6: Helpdesk, Marketing and Referral, Social Service Unit, Document and Print, full
-  Reporting/Dashboard — not started. **Notification** is now started/done as a slice ahead of its
+- Phase 6: Marketing and Referral, Social Service Unit, Document and Print, full
+  Reporting/Dashboard — not started. **Helpdesk is done (2026-08-20):** internal ticketing — auto
+  `HLP-…` numbers, priority, Open -> InProgress -> Resolved -> Closed (row-locked, actor-derived
+  requester/resolver), assignable, q-search. Permissions `helpdesk.read`/`helpdesk.manage` →
+  Helpdesk Agent, Hospital Admin, Super Admin. Migration `0044`; 5 tests. **Notification** is now started/done as a slice ahead of its
   phase slot: the module (CRUD + summary + mark-read/mark-all-read endpoints, in-app
   `notifications` table migration `0028`, and in-process subscribers wired for admission and
   appointment creation) shipped in `a203100` + `93df331`; no email/SMS/push channel exists yet,
