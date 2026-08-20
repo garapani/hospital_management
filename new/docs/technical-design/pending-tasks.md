@@ -250,7 +250,17 @@ Follow the PRD's own phase ordering as-is:
   discharge summaries), Orders (place + detail), and Reporting (dashboard + events). 249 frontend
   tests pass; production build succeeds (commit `b89ad01` in the frontend repo). Not yet built:
   a notifications page, vitals/encounters pages, and patient-portal.
-- Phase 3: Insurance/Claims, Accounting, Verification — not started. **Fixed Asset is now
+- Phase 3: Accounting, Verification — not started. **Fixed Asset** and **Insurance & Claims** are
+  done for their MVP scopes.
+  - **Insurance & Claims (2026-08-20):** `insurance` module — payer master (Government/Private),
+    patient insurance policies (coverage window, sum insured, copay, eligibility check
+    `GET /insurance/policies/:id/coverage`), and a claims lifecycle linked to invoices
+    (Draft -> Submitted -> Approved -> Paid / Rejected, auto `CLM-…` numbers, actor-derived
+    submitter/processor per §25, row-locked transitions). Permissions `insurance.read`/
+    `insurance.manage` wired to Billing/Accounts Staff, Hospital Admin, Super Admin. Migration
+    `0034`; 8 integration tests. Not done (future items): external referrals
+    (`ExtReferralModels`), PM-JAY/Medicare-specific claim formats (deferred to the compliance
+    adapter per PRD §5.7), payer-side settlement reconciliation, and a frontend page.
   done for its MVP register scope (2026-08-20):** `fixed-assets` module with asset categories +
   asset register (auto asset codes, purchase date/cost, supplier, department assignment,
   condition In Service/Under Repair/Retired), paginated list, update, soft-delete

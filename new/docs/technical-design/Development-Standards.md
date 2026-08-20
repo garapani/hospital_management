@@ -1239,3 +1239,24 @@ imported in `app.module.ts`, permissions added to `seed-rbac-catalog.ts` (+ the 
 integration spec if the catalog assertions enumerate permissions), and a
 `TenantTestContext`-based integration spec. Note the domain folder name must not collide with the
 webpack `apps/api/src/assets` favicon folder — hence `fixed-assets`, not `assets`.
+
+## 30. Insurance & Claims module (2026-08-20)
+
+PRD Phase 3's second net-new module: payer master + patient policies + a claims lifecycle. All
+established conventions apply (tenant-scoped services, `isActive` soft-delete for the payer/policy
+masters, wrapped sequence generator for `CLM-…` claim numbers, `{ data, meta }` pagination,
+permissions in `seed-rbac-catalog.ts` → Billing/Accounts Staff, Hospital Admin, Super Admin,
+migration `0034`).
+
+**Claims state machine** — `Draft → Submitted → Approved → Paid`, with `Submitted → Rejected`:
+every transition is row-locked (`pessimistic_write`), conflicts throw `ConflictException` naming
+the current vs. target status, and money fields are validated (`amountClaimed > 0`,
+`amountApproved ≤ amountClaimed`). **Actor fields (`submittedBy`, `processedBy`) follow §25** — the
+authenticated principal wins, and the service input keeps an optional deprecated field as the
+non-HTTP fallback, so the NOT NULL columns can never abort a caller that omits them. Eligibility
+(`checkCoverage`) is stateless: active policy AND the date inside the coverage window.
+
+**Billing linkage note:** a claim references an invoice and validates the invoice belongs to the
+policy's patient, but the claim tracks only the insurance reimbursement — patient-side settlement
+stays in Billing's own payment records. Reconciliation between approved claims and payments is a
+named future item (it would be the first real cross-module money flow beyond charge capture).
