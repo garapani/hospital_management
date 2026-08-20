@@ -250,15 +250,20 @@ Follow the PRD's own phase ordering as-is:
 ## Dependencies worth calling out explicitly
 
 - **Phase 3, item 9** (load test) should follow items 6–7, not precede them.
-- **New gap, not yet its own item**: neither `apps/api/src/database/migrate.ts` (platform
-  migrations) nor `migrate-tenants.ts` (tenant migrations) can currently be invoked outside Jest —
-  both fail under `tsx` and `node --loader ts-node/esm` with a decorator-parsing error surfacing
-  through `libs/audit-emitter`. The SWC-based nx targets added since (`api:migrate`, `api:migrate-tenants`,
-  added in `56a9747`) do not fix this — **verified 2026-08-20**: `nx run api:migrate` against the
-  compose DB hangs indefinitely with no output (120s+ timeout, killed). The underlying migration
-  logic is proven correct (passes under Jest), so this is a standalone-script tooling fix
-  (decorator-safe runner or a build step), not a logic fix. Should land before any real deployment —
-  bundle with Phase 3 ops-readiness work.
+- [x] **Resolved (2026-08-20):** `migrate.ts`/`migrate-tenants.ts` (and the `seed-rbac`/
+      `seed-initial-setup` runners) can't be invoked outside Jest — the nx targets hung with no
+      output. Root cause: the swc-node ESM loader (`--import @swc-node/register/esm-register`)
+      keeps two worker IPC pipes open, and `data-source.ts` registers a never-cleared
+      pool-monitor `setInterval` when `NODE_ENV !== 'test'` — so the work completed fine but the
+      process never exited. Fixed with explicit `process.exit(0)` on success in all four runner
+      scripts (they already exited 1 on error). Verified: `nx run api:migrate` and
+      `api:migrate-tenants` exit 0, and `migrate-tenants` now backfills the new
+      `discharge_summaries` migration (0030) onto existing dev tenant schemas. **Also fixed the
+      migration-tracking drift it surfaced:** the 0008 patients migration was renamed in the
+      `3741e67`/2026-08-14 fix, so any schema provisioned before that records the old name and
+      TypeORM tries to re-apply it (`relation "patients" already exists`); the three pre-fix dev
+      schemas' `migrations` rows were renamed to match the current
+      `CreatePatientTables0008_2000000000005`. See `Development-Standards.md` §26.
 - [x] **Resolved (2026-08-20):** the codebase-wide "actor fields are client-supplied" gap — every
   domain module's actor fields (`enteredBy`, `verifiedBy`, `sampleCollectedBy`, `scannedBy`,
   `reportEnteredBy`, `createdBy`, `receivedBy`, `returnedBy`, `refundedBy`, `dispensedBy`,

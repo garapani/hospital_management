@@ -1073,11 +1073,14 @@ Two environment gotchas discovered along the way, both worth remembering:
   environments.
 - **The global RBAC catalog tables (`roles`, `permissions`, `role_permissions`) live in `public`,
   not per tenant.** `seedRbacCatalog` is insert-only (`orIgnore()`), so **removing a mapping from
-  `seed-rbac-catalog.ts` never propagates to an existing dev DB** — a stale row from an older seed
-  breaks the seed's own integration spec until deleted by hand (four leftover
-  `Super Admin → patients.*` rows were cleaned in this pass). If catalog reconciliation is ever
-  wanted (prune mappings absent from the seed), it needs an explicit migration or a seed-mode flag —
-  do not make the seed delete rows by default, since production may carry hand-added grants.
+  `seed-rbac-catalog.ts` never propagates to an existing dev DB**. Corollary found 2026-08-20:
+  `seed-initial-setup.ts` grants Super Admin **all** permissions (a blanket loop), so the catalog
+  must map Super Admin to the same permissions or the two seeds disagree — the patients.* mappings
+  were missing from the catalog (every other module had them) and were added; the
+  `seed-rbac-catalog.integration-spec.ts` patients expectations were aligned accordingly. If
+  catalog reconciliation (prune mappings absent from the seed) is ever wanted, it needs an explicit
+  migration or a seed-mode flag — do not make the seed delete rows by default, since production may
+  carry hand-added grants.
 
 ## 25. Actor fields derive from the authenticated principal, never the request body (2026-08-20)
 
@@ -1124,3 +1127,31 @@ registered in `data-source.ts`'s entities list and no migration created `dischar
 every endpoint threw `EntityMetadataNotFoundError`. Lesson: "routes mapped" is not "feature works";
 a new entity needs (a) registration in `data-source.ts`, (b) a tenant migration, (c) an integration
 test that actually writes to the table. This pass added all three (migration `0030`).
+
+## 26. Standalone CLI runners (migrate/seed) must exit explicitly (2026-08-20)
+
+Every standalone script that uses `data-source.ts` — `migrate.ts`, `migrate-tenants.ts`,
+`seed-rbac-catalog-runner.ts`, `seed-initial-setup-runner.ts` — ends with an explicit
+`process.exit(0)` on success. This is load-bearing, not cosmetic:
+
+- The nx targets run them through the swc-node ESM loader (`node --import
+  @swc-node/register/esm-register`), which keeps two worker IPC pipes open for the process's
+  lifetime.
+- `data-source.ts` registers a pool-monitor `setInterval` (every 30s) whenever `NODE_ENV !==
+  'test'`, which never clears.
+
+Both keep the event loop alive after the script's work finishes, so without the explicit exit the
+command appears to hang forever despite having applied every migration. Under Jest (`NODE_ENV=test`)
+the interval is skipped and the loader pipes don't block Jest's own teardown, which is why the
+migration logic always "worked in tests" while the CLI hung.
+
+Two follow-on gotchas surfaced once the runners actually ran:
+
+- **Renaming a migration breaks already-provisioned schemas.** TypeORM matches pending migrations by
+  the recorded `name`; when the 0008 patients migration was renamed (`3741e67`, 2026-08-14), every
+  pre-existing tenant schema still recorded the old name, so `migrate-tenants` tried to re-apply it
+  (`relation "patients" already exists`). Fix for existing dev schemas: `UPDATE <schema>.migrations
+  SET name = '<current name>' WHERE name = '<old name>'`. New schemas are unaffected.
+- **`seed-initial-setup.ts` grants Super Admin ALL permissions** (blanket loop), so the
+  `seed-rbac-catalog.ts` catalog must map Super Admin to the same set or the two seeds disagree and
+  the catalog's own integration spec fails on any DB that ran the initial setup (see §24).
