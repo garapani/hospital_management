@@ -34,22 +34,25 @@ scope, not merely lower priority.
       periodically reconciling a batch of credit-billed invoices) to Phase 3's Insurance & Claims
       module, since it depends on machinery that doesn't exist yet. `mvp-status.md`'s audit missed
       this — Settlement is correctly out of MVP scope, not a gap; dropped from this item.
-- [ ] **Billing: automatic charge-capture from Lab/Radiology/Pharmacy.**
-      `InvoiceItem.sourceOrderItemId` (`billing/entities/invoice-item.entity.ts`) is optional and
-      client-supplied on invoice creation — nothing automatically creates a billing charge when a
-      Lab/Radiology/Pharmacy order item completes. For a real registration→visit→bill flow this
-      needs either a subscriber (matching the `@hospital/audit-emitter` in-process pattern already
-      used for Reporting/Audit) or a billing-staff UI that reads completed order items. See
-      `mvp-status.md`'s "No automatic charge-capture" discrepancy. **Update (2026-08-14):** a prior
-      pass had actually built a version of this — `InvoicesService.autoChargeForCompletedOrder()` plus
-      a dead `OrderBillingAdapter` interface — but it queried catalog tables/columns
-      (`lab_catalog_tests`, `radiology_catalog_items`, `inventory_catalog_items`, a `price`/`salePrice`
-      column) that don't exist anywhere in the schema; it has almost certainly never produced a real
-      invoice, silently swallowed by its own `catch`. Removed outright during the 2026-08-14
-      architecture-review fix pass (`Development-Standards.md` §23) rather than half-fixed, since
-      making it real needs a pricing data model on the Lab/Radiology/Inventory catalog entities first —
-      a product decision, not just an architecture fix. This item is still exactly as undone as it
-      looks; don't be misled by code that resembles a working implementation.
+- [x] **Billing: automatic charge-capture from Lab/Radiology/Pharmacy.**
+      **Resolved (2026-08-20):** a real pricing data model + a working capture path now exist.
+      Pricing: `lab_tests.price`, `radiology_imaging_items.price`, and `inventory_items.salePrice`
+      (single currency ₹, nullable = not priced) added by migration `0031`; catalog create accepts
+      the price and new `PATCH .../price` endpoints (lab.catalog.manage / radiology.catalog.manage /
+      inventory.catalog.manage) set/update it. Capture: `ChargeCaptureSubscriber`
+      (`billing/charge-capture.subscriber.ts`, wired like the audit/reporting/notification
+      subscribers — tableName-filtered, no cross-module entity imports) fires when an `order_items`
+      row transitions to `Completed` — the single choke point every clinical completion flows
+      through (`OrdersService.completeItemInTransaction` → Lab verify / Radiology verify / Pharmacy
+      dispense) — resolves the catalog price for the item's type, and appends a line (with
+      `sourceOrderItemId`) to the patient's open invoice, creating one if none exists. Best-effort
+      per the human partner's ruling: unpriced/unsupported items are skipped before any SQL write,
+      so they never roll back the completing workflow. 8 new integration tests (charge capture +
+      catalog pricing) — full suite 389 passed. See `Development-Standards.md` §27. Known
+      follow-ups: no re-run mechanism for a capture that fails at the SQL layer (rare — the error is
+      logged; a "re-run capture for a completed order item" endpoint is a future item), and the
+      find-open-invoice-then-append step is not row-locked (a concurrent first-capture race could
+      create two invoices — same future item).
 - [x] **Appointments: doctor-schedule/availability endpoints.** Create/list/get/update/cancel
       exist; PRD's module description implies "doctor schedules" as in-scope. **Resolved
       (2026-08-20):** `GET /appointments/doctors/:doctorId/schedule` and

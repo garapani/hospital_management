@@ -1155,3 +1155,38 @@ Two follow-on gotchas surfaced once the runners actually ran:
 - **`seed-initial-setup.ts` grants Super Admin ALL permissions** (blanket loop), so the
   `seed-rbac-catalog.ts` catalog must map Super Admin to the same set or the two seeds disagree and
   the catalog's own integration spec fails on any DB that ran the initial setup (see §24).
+
+## 27. Catalog pricing and automatic charge-capture (2026-08-20)
+
+The registration→visit→bill flow's missing link — nothing charged the patient when clinical work
+completed — is now closed with a pricing data model and an in-process capture path.
+
+**Pricing model:** `lab_tests.price`, `radiology_imaging_items.price`, `inventory_items.salePrice`
+(single currency ₹, `numeric(10,2)` nullable = not priced; migration `0031`). Catalog create
+accepts the price; new `PATCH <catalog>/.../price` endpoints set/update it (guarded by the module's
+`*.catalog.manage` permission). Each entity carries a locally-mirrored `numericTransformer`
+(mirror-don't-extract: importing billing's transformer would create a lab/radiology/inventory →
+billing edge; the transformer converts node-postgres's string numerics to numbers).
+
+**Capture:** `billing/charge-capture.subscriber.ts` is a TypeORM subscriber wired like the
+audit/reporting/notification subscribers (pushed onto the DataSource from `OnModuleInit`). It
+filters on `event.metadata.tableName === 'order_items'` (no `listenTo` — binding by entity class
+would import the OrderItem entity and create a billing → orders module edge) and fires when the row
+transitions to `Completed`, which is the single choke point every clinical completion flows through
+(`OrdersService.completeItemInTransaction`, called by Lab verify, Radiology verify, Pharmacy
+dispense). `InvoicesService.captureChargeForOrderItem(manager, orderItem)` then:
+
+1. idempotency-checks `sourceOrderItemId` (never charge twice);
+2. resolves the price per itemType (lab test / imaging item / inventory salePrice) via raw
+   `manager.query` joins on the tenant schema (no cross-module entity imports);
+3. appends a line to the patient's open (`Unpaid`/`PartiallyPaid`) invoice, creating one if none
+   exists (`createdBy` = authenticated principal, falling back to the order item's `completedBy` so
+   the NOT NULL column can never abort the transaction).
+
+**Failure semantics (human ruling: best-effort):** every "skip" decision (unpriced, unsupported
+item type, already charged) is made before any SQL write, so those paths can never roll back the
+completing workflow. A genuine SQL failure during capture is logged and never rethrown, but — like
+the reporting constraint documents — a Postgres error inside the business transaction still aborts
+it, surfacing the failure loudly rather than silently losing revenue. Known follow-ups: no re-run
+endpoint for a failed capture, and the open-invoice find-or-create is not row-locked (a concurrent
+first-capture race could create two invoices).

@@ -289,6 +289,16 @@ surface:** the `DischargeSummary` entity was never registered in the DataSource 
 so every discharge-summary endpoint threw `EntityMetadataNotFoundError` — added registration +
 migration `0030` + integration coverage.
 
+### High: Billing had no automatic charge-capture — the dead `autoChargeForCompletedOrder` queried catalog tables that don't exist
+
+**Resolved (2026-08-20):** the pricing data model (`lab_tests.price`,
+`radiology_imaging_items.price`, `inventory_items.salePrice`, migration `0031`) plus
+`ChargeCaptureSubscriber` + `InvoicesService.captureChargeForOrderItem` now auto-charge a completed
+Lab/Radiology/Pharmacy order item onto the patient's open invoice (see `Development-Standards.md`
+§27). The earlier half-fix (`autoChargeForCompletedOrder` + dead `OrderBillingAdapter`), removed in
+the 2026-08-14 pass, is replaced by a working implementation with 8 integration tests; the
+`pending-tasks.md` item is checked off.
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
