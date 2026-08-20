@@ -287,6 +287,14 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'fixed-asset.manage',
     description: 'Create/update/deactivate fixed assets and categories',
   },
+  {
+    name: 'insurance.read',
+    description: 'View insurance payers, patient policies, and claims',
+  },
+  {
+    name: 'insurance.manage',
+    description: 'Manage insurance payers, policies, and the claims lifecycle',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -427,6 +435,12 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'fixed-asset.manage' },
   { roleName: 'Inventory/Store Manager', permissionName: 'fixed-asset.read' },
   { roleName: 'Inventory/Store Manager', permissionName: 'fixed-asset.manage' },
+  { roleName: 'Super Admin', permissionName: 'insurance.read' },
+  { roleName: 'Super Admin', permissionName: 'insurance.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'insurance.read' },
+  { roleName: 'Hospital Admin', permissionName: 'insurance.manage' },
+  { roleName: 'Billing/Accounts Staff', permissionName: 'insurance.read' },
+  { roleName: 'Billing/Accounts Staff', permissionName: 'insurance.manage' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
