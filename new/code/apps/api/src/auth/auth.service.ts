@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 import { TenantContextService } from '@hospital/tenant-context';
 import { AccountsService } from '../accounts/accounts.service.js';
+import { PackagesService } from '../packages/packages.service.js';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
@@ -39,6 +40,7 @@ export class AuthService {
     private readonly accountsService: AccountsService,
     private readonly jwtService: JwtService,
     private readonly tenantContext: TenantContextService,
+    private readonly packagesService: PackagesService,
   ) {}
 
   async login(input: LoginInput): Promise<LoginResult> {
@@ -69,7 +71,12 @@ export class AuthService {
     await this.accountsService.resetFailedLogins(account.id);
 
     const hospitalId = this.tenantContext.getTenantId();
-    const permissions = await this.accountsService.getPermissionNamesForRoles(roleIds);
+    // Package-scoped: only permissions whose modules are in the tenant's package reach the JWT,
+    // so out-of-package features 403 and never render in the console.
+    const permissions = await this.packagesService.filterPermissions(
+      hospitalId,
+      await this.accountsService.getPermissionNamesForRoles(roleIds),
+    );
     const payload = this.buildAccessPayload(account.id, roleNames, permissions, hospitalId);
 
     const accessToken = await this.jwtService.signAsync(payload, { expiresIn: ACCESS_TOKEN_TTL });
@@ -105,7 +112,10 @@ export class AuthService {
       return { invalidToken: true };
     }
 
-    const permissions = await this.accountsService.getPermissionNamesForRoles(found.roleIds);
+    const permissions = await this.packagesService.filterPermissions(
+      payload.hospitalId,
+      await this.accountsService.getPermissionNamesForRoles(found.roleIds),
+    );
     const accessPayload = this.buildAccessPayload(
       found.account.id,
       found.roleNames,

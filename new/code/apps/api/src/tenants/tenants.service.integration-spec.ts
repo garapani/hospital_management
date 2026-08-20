@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { TenantsService } from './tenants.service.js';
 import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
+import { PackagesService } from '../packages/packages.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -18,6 +19,7 @@ describe('TenantsService (integration)', () => {
       new TenantProvisioningService(ctx.dataSource),
       ctx.tenantConnection,
       ctx.tenantContext,
+      new PackagesService(ctx.dataSource),
     );
   });
 

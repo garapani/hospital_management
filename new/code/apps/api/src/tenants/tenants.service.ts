@@ -7,6 +7,7 @@ import { Role } from '../rbac/entities/role.entity.js';
 import { DepartmentCatalog } from '../master-data/entities/department-catalog.entity.js';
 import { Department } from '../master-data/entities/department.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { PackagesService } from '../packages/packages.service.js';
 import { PLATFORM_TENANT_ID } from './platform-tenant.js';
 
 const SAFE_HOSPITAL_ID = /^[a-z0-9_]+$/;
@@ -31,6 +32,8 @@ export interface BlockedRole {
 export interface ProvisionTenantInput {
   hospitalId: string;
   hospitalName: string;
+  /** The SaaS package to provision under; defaults to 'basic' (the MVP launch tier). */
+  packageCode?: string;
   /** Deprecated — ignored when a tenant context with an accountId is active. */
   createdBy?: string;
   roleIds?: string[];
@@ -44,6 +47,7 @@ export class TenantsService {
     private readonly tenantProvisioning: TenantProvisioningService,
     private readonly tenantConnection: TenantConnectionService,
     private readonly tenantContext: TenantContextService,
+    private readonly packagesService: PackagesService,
   ) {}
 
   /**
@@ -74,6 +78,14 @@ export class TenantsService {
       throw new ConflictException(`Tenant ${input.hospitalId} already exists`);
     }
 
+    // Validate the package before doing any work — an unknown code must fail fast, not silently
+    // fall back to 'basic' and hide the wrong feature set from the customer.
+    const packageCode = input.packageCode ?? 'basic';
+    const pkg = await this.packagesService.getPackage(packageCode);
+    if (!pkg) {
+      throw new BadRequestException(`Unknown packageCode: ${packageCode}`);
+    }
+
     // Schema/role/migrations before the registry row: if provisioning fails partway through, no
     // registry row exists to make the tenant look ready when it isn't.
     await this.tenantProvisioning.provisionTenantSchema(input.hospitalId);
@@ -91,6 +103,7 @@ export class TenantsService {
         hospitalId: input.hospitalId,
         hospitalName: input.hospitalName,
         status: 'active',
+        packageCode,
         activatedAt: new Date(),
         suspendedAt: null,
         createdBy: this.resolveActor(input.createdBy),
@@ -250,6 +263,34 @@ export class TenantsService {
       roleName: catalog.find((role) => role.id === roleId)?.name ?? roleId,
       accounts,
     }));
+  }
+
+  /**
+   * Switches a tenant's SaaS package (upgrade or downgrade). Resolution-time gating means no
+   * permission rows need touching: the new package takes effect at the next login/refresh, so
+   * in-flight JWTs keep their old permission list until expiry (the same staleness window role
+   * changes already have). The tenant's data is never touched.
+   */
+  async setTenantPackage(hospitalId: string, packageCode: string): Promise<Tenant> {
+    if (hospitalId === PLATFORM_TENANT_ID) {
+      throw new BadRequestException(
+        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot change package`,
+      );
+    }
+    const pkg = await this.packagesService.getPackage(packageCode);
+    if (!pkg) {
+      throw new BadRequestException(`Unknown packageCode: ${packageCode}`);
+    }
+    const repository = this.dataSource.getRepository(Tenant);
+    const tenant = await repository.findOne({ where: { hospitalId } });
+    if (!tenant) {
+      throw new NotFoundException(`Tenant ${hospitalId} not found`);
+    }
+    if (tenant.packageCode !== packageCode) {
+      tenant.packageCode = packageCode;
+      await repository.save(tenant);
+    }
+    return tenant;
   }
 
   async listTenants(): Promise<Tenant[]> {

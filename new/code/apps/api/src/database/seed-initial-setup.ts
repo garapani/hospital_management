@@ -17,6 +17,9 @@ interface SeededAdminConfig {
   password: string;
   displayName: string;
   roleName: string;
+  /** SaaS package for the seeded tenant. Seed tenants are internal (platform + demo), so they
+   *  get the largest package — new *customer* tenants default to 'basic' at POST /tenants. */
+  packageCode: string;
 }
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
@@ -35,6 +38,7 @@ function getPlatformAdminConfig(): SeededAdminConfig {
     password: process.env['PLATFORM_ADMIN_PASSWORD'] ?? 'SuperAdmin@123!',
     displayName: process.env['PLATFORM_ADMIN_DISPLAY_NAME'] ?? 'System Administrator',
     roleName: 'Super Admin',
+    packageCode: 'enterprise',
   };
 }
 
@@ -48,6 +52,7 @@ function getDemoHospitalAdminConfig(): SeededAdminConfig {
     password: process.env['MASTER_ADMIN_PASSWORD'] ?? 'DemoAdmin@123!',
     displayName: process.env['MASTER_ADMIN_DISPLAY_NAME'] ?? 'Demo Hospital Administrator',
     roleName: 'Hospital Admin',
+    packageCode: 'enterprise',
   };
 }
 
@@ -81,6 +86,7 @@ async function ensureSeededTenant(
       hospitalId: config.tenantId,
       hospitalName: config.hospitalName,
       status: 'active',
+      packageCode: config.packageCode,
       activatedAt: new Date(),
       suspendedAt: null,
       createdBy: 'seed-initial-setup',

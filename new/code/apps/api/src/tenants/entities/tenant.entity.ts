@@ -12,6 +12,12 @@ export class Tenant {
   @Column({ type: 'varchar', length: 20, default: 'active' })
   status!: 'active' | 'suspended';
 
+  /** The SaaS package this tenant was provisioned under; gates which module permissions its
+   *  JWTs carry (see PackagesService.filterPermissions). New tenants default to 'basic'; rows
+   *  that predate packages were migrated to 'enterprise'. */
+  @Column({ type: 'varchar', default: 'basic' })
+  packageCode!: string;
+
   @CreateDateColumn()
   createdAt!: Date;
 

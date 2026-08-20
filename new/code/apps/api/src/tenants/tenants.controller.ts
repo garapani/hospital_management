@@ -14,6 +14,7 @@ import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { TenantsService } from './tenants.service.js';
 import { ProvisionTenantDto } from './dto/provision-tenant.dto.js';
 import { SetTenantRolesDto } from './dto/set-tenant-roles.dto.js';
+import { SetTenantPackageDto } from './dto/set-tenant-package.dto.js';
 
 const REQUIRED_PERMISSION = 'system-admin.tenants.manage';
 
@@ -58,6 +59,15 @@ export class TenantsController {
     @Body() body: SetTenantRolesDto,
   ) {
     return this.tenantsService.setTenantRoles(hospitalId, body.roleIds);
+  }
+
+  @Patch(':hospitalId/package')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async setPackage(
+    @Param('hospitalId') hospitalId: string,
+    @Body() body: SetTenantPackageDto,
+  ) {
+    return this.tenantsService.setTenantPackage(hospitalId, body.packageCode);
   }
 
   @Patch(':hospitalId/suspend')

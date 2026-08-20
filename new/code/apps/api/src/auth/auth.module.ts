@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { TenantContextModule } from '@hospital/tenant-context';
 import { AccountsModule } from '../accounts/accounts.module.js';
+import { PackagesModule } from '../packages/packages.module.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { resolveJwtSecret } from './jwt-secret.js';
@@ -10,6 +11,7 @@ import { resolveJwtSecret } from './jwt-secret.js';
   imports: [
     TenantContextModule,
     AccountsModule,
+    PackagesModule,
     JwtModule.register({
       global: true,
       secret: resolveJwtSecret(),

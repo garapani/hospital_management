@@ -1,5 +1,6 @@
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service.js';
+import { PackagesService } from '../packages/packages.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -13,7 +14,12 @@ describe('AuthService (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'auth_service', seedRbac: true });
-    authService = new AuthService(ctx.accountsService, jwtService, ctx.tenantContext);
+    authService = new AuthService(
+      ctx.accountsService,
+      jwtService,
+      ctx.tenantContext,
+      new PackagesService(ctx.dataSource),
+    );
 
     await ctx.inTenant(() =>
       ctx.accountsService.createStaffAccount({
