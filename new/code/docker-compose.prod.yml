@@ -29,6 +29,46 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: hospital-minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-hospital_dev}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-hospital_dev_password}
+    volumes:
+      - hospital-minio-data:/data
+    networks:
+      - hospital-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot migration runner: platform migrations first, then tenant migrations for every
+  # already-provisioned tenant. Run manually with:
+  #   docker compose -f docker-compose.prod.yml run --rm migrate
+  # The runners execute via the swc-node loader that ships in the image (devDependencies are not
+  # pruned in the current single-stage Dockerfile), so no extra compile step is needed.
+  migrate:
+    image: hospital-api:latest
+    container_name: hospital-api-migrate
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hospital-network
+    command:
+      - sh
+      - -c
+      - >-
+        node --import @swc-node/register/esm-register apps/api/src/database/migrate.ts &&
+        node --import @swc-node/register/esm-register apps/api/src/database/migrate-tenants.ts
+
   api:
     build:
       context: .
@@ -38,6 +78,8 @@ services:
     restart: always
     env_file:
       - .env
+    ports:
+      - '3000:3000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,3 +95,4 @@ networks:
 
 volumes:
   hospital-postgres-data:
+  hospital-minio-data:

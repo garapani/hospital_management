@@ -58,14 +58,30 @@ npx nx serve api
 ```
 
 ### Production
-To run the built artifacts in production:
+Two supported paths:
+
+**1. Containerized (recommended)** — the repo ships a production `Dockerfile` and
+`docker-compose.prod.yml` (Postgres + Redis + MinIO + API, with a one-shot `migrate` service):
+
+```bash
+# Build the API image (devDependencies are kept on purpose: the migrate service runs the
+# migration runners via the swc-node loader).
+docker compose -f docker-compose.prod.yml build api
+
+# Apply platform + tenant migrations (idempotent; run once per deployment, and again whenever
+# a new migration is added).
+docker compose -f docker-compose.prod.yml run --rm migrate
+
+# Start the stack.
+docker compose -f docker-compose.prod.yml up -d
+```
+
+**2. Bare `node`** — after `pnpm exec nx build api`, run the compiled bundle directly:
 ```bash
 node apps/api/dist/main.js
 ```
 
-There is no production Dockerfile or production `docker-compose.yml` in the repo yet — only
-`docker-compose.dev.yml` (local Postgres for development/tests). Building a real container image
-is not covered by this guide today.
+Either way, run migrations explicitly first (see §6) — they never run automatically on startup.
 
 ## 6. Database Migrations
 Migrations are **not** run automatically on startup — `main.ts` only calls `NestFactory.create()`
@@ -81,15 +97,19 @@ and `app.listen()`; it never calls `dataSource.runMigrations()`.
   `migrate-tenants` Nx target (`pnpm exec nx run api:migrate-tenants`), which loops the `tenants`
   registry table.
 
-**Known gap:** there is currently no working standalone way to invoke platform migrations
-(`apps/api/src/database/migrate.ts`) or `migrate-tenants.ts` outside of Jest. Both fail under `tsx`
-and under `node --loader ts-node/esm` with a decorator-parsing error that surfaces transitively
-through `libs/audit-emitter`'s `@Injectable()`/`@Inject()` decorators (an esbuild/ts-node
-tsconfig-resolution issue, not a logic bug — the same migration code paths pass under Jest, e.g.
-`tenant-provisioning.service.integration-spec.ts`). Until that tooling gap is fixed, apply platform
-migrations by running `dataSource.runMigrations()` from a short-lived Jest test, or investigate a
-decorator-safe runner (`ts-node` in CJS mode, `swc`, or a build step) before relying on either
-script in a real deployment.
+**Resolved (2026-08-20):** both standalone runners work outside Jest via the SWC-based nx targets or
+directly through the swc-node loader:
+
+```bash
+# Platform migrations (public schema: tenants registry, RBAC catalog)
+pnpm exec nx run api:migrate
+# Tenant migrations (every already-provisioned tenant schema)
+pnpm exec nx run api:migrate-tenants
+```
+
+The same two scripts are what the containerized `migrate` service runs. See
+`Development-Standards.md` §26 for why the runners must exit explicitly (the swc-node loader's IPC
+pipes and data-source.ts's pool-monitor `setInterval` keep the event loop alive otherwise).
 
 ## 7. Scaling
 Since the app is stateless (all state is in Postgres/Redis), you can scale the API horizontally by running multiple instances behind a reverse proxy (e.g., Nginx, AWS ALB). Ensure your Redis instance (Phase 5) is shared across all nodes for rate-limiting.
@@ -107,8 +127,8 @@ deferred gap, not an oversight).
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `COMPOSE_FILE` | `docker-compose.dev.yml` | Compose file the Postgres service lives in — **update this once a production `docker-compose.yml` exists** (tracked gap, see `pending-tasks.md`'s dependencies section). |
-| `POSTGRES_SERVICE` | `api-postgres` | Compose service name to `docker exec` into. |
+| `COMPOSE_FILE` | `docker-compose.dev.yml` | Compose file the Postgres service lives in (backup script default; set to `docker-compose.prod.yml` on a prod host). |
+| `POSTGRES_SERVICE` | `api-postgres` | Compose service name to `docker exec` into (backup script default; `hospital-postgres` on prod). |
 | `POSTGRES_USER` | `identity_access` | Matches `DB_USERNAME`. |
 | `POSTGRES_DB` | `identity_access` | Matches `DB_DATABASE`. |
 | `BACKUP_DIR` | `./backups` | Local working directory for dump files before/after upload. |

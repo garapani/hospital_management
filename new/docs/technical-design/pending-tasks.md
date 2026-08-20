@@ -110,10 +110,11 @@ scope, not merely lower priority.
 5. [x] **Deployment path + runbook fixes** (new-features.md #4 + #17) — done: `Deployment-Guide.md`
    and `Runbook.md` now match the real env var names, build output path, start command, and
    migration behavior (not automatic; platform vs. tenant migrations; `migrate-tenants` target);
-   also documents that `migrate.ts`/`migrate-tenants.ts` currently can't be invoked outside Jest
-   (tsx/ts-node decorator-parsing issue through `libs/audit-emitter` — a new, previously-unknown
-   tooling gap, not just a doc-wording fix) and that no production Dockerfile/`docker-compose.yml`
-   exists yet. Also fixed the Runbook's `afterTransactionCommit`/rollback-sandbox claims, which
+   **Update (2026-08-20):** the two formerly-outstanding claims are both closed — the standalone
+   migration runners work outside Jest (see the "Dependencies" section; `Development-Standards.md`
+   §26) and the repo now ships a production `Dockerfile` + `docker-compose.prod.yml` (Postgres +
+   Redis + MinIO + API with a published port, plus a one-shot `migrate` service); `Deployment-Guide.md`
+   documents the containerized path. Also fixed the Runbook's `afterTransactionCommit`/rollback-sandbox claims, which
    don't exist anywhere in the codebase.
 
 ## Phase 3 — Production-readiness ops
@@ -126,8 +127,7 @@ scope, not merely lower priority.
    touching auth/isolation in staging, since those still depend on metrics/tracing, not just logs.
 7. [x] **Connection pooling/tenant limits** (new-features.md #9) — **global pool max + statement
    timeout only**, done: `DB_POOL_MAX` (default 20), `DB_STATEMENT_TIMEOUT_MS` (default 30000ms) on
-   the main `DataSource`. Per-tenant caps (needs PgBouncer — grouped with the existing missing
-   production Dockerfile/`docker-compose.yml` gap) and tenant-tagged metrics/alerts (needs the
+   the main `DataSource`. Per-tenant caps (needs PgBouncer) and tenant-tagged metrics/alerts (needs the
    observability stack deferred out of item 6) are **not done**.
 8. [x] **Backup/restore runbooks** (new-features.md #6) **+ hardware failure recovery plan**
    (new-features.md #7) — done: `scripts/backup-db.sh` (nightly `pg_dump -Fc`, S3-compatible
