@@ -135,12 +135,13 @@ describe('seedRbacCatalog (integration)', () => {
       'Hospital Admin',
       'Nurse',
       'Receptionist / Front Desk',
+      'Super Admin',
     ]);
 
     const managePerm = await ctx.dataSource.getRepository(Permission).findOneOrFail({ where: { name: 'patients.manage' } });
     const manageMappings = await ctx.dataSource.getRepository(RolePermission).find({ where: { permissionId: managePerm.id } });
     const manageRoles = await ctx.dataSource.getRepository(Role).find({ where: { id: In(manageMappings.map((m: RolePermission) => m.roleId)) } });
-    expect(manageRoles.map((r: Role) => r.name)).toEqual(['Hospital Admin']);
+    expect(manageRoles.map((r: Role) => r.name).sort()).toEqual(['Hospital Admin', 'Super Admin']);
   });
 
   it('creates the appointment.manage and appointment.read permissions', async () => {

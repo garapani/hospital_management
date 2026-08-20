@@ -292,6 +292,14 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Super Admin', permissionName: 'system-admin.tenants.manage' },
   { roleName: 'Hospital Admin', permissionName: 'master-data.manage' },
   { roleName: 'Super Admin', permissionName: 'master-data.manage' },
+  // Super Admin is mapped to every other module's permissions (appointment, vitals, encounter,
+  // triage, admission, order, billing, lab, radiology, inventory, pharmacy, reporting); patients
+  // was the one omission — seed-initial-setup already grants Super Admin ALL permissions (it is
+  // the platform-ops role), so this closes the catalog/initial-setup inconsistency.
+  { roleName: 'Super Admin', permissionName: 'patients.read' },
+  { roleName: 'Super Admin', permissionName: 'patients.create' },
+  { roleName: 'Super Admin', permissionName: 'patients.update' },
+  { roleName: 'Super Admin', permissionName: 'patients.manage' },
   { roleName: 'Hospital Admin', permissionName: 'patients.read' },
   { roleName: 'Hospital Admin', permissionName: 'patients.create' },
   { roleName: 'Hospital Admin', permissionName: 'patients.update' },

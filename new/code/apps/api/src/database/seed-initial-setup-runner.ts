@@ -18,7 +18,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+// Explicit process.exit(0) is load-bearing: see the identical note in migrate.ts — the swc-node
+// ESM loader's worker IPC pipes and data-source.ts's pool-monitor setInterval keep the event loop
+// alive after the work completes, so without it the command hangs despite finishing.
+main()
+  .then(() => process.exit(0))
+  .catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });

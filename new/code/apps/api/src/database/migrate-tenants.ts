@@ -40,8 +40,13 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1]?.endsWith('migrate-tenants.js') || process.argv[1]?.endsWith('migrate-tenants.ts')) {
-  main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+  // Explicit process.exit(0) is load-bearing: see the identical note in migrate.ts — the swc-node
+  // ESM loader's worker IPC pipes and data-source.ts's pool-monitor setInterval keep the event
+  // loop alive after the work completes, so without it the command hangs despite finishing.
+  main()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
 }
