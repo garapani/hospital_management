@@ -69,6 +69,18 @@ services:
         node --import @swc-node/register/esm-register apps/api/src/database/migrate.ts &&
         node --import @swc-node/register/esm-register apps/api/src/database/migrate-tenants.ts
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: hospital-prometheus
+    restart: always
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - hospital-prometheus-data:/prometheus
+    ports:
+      - '9090:9090'
+    networks:
+      - hospital-network
+
   api:
     build:
       context: .
@@ -96,3 +108,4 @@ networks:
 volumes:
   hospital-postgres-data:
   hospital-minio-data:
+  hospital-prometheus-data:

@@ -2,7 +2,7 @@ import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/c
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
-import { ObservabilityLoggerModule } from '@hospital/observability';
+import { ObservabilityLoggerModule, ObservabilityMetricsModule, MetricsService, metricsMiddleware } from '@hospital/observability';
 import { TenantContextModule, TenantContextMiddleware } from '@hospital/tenant-context';
 import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { AuthModule } from '../auth/auth.module.js';
@@ -89,6 +89,7 @@ import { VaccinationModule } from '../vaccination/vaccination.module.js';
       }),
     }),
     ObservabilityLoggerModule,
+    ObservabilityMetricsModule,
     TenantContextModule,
     AuthModule,
     TenantsModule,
@@ -128,14 +129,21 @@ import { VaccinationModule } from '../vaccination/vaccination.module.js';
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule implements NestModule {
+  constructor(private readonly metricsService: MetricsService) {}
+
   configure(consumer: MiddlewareConsumer): void {
     consumer
       .apply(AuthContextMiddleware)
       .exclude(
         { path: 'auth/login', method: RequestMethod.POST },
         { path: 'auth/refresh', method: RequestMethod.POST },
+        // Prometheus scrapers cannot carry JWTs; /metrics exposes only aggregate counters.
+        { path: 'metrics', method: RequestMethod.GET },
       )
       .forRoutes('*');
     consumer.apply(TenantContextMiddleware).forRoutes('*');
+    // Metrics middleware must run before the route handlers to time them; it reads
+    // req.authContext (populated by AuthContextMiddleware) and req.route (populated by Express).
+    consumer.apply(metricsMiddleware(this.metricsService)).forRoutes('*');
   }
 }

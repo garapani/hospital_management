@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { ReportingEvent } from './entities/reporting-event.entity.js';
+import { toCsv } from './reporting-csv.util.js';
 
 export interface ListEventsParams {
   eventType?: string;
@@ -106,5 +107,28 @@ export class ReportingQueryService {
         totalAmount: Number(row.totalAmount ?? 0),
       }));
     });
+  }
+
+  /** Whole-set CSV export (capped at 10000 rows) of the events archive matching the filters. */
+  async exportEventsCsv(params: ListEventsParams): Promise<string> {
+    const { items } = await this.listEvents({ ...params, page: 1, limit: 10000 });
+    const columns = ['id', 'occurredAt', 'eventType', 'entityId', 'correlationId', 'payload'];
+    return toCsv(
+      items.map((e) => ({
+        id: e.id,
+        occurredAt: e.occurredAt.toISOString(),
+        eventType: e.eventType,
+        entityId: e.entityId,
+        correlationId: e.correlationId ?? '',
+        payload: JSON.stringify(e.payload),
+      })),
+      columns,
+    );
+  }
+
+  /** CSV export of the daily revenue aggregates. */
+  async exportRevenueCsv(params: DateRangeParams): Promise<string> {
+    const rows = await this.getRevenue(params);
+    return toCsv(rows.map((r) => ({ date: r.date, totalAmount: r.totalAmount })), ['date', 'totalAmount']);
   }
 }

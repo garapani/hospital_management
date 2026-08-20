@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "nx": {
-    "tags": ["type:platform-lib"],
+    "tags": [
+      "type:platform-lib"
+    ],
     "targets": {
       "test": {
         "options": {
@@ -24,6 +26,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@hospital/tenant-context": "workspace:*"
+    "@hospital/tenant-context": "workspace:*",
+    "prom-client": "^15.1.3"
   }
 }

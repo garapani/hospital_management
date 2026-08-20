@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { ReportingQueryService } from './reporting-query.service.js';
 
@@ -37,5 +37,25 @@ export class ReportingController {
   @RequirePermission(REQUIRED_PERMISSION)
   async getRevenue(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reportingQueryService.getRevenue({ from, to });
+  }
+
+  @Get('events/export.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="reporting-events.csv"')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async exportEvents(
+    @Query('eventType') eventType?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.reportingQueryService.exportEventsCsv({ eventType, from, to });
+  }
+
+  @Get('dashboard/revenue/export.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="revenue.csv"')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async exportRevenue(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.reportingQueryService.exportRevenueCsv({ from, to });
   }
 }
