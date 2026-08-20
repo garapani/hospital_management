@@ -32,6 +32,7 @@ import { AddCatalogPrices0031 } from './0031-add-catalog-prices.js';
 import { AddCatalogIsActive0032 } from './0032-add-catalog-is-active.js';
 import { CreateFixedAssetTables0033 } from './0033-create-fixed-asset-tables.js';
 import { CreateInsuranceTables0034 } from './0034-create-insurance-tables.js';
+import { CreateAccountingTables0035 } from './0035-create-accounting-tables.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -78,4 +79,5 @@ export const TENANT_MIGRATIONS = [
   AddCatalogIsActive0032,
   CreateFixedAssetTables0033,
   CreateInsuranceTables0034,
+  CreateAccountingTables0035,
 ];

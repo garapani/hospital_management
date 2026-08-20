@@ -26,6 +26,7 @@ import { PharmacyModule } from '../pharmacy/pharmacy.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { FixedAssetsModule } from '../fixed-assets/fixed-assets.module.js';
 import { InsuranceModule } from '../insurance/insurance.module.js';
+import { AccountingModule } from '../accounting/accounting.module.js';
 
 @Module({
   imports: [
@@ -98,6 +99,7 @@ import { InsuranceModule } from '../insurance/insurance.module.js';
     NotificationsModule,
     FixedAssetsModule,
     InsuranceModule,
+    AccountingModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

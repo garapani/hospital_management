@@ -295,6 +295,14 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'insurance.manage',
     description: 'Manage insurance payers, policies, and the claims lifecycle',
   },
+  {
+    name: 'accounting.read',
+    description: 'View the chart of accounts, journal entries, and financial reports',
+  },
+  {
+    name: 'accounting.manage',
+    description: 'Manage accounts and journal entries',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -441,6 +449,12 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'insurance.manage' },
   { roleName: 'Billing/Accounts Staff', permissionName: 'insurance.read' },
   { roleName: 'Billing/Accounts Staff', permissionName: 'insurance.manage' },
+  { roleName: 'Super Admin', permissionName: 'accounting.read' },
+  { roleName: 'Super Admin', permissionName: 'accounting.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'accounting.read' },
+  { roleName: 'Hospital Admin', permissionName: 'accounting.manage' },
+  { roleName: 'Billing/Accounts Staff', permissionName: 'accounting.read' },
+  { roleName: 'Billing/Accounts Staff', permissionName: 'accounting.manage' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {

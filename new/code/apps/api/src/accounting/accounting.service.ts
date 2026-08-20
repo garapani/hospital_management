@@ -1,0 +1,409 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { EntityManager } from 'typeorm';
+import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
+import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
+import {
+  AccountType,
+  ACCOUNT_TYPES,
+  LedgerAccount,
+} from './entities/ledger-account.entity.js';
+import { JournalEntry, JournalLine } from './entities/journal-entry.entity.js';
+import { JournalNumberGeneratorService } from './journal-number-generator.service.js';
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+export interface CreateAccountInput {
+  accountCode: string;
+  name: string;
+  type: AccountType;
+  parentAccountId?: string;
+}
+
+export interface UpdateAccountInput {
+  name?: string;
+  type?: AccountType;
+  parentAccountId?: string | null;
+}
+
+export interface JournalLineInput {
+  accountId: string;
+  debit?: number;
+  credit?: number;
+  lineNarration?: string;
+}
+
+export interface CreateJournalInput {
+  entryDate: string;
+  narration?: string;
+  lines: JournalLineInput[];
+  /** Deprecated — ignored when a tenant context with an accountId is active (see §25). */
+  createdBy?: string;
+}
+
+export interface TrialBalanceRow {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: AccountType;
+  debitTotal: number;
+  creditTotal: number;
+  /** debitTotal - creditTotal (a negative balance is a credit-side balance). */
+  balance: number;
+}
+
+export interface IncomeStatementRow {
+  accountCode: string;
+  accountName: string;
+  amount: number;
+}
+
+export interface BalanceSheetRow {
+  accountCode: string;
+  accountName: string;
+  accountType: AccountType;
+  /** Debit balance for Asset accounts; credit balance for Liability/Equity. */
+  amount: number;
+}
+
+@Injectable()
+export class AccountingService {
+  constructor(
+    private readonly tenantConnection: TenantConnectionService,
+    private readonly journalNumberGenerator: JournalNumberGeneratorService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
+
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
+
+  // ---------- Chart of accounts ----------
+
+  async createAccount(input: CreateAccountInput): Promise<LedgerAccount> {
+    if (!input.accountCode?.trim() || !input.name?.trim()) {
+      throw new BadRequestException('accountCode and name are required');
+    }
+    if (!ACCOUNT_TYPES.includes(input.type)) {
+      throw new BadRequestException(`Account type must be one of: ${ACCOUNT_TYPES.join(', ')}`);
+    }
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      if (input.parentAccountId) {
+        const parent = await manager.getRepository(LedgerAccount).findOne({ where: { id: input.parentAccountId } });
+        if (!parent) {
+          throw new NotFoundException(`Parent account ${input.parentAccountId} not found`);
+        }
+      }
+      const repository = manager.getRepository(LedgerAccount);
+      return repository.save(
+        repository.create({
+          accountCode: input.accountCode.trim(),
+          name: input.name.trim(),
+          type: input.type,
+          parentAccountId: input.parentAccountId ?? null,
+        }),
+      );
+    });
+  }
+
+  async listAccounts(): Promise<LedgerAccount[]> {
+    return this.tenantConnection.runInTenantSchema((manager) =>
+      manager.getRepository(LedgerAccount).find({ order: { accountCode: 'ASC' } }),
+    );
+  }
+
+  async updateAccount(id: string, input: UpdateAccountInput): Promise<LedgerAccount> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(LedgerAccount);
+      const account = await repository.findOne({ where: { id } });
+      if (!account) {
+        throw new NotFoundException(`Ledger account ${id} not found`);
+      }
+      if (input.type !== undefined && !ACCOUNT_TYPES.includes(input.type)) {
+        throw new BadRequestException(`Account type must be one of: ${ACCOUNT_TYPES.join(', ')}`);
+      }
+      if (input.name !== undefined) account.name = input.name;
+      if (input.type !== undefined) account.type = input.type;
+      if (input.parentAccountId !== undefined) {
+        if (input.parentAccountId === id) {
+          throw new BadRequestException('An account cannot be its own parent');
+        }
+        if (input.parentAccountId) {
+          const parent = await manager.getRepository(LedgerAccount).findOne({ where: { id: input.parentAccountId } });
+          if (!parent) {
+            throw new NotFoundException(`Parent account ${input.parentAccountId} not found`);
+          }
+        }
+        account.parentAccountId = input.parentAccountId;
+      }
+      return repository.save(account);
+    });
+  }
+
+  async deactivateAccount(id: string): Promise<LedgerAccount> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(LedgerAccount);
+      const account = await repository.findOne({ where: { id } });
+      if (!account) {
+        throw new NotFoundException(`Ledger account ${id} not found`);
+      }
+      if (!account.isActive) {
+        throw new ConflictException(`Ledger account ${id} is already deactivated`);
+      }
+      account.isActive = false;
+      return repository.save(account);
+    });
+  }
+
+  async reactivateAccount(id: string): Promise<LedgerAccount> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(LedgerAccount);
+      const account = await repository.findOne({ where: { id } });
+      if (!account) {
+        throw new NotFoundException(`Ledger account ${id} not found`);
+      }
+      account.isActive = true;
+      return repository.save(account);
+    });
+  }
+
+  // ---------- Journal entries ----------
+
+  async createJournal(input: CreateJournalInput): Promise<JournalEntry & { lines: JournalLine[] }> {
+    if (!input.lines || input.lines.length < 2) {
+      throw new BadRequestException('A journal entry needs at least two lines (double-entry)');
+    }
+    const normalized = this.validateAndNormalizeLines(input.lines);
+    const journalNumber = await this.journalNumberGenerator.generateNextJournalNumber();
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const journalRepository = manager.getRepository(JournalEntry);
+      const journal = await journalRepository.save(
+        journalRepository.create({
+          journalNumber,
+          entryDate: input.entryDate,
+          narration: input.narration ?? null,
+          status: 'Draft',
+          createdBy: this.resolveActor(input.createdBy),
+          postedBy: null,
+          postedAt: null,
+        }),
+      );
+
+      const lineRepository = manager.getRepository(JournalLine);
+      const lines = await lineRepository.save(
+        normalized.map((line) =>
+          lineRepository.create({
+            journalId: journal.id,
+            accountId: line.accountId,
+            debit: line.debit,
+            credit: line.credit,
+            lineNarration: line.lineNarration ?? null,
+          }),
+        ),
+      );
+
+      return { ...journal, lines };
+    });
+  }
+
+  /**
+   * Draft -> Posted: validates the lines still balance, then marks immutable. A posted entry can
+   * never be edited or reversed in-place — corrections are new entries (named future item).
+   */
+  async postJournal(id: string, actor?: string): Promise<JournalEntry & { lines: JournalLine[] }> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const journal = await this.loadJournal(manager, id);
+      if (journal.status !== 'Draft') {
+        throw new ConflictException(`Journal entry ${id} is already ${journal.status}`);
+      }
+      const lines = await manager.getRepository(JournalLine).find({ where: { journalId: id } });
+      this.assertBalanced(lines);
+      journal.status = 'Posted';
+      journal.postedBy = this.resolveActor(actor);
+      journal.postedAt = new Date();
+      await manager.getRepository(JournalEntry).save(journal);
+      return { ...journal, lines };
+    });
+  }
+
+  async listJournals(
+    query: PaginationQueryDto & { status?: 'Draft' | 'Posted'; from?: string; to?: string },
+  ): Promise<PaginatedResponseDto<JournalEntry>> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager.getRepository(JournalEntry).createQueryBuilder('journal');
+      if (query.status) {
+        qb.andWhere('journal.status = :status', { status: query.status });
+      }
+      if (query.from) {
+        qb.andWhere('journal."entryDate" >= :from', { from: query.from });
+      }
+      if (query.to) {
+        qb.andWhere('journal."entryDate" <= :to', { to: query.to });
+      }
+      qb.orderBy('journal.entryDate', 'DESC').addOrderBy('journal.createdAt', 'DESC');
+      return paginate(qb, query);
+    });
+  }
+
+  async getJournal(id: string): Promise<JournalEntry & { lines: JournalLine[] }> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const journal = await this.loadJournal(manager, id);
+      const lines = await manager.getRepository(JournalLine).find({
+        where: { journalId: id },
+        order: { createdAt: 'ASC' },
+      });
+      return { ...journal, lines };
+    });
+  }
+
+  private async loadJournal(manager: EntityManager, id: string): Promise<JournalEntry> {
+    const journal = await manager.getRepository(JournalEntry).findOne({ where: { id } });
+    if (!journal) {
+      throw new NotFoundException(`Journal entry ${id} not found`);
+    }
+    return journal;
+  }
+
+  private validateAndNormalizeLines(
+    lines: JournalLineInput[],
+  ): { accountId: string; debit: number; credit: number; lineNarration?: string }[] {
+    const normalized = lines.map((line) => {
+      const debit = line.debit === undefined ? 0 : Number(line.debit);
+      const credit = line.credit === undefined ? 0 : Number(line.credit);
+      if (!Number.isFinite(debit) || !Number.isFinite(credit)) {
+        throw new BadRequestException('Line amounts must be numbers');
+      }
+      if (debit < 0 || credit < 0) {
+        throw new BadRequestException('Line amounts cannot be negative');
+      }
+      if (debit > 0 && credit > 0) {
+        throw new BadRequestException('A journal line cannot have both debit and credit');
+      }
+      if (debit === 0 && credit === 0) {
+        throw new BadRequestException('A journal line must have a non-zero debit or credit');
+      }
+      return { accountId: line.accountId, debit, credit, lineNarration: line.lineNarration };
+    });
+
+    const totalDebit = roundMoney(normalized.reduce((sum, l) => sum + l.debit, 0));
+    const totalCredit = roundMoney(normalized.reduce((sum, l) => sum + l.credit, 0));
+    if (totalDebit !== totalCredit) {
+      throw new BadRequestException(
+        `Journal does not balance: total debit ${totalDebit} != total credit ${totalCredit}`,
+      );
+    }
+
+    return normalized;
+  }
+
+  private assertBalanced(lines: JournalLine[]): void {
+    const totalDebit = roundMoney(lines.reduce((sum, l) => sum + l.debit, 0));
+    const totalCredit = roundMoney(lines.reduce((sum, l) => sum + l.credit, 0));
+    if (totalDebit !== totalCredit) {
+      throw new ConflictException('Journal is unbalanced and cannot be posted');
+    }
+  }
+
+  // ---------- Reports ----------
+
+  /** Per-account debit/credit totals over POSTED journals in the period. */
+  async trialBalance(from?: string, to?: string): Promise<TrialBalanceRow[]> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const rows: { accountId: string; d: number; c: number }[] = await manager.query(
+        `SELECT l."accountId" AS "accountId",
+                COALESCE(SUM(l.debit), 0)::float8 AS d,
+                COALESCE(SUM(l.credit), 0)::float8 AS c
+         FROM journal_lines l
+         JOIN journal_entries j ON j.id = l."journalId"
+         WHERE j.status = 'Posted'
+           AND ($1::date IS NULL OR j."entryDate" >= $1)
+           AND ($2::date IS NULL OR j."entryDate" <= $2)
+         GROUP BY l."accountId"`,
+        [from ?? null, to ?? null],
+      );
+      const accounts = await manager.getRepository(LedgerAccount).find();
+      const byId = new Map(accounts.map((a) => [a.id, a]));
+      return rows
+        .map((row) => {
+          const account = byId.get(row.accountId);
+          if (!account) return null;
+          return {
+            accountId: account.id,
+            accountCode: account.accountCode,
+            accountName: account.name,
+            accountType: account.type,
+            debitTotal: roundMoney(row.d),
+            creditTotal: roundMoney(row.c),
+            balance: roundMoney(row.d - row.c),
+          };
+        })
+        .filter((row): row is TrialBalanceRow => row !== null)
+        .sort((a, b) => a.accountCode.localeCompare(b.accountCode));
+    });
+  }
+
+  /** Revenue (Income) and expenses (Expense) over POSTED journals in the period. */
+  async incomeStatement(from?: string, to?: string): Promise<{
+    income: IncomeStatementRow[];
+    expenses: IncomeStatementRow[];
+    netIncome: number;
+  }> {
+    const trial = await this.trialBalance(from, to);
+
+    // Income accounts carry credit balances (negative trial balance); the income statement
+    // reports them as positive revenue. Expense accounts carry debit balances (positive) and are
+    // reported as positive expenses.
+    const income = trial
+      .filter((row) => row.accountType === 'Income' && row.balance !== 0)
+      .map((row) => ({ accountCode: row.accountCode, accountName: row.accountName, amount: -row.balance }));
+    const expenses = trial
+      .filter((row) => row.accountType === 'Expense' && row.balance !== 0)
+      .map((row) => ({ accountCode: row.accountCode, accountName: row.accountName, amount: row.balance }));
+    const netIncome = roundMoney(
+      income.reduce((s, r) => s + r.amount, 0) - expenses.reduce((s, r) => s + r.amount, 0),
+    );
+    return { income, expenses, netIncome };
+  }
+
+  /** Assets vs Liabilities+Equity as of the given date (defaults to today). */
+  async balanceSheet(asOf?: string): Promise<{
+    assets: BalanceSheetRow[];
+    liabilitiesAndEquity: BalanceSheetRow[];
+    totalAssets: number;
+    totalLiabilitiesAndEquity: number;
+  }> {
+    const to = asOf ?? new Date().toISOString().slice(0, 10);
+    const trial = await this.trialBalance(undefined, to);
+    const assets = trial
+      .filter((row) => row.accountType === 'Asset')
+      .map((row) => ({ accountCode: row.accountCode, accountName: row.accountName, accountType: row.accountType, amount: row.balance }));
+    const liabilitiesAndEquity = trial
+      .filter((row) => row.accountType === 'Liability' || row.accountType === 'Equity')
+      .map((row) => ({ accountCode: row.accountCode, accountName: row.accountName, accountType: row.accountType, amount: -row.balance }));
+    // Retained earnings: net income accumulated through the as-of date keeps the sheet balanced
+    // (assets = liabilities + equity + retained earnings).
+    const { netIncome } = await this.incomeStatement(undefined, to);
+    if (netIncome !== 0) {
+      liabilitiesAndEquity.push({
+        accountCode: 'RETAINED',
+        accountName: 'Retained Earnings',
+        accountType: 'Equity',
+        amount: netIncome,
+      });
+    }
+    return {
+      assets,
+      liabilitiesAndEquity,
+      totalAssets: roundMoney(assets.reduce((s, r) => s + r.amount, 0)),
+      totalLiabilitiesAndEquity: roundMoney(liabilitiesAndEquity.reduce((s, r) => s + r.amount, 0)),
+    };
+  }
+}
