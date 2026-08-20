@@ -70,8 +70,8 @@ describe('DepositsService (integration)', () => {
     await tenantB.inTenant(() => depositsService.create({ patientId: patientA.id, amount: 1000, receivedBy: STAFF_ID }));
     await tenantB.inTenant(() => depositsService.create({ patientId: patientB.id, amount: 2000, receivedBy: STAFF_ID }));
 
-    const filtered = await tenantB.inTenant(() => depositsService.list(patientA.id));
-    expect(filtered.total).toBe(1);
+    const filtered = await tenantB.inTenant(() => depositsService.list({ patientId: patientA.id }));
+    expect(filtered.meta.total).toBe(1);
     expect(filtered.data).toHaveLength(1);
     expect(filtered.data[0].patientId).toBe(patientA.id);
   });

@@ -102,25 +102,40 @@ export class AccountsService {
   }
 
   async recordFailedLogin(accountId: string): Promise<void> {
-    await this.tenantConnection.runInTenantSchema((manager) =>
-      manager
-        .getRepository(Account)
-        .increment({ id: accountId }, 'failedLoginAttempts', 1),
-    );
+    await this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const account = await repository.findOne({ where: { id: accountId } });
+      if (!account) {
+        return;
+      }
+      account.failedLoginAttempts += 1;
+      await repository.save(account);
+    });
   }
 
   async lockAccount(accountId: string, lockedUntil: Date): Promise<void> {
-    await this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Account).update({ id: accountId }, { lockedUntil }),
-    );
+    await this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const account = await repository.findOne({ where: { id: accountId } });
+      if (!account) {
+        return;
+      }
+      account.lockedUntil = lockedUntil;
+      await repository.save(account);
+    });
   }
 
   async resetFailedLogins(accountId: string): Promise<void> {
-    await this.tenantConnection.runInTenantSchema((manager) =>
-      manager
-        .getRepository(Account)
-        .update({ id: accountId }, { failedLoginAttempts: 0, lockedUntil: null }),
-    );
+    await this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const account = await repository.findOne({ where: { id: accountId } });
+      if (!account) {
+        return;
+      }
+      account.failedLoginAttempts = 0;
+      account.lockedUntil = null;
+      await repository.save(account);
+    });
   }
 
   async listAccounts(limit: number, offset: number): Promise<Account[]> {

@@ -25,8 +25,6 @@ import { InventoryModule } from '../inventory/inventory.module.js';
 import { PharmacyModule } from '../pharmacy/pharmacy.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 
-const GLOBAL_RATE_LIMIT = process.env['NODE_ENV'] === 'test' ? 1_000_000 : 100;
-
 @Module({
   imports: [
     ThrottlerModule.forRootAsync({
@@ -58,10 +56,21 @@ const GLOBAL_RATE_LIMIT = process.env['NODE_ENV'] === 'test' ? 1_000_000 : 100;
         // controller spec exercising real authenticated HTTP end-to-end (see git history for
         // 2026-08-17) — sibling specs only assert 401-unauthorized paths, which AuthContextMiddleware
         // rejects before the request ever reaches this guard.
-        storage: new ThrottlerStorageRedisService({
-          host: process.env['REDIS_HOST'] ?? 'localhost',
-          port: Number(process.env['REDIS_PORT'] ?? 6380),
-        }),
+        //
+        // Tests (NODE_ENV=test) use ThrottlerModule's default in-memory storage instead of Redis:
+        // every integration spec boots its own AppModule, and if they all shared one Redis-backed
+        // counter, a full-suite parallel run would aggregate every suite's request rate into the
+        // same keys and trip the guest/authenticated limits (429) — intermittent, timing-dependent
+        // failures across unrelated suites. In-memory storage is per-app-instance, so each suite's
+        // counters are its own and the throttler still exercises the real guard path.
+        ...(process.env['NODE_ENV'] === 'test'
+          ? {}
+          : {
+              storage: new ThrottlerStorageRedisService({
+                host: process.env['REDIS_HOST'] ?? 'localhost',
+                port: Number(process.env['REDIS_PORT'] ?? 6380),
+              }),
+            }),
       }),
     }),
     ObservabilityLoggerModule,

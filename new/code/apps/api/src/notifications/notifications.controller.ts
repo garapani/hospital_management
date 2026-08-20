@@ -1,5 +1,5 @@
 import { Controller, Get, Query, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { PermissionGuard, RequestContextFactory } from '@hospital/auth-guards';
 import { NotificationsService } from './notifications.service.js';
 import { SearchNotificationsDto } from './dto/search-notifications.dto.js';

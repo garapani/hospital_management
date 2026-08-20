@@ -175,12 +175,12 @@ describe('InvoicesService (integration)', () => {
       invoicesService.create({ patientId: patientB.id, createdBy: STAFF_ID, items: [{ description: 'Item B', unitPrice: 100 }] }),
     );
 
-    const filtered = await tenantB.inTenant(() => invoicesService.list(patientA.id));
-    expect(filtered.total).toBe(1);
+    const filtered = await tenantB.inTenant(() => invoicesService.list({ patientId: patientA.id }));
+    expect(filtered.meta.total).toBe(1);
     expect(filtered.data).toHaveLength(1);
     expect(filtered.data[0].patientId).toBe(patientA.id);
-    expect(filtered.page).toBe(1);
-    expect(filtered.limit).toBe(20);
+    expect(filtered.meta.page).toBe(1);
+    expect(filtered.meta.limit).toBe(20);
   });
 
   it('caps limit at 100', async () => {
@@ -188,8 +188,8 @@ describe('InvoicesService (integration)', () => {
     await ctx.inTenant(() =>
       invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 100 }] }),
     );
-    const result = await ctx.inTenant(() => invoicesService.list(patient.id, 1, 500));
-    expect(result.limit).toBe(100);
+    const result = await ctx.inTenant(() => invoicesService.list({ patientId: patient.id, page: 1, limit: 500 }));
+    expect(result.meta.limit).toBe(100);
   });
 
   it('cancels an Unpaid invoice', async () => {
@@ -381,7 +381,7 @@ describe('InvoicesService (integration)', () => {
 
     const refetchedInvoice = await ctx.inTenant(() => invoicesService.findOne(invoice.id));
     expect(refetchedInvoice.status).toBe('Paid');
-    const refetchedDeposits = await ctx.inTenant(() => depositsService.list(patient.id));
+    const refetchedDeposits = await ctx.inTenant(() => depositsService.list({ patientId: patient.id }));
     expect(refetchedDeposits.data[0].balance).toBe(1000);
   });
 

@@ -461,15 +461,22 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       jest.restoreAllMocks();
 
       // The reporting write really did blow up at the SQL layer — a vacuous pass (e.g. the
-      // subscriber never firing) would leave nothing logged. The assertion also pins the actual
-      // Postgres undefined_table text, so an unrelated failure that shares the same log prefix
-      // (e.g. "No tenant context set") cannot satisfy it.
+      // subscriber never firing) would leave nothing logged. The assertion also pins the table
+      // name, so an unrelated failure that shares the same log prefix (e.g. "No tenant context
+      // set") cannot satisfy it. Both accepted phrases are genuine Postgres SQL-level errors for
+      // the reporting_events INSERT: 42P01 ("relation "reporting_events" does not exist") when
+      // the renamed-away tenant table is the only resolution target, and 42501 ("permission
+      // denied for table reporting_events") when the unqualified name falls through search_path
+      // ("tenant_X", public) onto a stale `public.reporting_events` leftover from the
+      // pre-tenant-schema era — the tenant role has no privileges on public tables, so the INSERT
+      // fails at the SQL layer either way, and the business transaction must still commit.
       expect(
         loggedErrors.some(
           (message) =>
             typeof message === 'string' &&
             message.includes('Failed to persist reporting event OrderPlaced') &&
-            /reporting_events.*does not exist/i.test(message),
+            message.includes('reporting_events') &&
+            (message.includes('does not exist') || message.includes('permission denied')),
         ),
       ).toBe(true);
 

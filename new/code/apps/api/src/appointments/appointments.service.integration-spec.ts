@@ -130,11 +130,11 @@ describe('AppointmentsService (integration)', () => {
     }));
 
     const listDate = await ctx.inTenant(() => appointmentsService.list({ date: '2026-08-10' }));
-    expect(listDate.length).toBe(1);
-    expect(listDate[0].firstName).toBe('Patient');
-    expect(listDate[0].lastName).toBe('One');
+    expect(listDate.meta.total).toBe(1);
+    expect(listDate.data[0].firstName).toBe('Patient');
+    expect(listDate.data[0].lastName).toBe('One');
 
     const listAll = await ctx.inTenant(() => appointmentsService.list({}));
-    expect(listAll.length).toBe(2);
+    expect(listAll.meta.total).toBe(2);
   });
 });

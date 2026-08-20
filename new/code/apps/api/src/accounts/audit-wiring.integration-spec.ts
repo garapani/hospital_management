@@ -53,4 +53,70 @@ describe('Audit wiring (integration)', () => {
     await teardownTenantTestContext(ctx);
     await moduleRef.close();
   });
+
+  it('audits failed-login, lock, and reset mutations on an account', async () => {
+    const published: AuditEvent[] = [];
+    const testPublisher: AuditEventPublisher = {
+      publish: async (event) => {
+        published.push(event);
+      },
+    };
+
+    const ctx = await setupTenantTestContext({ namePrefix: 'audit_wiring', seedRbac: true });
+
+    const moduleRef = await Test.createTestingModule({ imports: [AccountsModule] })
+      .overrideProvider(AUDIT_EVENT_PUBLISHER)
+      .useValue(testPublisher)
+      .overrideProvider(DataSource)
+      .useValue(ctx.dataSource)
+      .overrideProvider(TenantContextService)
+      .useValue(ctx.tenantContext)
+      .compile();
+    await moduleRef.init();
+
+    const accountsService = moduleRef.get(AccountsService);
+
+    await ctx.inTenant(async () => {
+      const account = await accountsService.createStaffAccount({
+        username: 'audit.login',
+        email: 'login@example.com',
+        displayName: 'Audit Login',
+        password: 'a-strong-password',
+        roleName: 'Doctor',
+      });
+
+      // These go through repository.save() (findOne + mutate + save), so the AuditSubscriber's
+      // afterUpdate fires for each — raw increment()/update() calls would bypass auditing
+      // entirely. A failed login and its resulting lock are security-relevant and belong in the
+      // audit trail.
+      await accountsService.recordFailedLogin(account.id);
+      await accountsService.lockAccount(account.id, new Date(Date.now() + 60_000));
+      await accountsService.resetFailedLogins(account.id);
+    });
+
+    const updateEvents = published.filter(
+      (event) => event.tableName === 'accounts' && event.action === 'update',
+    );
+    expect(updateEvents.length).toBeGreaterThanOrEqual(3);
+    expect(
+      updateEvents.some((event) =>
+        event.diff.some((entry) => entry.field === 'failedLoginAttempts'),
+      ),
+    ).toBe(true);
+    expect(
+      updateEvents.some((event) => event.diff.some((entry) => entry.field === 'lockedUntil')),
+    ).toBe(true);
+    // resetFailedLogins clears both fields back to their defaults in one save — one update event
+    // carries both.
+    expect(
+      updateEvents.some(
+        (event) =>
+          event.diff.some((entry) => entry.field === 'failedLoginAttempts') &&
+          event.diff.some((entry) => entry.field === 'lockedUntil'),
+      ),
+    ).toBe(true);
+
+    await teardownTenantTestContext(ctx);
+    await moduleRef.close();
+  });
 });

@@ -21,5 +21,14 @@ module.exports = {
     '**/?(*.)+(spec|test).[jt]s?(x)',
     '**/?(*.)+(integration-spec).[jt]s?(x)',
   ],
+  // Full-AppModule integration suites compile the whole Nest DI graph, provision tenant
+  // schemas/roles, and seed the RBAC catalog in beforeAll — comfortably more than Jest's
+  // default 5000ms once multiple suites run in parallel workers (or a shared dev machine is
+  // otherwise under load). 60s is a ceiling, not a target: individual tests that genuinely
+  // hang (e.g. the historical ThrottlerGuard/Redis port hang) still time out, and the heaviest
+  // test in the repo — the tenant-test-context "self-heals" test, which provisions a tenant
+  // schema twice (two full migration runs) — stays comfortably inside it even under full-suite
+  // parallel load.
+  testTimeout: 60000,
   coverageDirectory: 'test-output/jest/coverage',
 };
