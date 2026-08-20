@@ -36,6 +36,9 @@ import { CreateAccountingTables0035 } from './0035-create-accounting-tables.js';
 import { CreateWardSupplyTables0036 } from './0036-create-ward-supply-tables.js';
 import { CreateNursingTables0037 } from './0037-create-nursing-tables.js';
 import { CreateOtTables0038 } from './0038-create-ot-tables.js';
+import { CreateMaternityTables0039 } from './0039-create-maternity-tables.js';
+import { CreateCssdTables0040 } from './0040-create-cssd-tables.js';
+import { CreateEmployeeTables0041 } from './0041-create-employee-tables.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -86,4 +89,7 @@ export const TENANT_MIGRATIONS = [
   CreateWardSupplyTables0036,
   CreateNursingTables0037,
   CreateOtTables0038,
+  CreateMaternityTables0039,
+  CreateCssdTables0040,
+  CreateEmployeeTables0041,
 ];

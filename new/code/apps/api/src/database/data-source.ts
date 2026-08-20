@@ -35,6 +35,9 @@ import { JournalEntry, JournalLine } from '../accounting/entities/journal-entry.
 import { WardStockBalance, WardStockTransaction } from '../ward-supply/entities/ward-stock.entity.js';
 import { NursingTask, MedicationAdministration } from '../nursing/entities/nursing.entity.js';
 import { OtSurgery } from '../ot/entities/ot-surgery.entity.js';
+import { MaternityRecord } from '../maternity/entities/maternity-record.entity.js';
+import { CssdInstrument, CssdSterilizationCycle } from '../cssd/entities/cssd.entity.js';
+import { Employee } from '../employee/entities/employee.entity.js';
 import { Order } from '../orders/entities/order.entity.js';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { BillingSettings } from '../billing/entities/billing-settings.entity.js';
@@ -78,7 +81,7 @@ export function createDataSource(): DataSource {
     username: process.env['DB_USERNAME'] ?? 'identity_access',
     password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
     database: process.env['DB_DATABASE'] ?? 'identity_access',
-    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, DepartmentCatalog, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, DischargeSummary, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, Return, ReportingEvent, LabTestCategory, LabTest, LabTestComponent, LabRequisition, LabResult, RadiologyImagingType, RadiologyImagingItem, RadiologyRequisition, InventoryItemCategory, InventoryItemSubCategory, InventoryItem, InventoryVendor, PurchaseOrder, PurchaseOrderItem, StockBatch, StockBalance, StockTransaction, StockRequisition, StockRequisitionItem, PharmacyDispensing, Notification, FixedAssetCategory, FixedAsset, InsurancePayer, PatientPolicy, InsuranceClaim, LedgerAccount, JournalEntry, JournalLine, WardStockBalance, WardStockTransaction, NursingTask, MedicationAdministration, OtSurgery],
+    entities: [Role, Permission, RolePermission, Account, AccountRole, Tenant, AuditRecord, DepartmentCatalog, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, DischargeSummary, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, Return, ReportingEvent, LabTestCategory, LabTest, LabTestComponent, LabRequisition, LabResult, RadiologyImagingType, RadiologyImagingItem, RadiologyRequisition, InventoryItemCategory, InventoryItemSubCategory, InventoryItem, InventoryVendor, PurchaseOrder, PurchaseOrderItem, StockBatch, StockBalance, StockTransaction, StockRequisition, StockRequisitionItem, PharmacyDispensing, Notification, FixedAssetCategory, FixedAsset, InsurancePayer, PatientPolicy, InsuranceClaim, LedgerAccount, JournalEntry, JournalLine, WardStockBalance, WardStockTransaction, NursingTask, MedicationAdministration, OtSurgery, MaternityRecord, CssdInstrument, CssdSterilizationCycle, Employee],
     migrations: PLATFORM_MIGRATIONS,
     synchronize: false,
     // Bounds connection acquisition so pool exhaustion fails fast (a thrown, catchable error)

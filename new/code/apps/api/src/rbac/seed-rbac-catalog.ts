@@ -327,6 +327,30 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'ot.manage',
     description: 'Schedule and update OT surgeries',
   },
+  {
+    name: 'maternity.read',
+    description: 'View maternity/labor records',
+  },
+  {
+    name: 'maternity.manage',
+    description: 'Manage maternity/labor records and record deliveries',
+  },
+  {
+    name: 'cssd.read',
+    description: 'View the sterile instrument catalog and sterilization cycles',
+  },
+  {
+    name: 'cssd.manage',
+    description: 'Manage instruments and sterilization cycles',
+  },
+  {
+    name: 'employee.read',
+    description: 'View the employee master',
+  },
+  {
+    name: 'employee.manage',
+    description: 'Manage the employee master',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -500,6 +524,26 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Doctor', permissionName: 'ot.manage' },
   { roleName: 'Nurse', permissionName: 'ot.read' },
   { roleName: 'Nurse', permissionName: 'ot.manage' },
+  { roleName: 'Super Admin', permissionName: 'maternity.read' },
+  { roleName: 'Super Admin', permissionName: 'maternity.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'maternity.read' },
+  { roleName: 'Hospital Admin', permissionName: 'maternity.manage' },
+  { roleName: 'Doctor', permissionName: 'maternity.read' },
+  { roleName: 'Doctor', permissionName: 'maternity.manage' },
+  { roleName: 'Nurse', permissionName: 'maternity.read' },
+  { roleName: 'Nurse', permissionName: 'maternity.manage' },
+  { roleName: 'Super Admin', permissionName: 'cssd.read' },
+  { roleName: 'Super Admin', permissionName: 'cssd.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'cssd.read' },
+  { roleName: 'Hospital Admin', permissionName: 'cssd.manage' },
+  { roleName: 'Nurse', permissionName: 'cssd.read' },
+  { roleName: 'Nurse', permissionName: 'cssd.manage' },
+  { roleName: 'Super Admin', permissionName: 'employee.read' },
+  { roleName: 'Super Admin', permissionName: 'employee.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'employee.read' },
+  { roleName: 'Hospital Admin', permissionName: 'employee.manage' },
+  { roleName: 'HR/Payroll Admin', permissionName: 'employee.read' },
+  { roleName: 'HR/Payroll Admin', permissionName: 'employee.manage' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {

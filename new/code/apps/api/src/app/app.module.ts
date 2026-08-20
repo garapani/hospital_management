@@ -30,6 +30,9 @@ import { AccountingModule } from '../accounting/accounting.module.js';
 import { WardSupplyModule } from '../ward-supply/ward-supply.module.js';
 import { NursingModule } from '../nursing/nursing.module.js';
 import { OtModule } from '../ot/ot.module.js';
+import { MaternityModule } from '../maternity/maternity.module.js';
+import { CssdModule } from '../cssd/cssd.module.js';
+import { EmployeeModule } from '../employee/employee.module.js';
 
 @Module({
   imports: [
@@ -106,6 +109,9 @@ import { OtModule } from '../ot/ot.module.js';
     WardSupplyModule,
     NursingModule,
     OtModule,
+    MaternityModule,
+    CssdModule,
+    EmployeeModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
