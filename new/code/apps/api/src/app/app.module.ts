@@ -27,6 +27,9 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
 import { FixedAssetsModule } from '../fixed-assets/fixed-assets.module.js';
 import { InsuranceModule } from '../insurance/insurance.module.js';
 import { AccountingModule } from '../accounting/accounting.module.js';
+import { WardSupplyModule } from '../ward-supply/ward-supply.module.js';
+import { NursingModule } from '../nursing/nursing.module.js';
+import { OtModule } from '../ot/ot.module.js';
 
 @Module({
   imports: [
@@ -100,6 +103,9 @@ import { AccountingModule } from '../accounting/accounting.module.js';
     FixedAssetsModule,
     InsuranceModule,
     AccountingModule,
+    WardSupplyModule,
+    NursingModule,
+    OtModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

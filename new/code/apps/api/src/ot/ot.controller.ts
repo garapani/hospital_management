@@ -1,0 +1,46 @@
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
+import { OtService } from './ot.service.js';
+import { CreateSurgeryDto, ListSurgeriesQueryDto } from './dto/ot.dto.js';
+
+@Controller('ot')
+@UseGuards(PermissionGuard)
+export class OtController {
+  constructor(private readonly otService: OtService) {}
+
+  @Post('surgeries')
+  @RequirePermission('ot.manage')
+  async scheduleSurgery(@Body() dto: CreateSurgeryDto) {
+    return this.otService.scheduleSurgery(dto);
+  }
+
+  @Get('surgeries')
+  @RequirePermission('ot.read')
+  async listSurgeries(@Query() query: ListSurgeriesQueryDto) {
+    return this.otService.listSurgeries(query);
+  }
+
+  @Get('surgeries/:id')
+  @RequirePermission('ot.read')
+  async getSurgery(@Param('id') id: string) {
+    return this.otService.getSurgery(id);
+  }
+
+  @Post('surgeries/:id/start')
+  @RequirePermission('ot.manage')
+  async startSurgery(@Param('id') id: string) {
+    return this.otService.startSurgery(id);
+  }
+
+  @Post('surgeries/:id/complete')
+  @RequirePermission('ot.manage')
+  async completeSurgery(@Param('id') id: string) {
+    return this.otService.completeSurgery(id);
+  }
+
+  @Post('surgeries/:id/cancel')
+  @RequirePermission('ot.manage')
+  async cancelSurgery(@Param('id') id: string) {
+    return this.otService.cancelSurgery(id);
+  }
+}
