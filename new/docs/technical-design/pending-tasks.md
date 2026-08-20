@@ -250,7 +250,16 @@ Follow the PRD's own phase ordering as-is:
   discharge summaries), Orders (place + detail), and Reporting (dashboard + events). 249 frontend
   tests pass; production build succeeds (commit `b89ad01` in the frontend repo). Not yet built:
   a notifications page, vitals/encounters pages, and patient-portal.
-- Phase 3: Insurance/Claims, Accounting, Verification, Fixed Asset
+- Phase 3: Insurance/Claims, Accounting, Verification — not started. **Fixed Asset is now
+  done for its MVP register scope (2026-08-20):** `fixed-assets` module with asset categories +
+  asset register (auto asset codes, purchase date/cost, supplier, department assignment,
+  condition In Service/Under Repair/Retired), paginated list, update, soft-delete
+  (deactivate/reactivate, §28 convention), and read-time straight-line depreciation
+  (`GET /fixed-assets/:id/valuation` — accumulated + book value; stateless, no accrual job).
+  Permissions `fixed-asset.read`/`fixed-asset.manage` wired to Super Admin / Hospital Admin /
+  Inventory & Store Manager. Migration `0033`. Not done (future items): depreciation
+  schedules/periodic accrual, disposal/write-off, asset transfers between departments,
+  maintenance/AMC tracking, and a frontend page.
 - Phase 4: Clinical/EMR long tail, Nursing, Emergency, OT, Maternity, CSSD
 - Phase 5: Employee, Payroll, Fraction and Incentive
 - Phase 6: Helpdesk, Marketing and Referral, Social Service Unit, Document and Print, full

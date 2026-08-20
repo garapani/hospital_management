@@ -1213,3 +1213,29 @@ tables: `lab_tests`, `lab_test_categories`, `radiology_imaging_items`, `radiolog
   existing records reference** — deactivate instead. A future item could surface a
   `?includeInactive=` flag if a screen needs to see or restore deactivated entries (today the
   reactivate endpoint covers restoration by id).
+
+## 29. Fixed Asset module (2026-08-20)
+
+PRD Phase 3's first net-new module: an asset register with read-time straight-line depreciation.
+Follows every established convention — tenant-scoped `runInTenantSchema`, the shared
+`SequenceNumberGeneratorService` wrapped in a domain number generator (`FixedAssetNumberGeneratorService`,
+exactly like the lab/radiology/pharmacy wrappers — the shared service is never a DI provider),
+§28's `isActive` soft-delete, `{ data, meta }` pagination, `resolveActor`-free (no actor fields
+needed yet), and permissions added to `seed-rbac-catalog.ts` (`fixed-asset.read` /
+`fixed-asset.manage` → Super Admin, Hospital Admin, Inventory/Store Manager).
+
+**Depreciation is computed on read, never stored:** `computeStraightLineValuation` is a pure
+function — annual = (cost − salvage) / usefulLifeYears, accumulated = annual × (full months in
+service / 12) capped at cost − salvage, book value = cost − accumulated; `usefulLifeYears = null`
+means no depreciation accrues. There is deliberately no accrual job or stored accumulated column:
+a read always reflects the current date, which is the right MVP trade (a periodic accrual run would
+need a scheduler and a posting target). The pure function is exported for direct unit testing with
+an explicit `asOf` date.
+
+**New-module wiring checklist (the fixed-assets module was the template):** domain folder with
+entities/DTOs/service/controller/module (+ number-generator wrapper), entities registered in
+`data-source.ts`, migration registered in `migrations/index.ts`'s `TENANT_MIGRATIONS`, module
+imported in `app.module.ts`, permissions added to `seed-rbac-catalog.ts` (+ the seed's own
+integration spec if the catalog assertions enumerate permissions), and a
+`TenantTestContext`-based integration spec. Note the domain folder name must not collide with the
+webpack `apps/api/src/assets` favicon folder — hence `fixed-assets`, not `assets`.
