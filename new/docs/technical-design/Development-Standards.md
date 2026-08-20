@@ -1036,3 +1036,45 @@ pass's changes (Clinical/Encounters, not touched), not investigated further, wor
 access rather than `OrdersService` before its removal — moot now that the method is gone, but the same
 "Billing reaches into Orders directly" pattern still exists in the surviving `list()`/other methods
 and should be kept in mind if Billing ever needs Orders data again.
+
+## 24. Test-infrastructure hardening (2026-08-20): integration-suite timeouts, throttler isolation, paginated-spec shape, and the search_path/RBAC gotchas
+
+Full-AppModule integration suites are the heaviest things in this repo — each one compiles the whole
+Nest DI graph, provisions tenant schema(s)/roles, and often seeds the RBAC catalog. Three
+environment-level fixes landed together because a full-suite parallel run kept tripping them:
+
+- **`apps/api/jest.config.cts` sets `testTimeout: 60000`.** Jest's default 5000ms per test/hook is
+  too tight once suites run in parallel workers (or a dev machine is otherwise under load, e.g. the
+  API dev server building). The heaviest single test — `tenant-test-context`'s "self-heals" test,
+  which provisions a tenant schema twice (two full migration runs) — needs the headroom. Keep the
+  ceiling sane: a genuinely hanging test (the historical ThrottlerGuard/Redis port hang) still times
+  out at 60s; don't paper over real hangs by raising it further.
+- **ThrottlerGuard uses in-memory storage under `NODE_ENV=test`** (`app.module.ts`). With the
+  Redis-backed storage, every parallel test app instance shared ONE counter on the dev Redis, so a
+  full-suite run could aggregate past the guest (20/60s) / authenticated (100/60s) limits and 429
+  unrelated suites — intermittent, timing-dependent failures with no code-level cause. In-memory
+  storage is per-app-instance, so each suite's counters are its own and the real guard path still
+  runs. (This also makes the old "test bypass" dead code — `GLOBAL_RATE_LIMIT` — removable.)
+- **Service-spec `list()` assertions must use the `{ data, meta }` shape.** Every service whose
+  `list()` returns `PaginatedResponseDto` (`data` + `meta.total`/`meta.page`/`meta.limit`) is
+  asserted that way (see §19). Four stale call sites in the billing and appointments service specs
+  still used positional args and flat fields (`filtered.total`) from the pre-pagination era and were
+  aligned in this pass — when a service is migrated to `paginate()`, update its spec's call AND its
+  shape assertions together.
+
+Two environment gotchas discovered along the way, both worth remembering:
+
+- **`runInTenantSchema` sets `search_path` to `("tenant_<id>", public)`.** A query that fails in the
+  tenant schema can fall through to a stale `public.*` table from the pre-tenant-schema era instead
+  of erroring with 42P01 — the reporting publisher's SQL-failure test hit exactly this (42P01
+  expected, 42501 `permission denied` received, because the tenant role has no grants on public
+  tables). When asserting on a Postgres error, accept every legitimate failure mode the schema
+  layout can produce, and check for `public.*` leftovers when an error text changes between
+  environments.
+- **The global RBAC catalog tables (`roles`, `permissions`, `role_permissions`) live in `public`,
+  not per tenant.** `seedRbacCatalog` is insert-only (`orIgnore()`), so **removing a mapping from
+  `seed-rbac-catalog.ts` never propagates to an existing dev DB** — a stale row from an older seed
+  breaks the seed's own integration spec until deleted by hand (four leftover
+  `Super Admin → patients.*` rows were cleaned in this pass). If catalog reconciliation is ever
+  wanted (prune mappings absent from the seed), it needs an explicit migration or a seed-mode flag —
+  do not make the seed delete rows by default, since production may carry hand-added grants.

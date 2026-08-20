@@ -257,6 +257,25 @@ number-generator wrappers keep their original class/method names and constructor
 the FEFO extraction required updating both callers' constructors (and their integration specs' manual
 construction) since the shared service needs the caller's own transaction `manager` passed in.
 
+### Medium: The reporting "SQL-level failure" test was asserting only one of two legitimate Postgres failure modes, and the global RBAC catalog can carry stale seed mappings
+
+**Resolved (2026-08-20):** the assertion in
+`persisting-reporting-event-publisher.integration-spec.ts` now accepts both 42P01
+(`relation "reporting_events" does not exist`) and 42501 (`permission denied for table
+reporting_events`); the business-transaction-commits invariant is unchanged. See
+`pending-tasks.md`'s "Dependencies worth calling out explicitly" for the root cause
+(`runInTenantSchema`'s `search_path = ("tenant_X", public)` falling through onto a stale
+`public.reporting_events` leftover from the pre-tenant-schema era). Also fixed while investigating:
+`apps/api/jest.config.cts` `testTimeout` raised from Jest's 5000ms default to 60000 (full-AppModule
+suites legitimately need more under parallel workers), the ThrottlerGuard now uses per-app in-memory
+storage under `NODE_ENV=test` instead of one shared Redis counter (a full-suite parallel run could
+aggregate past the guest/authenticated limits and 429 unrelated suites), stale pagination-shape
+assertions in the billing and appointments service specs were aligned to the `{ data, meta }`
+contract, and four leftover `Super Admin → patients.*` rows were deleted from the dev DB's global
+`role_permissions` (the seed is insert-only, so removing a mapping never propagates to existing
+DBs). Verified: full api suite green (`355 passed, 1 skipped — the deferred DB-level isolation proof
+test`), typecheck green across all 7 Nx projects.
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.

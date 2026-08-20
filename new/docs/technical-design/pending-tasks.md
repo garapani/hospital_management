@@ -50,14 +50,22 @@ scope, not merely lower priority.
       making it real needs a pricing data model on the Lab/Radiology/Inventory catalog entities first —
       a product decision, not just an architecture fix. This item is still exactly as undone as it
       looks; don't be misled by code that resembles a working implementation.
-- [ ] **Appointments: doctor-schedule/availability endpoints.** Create/list/get/update/cancel exist;
-      PRD's module description implies "doctor schedules" as in-scope. Confirm with the human
-      partner whether the MVP workflow actually needs scheduling-conflict checks or just appointment
-      records before scoping this one — lowest-confidence item in this section.
-- [ ] **Admissions: discharge-summary artifact.** Create/list/get/transfer/discharge exist as a
+- [x] **Appointments: doctor-schedule/availability endpoints.** Create/list/get/update/cancel
+      exist; PRD's module description implies "doctor schedules" as in-scope. **Resolved
+      (2026-08-20):** `GET /appointments/doctors/:doctorId/schedule` and
+      `GET /appointments/departments/:departmentId/schedule` already exist (shipped with the
+      appointment-scheduling work, commits `d64cebf`/`176ee45`), returning available/booked slots
+      and department capacity, and `create` already enforces doctor-conflict and
+      department-capacity checks. Verified live against the running API.
+- [x] **Admissions: discharge-summary artifact.** Create/list/get/transfer/discharge exist as a
       status-machine action; PRD names discharge summaries explicitly (old system:
-      `DischargeSummaryController`). Low effort if needed — currently there's no distinct
-      discharge-summary entity/endpoint, only a `discharge` state transition.
+      `DischargeSummaryController`). **Resolved (2026-08-20):** a distinct `DischargeSummary`
+      entity plus `POST /admissions/discharge-summaries`,
+      `GET /admissions/discharge-summaries` (filterable by patient),
+      `GET /admissions/discharge-summaries/by-admission/:admissionId`,
+      `GET /admissions/discharge-summaries/:id`, `PATCH .../:id`, and
+      `PATCH .../:id/review` (a review/sign-off flow) all exist and are wired; creation is gated
+      on the admission being discharged. Verified live against the running API.
 
 ## Phase 0 — Housekeeping
 
@@ -229,8 +237,12 @@ Follow the PRD's own phase ordering as-is:
 - Phase 3: Insurance/Claims, Accounting, Verification, Fixed Asset
 - Phase 4: Clinical/EMR long tail, Nursing, Emergency, OT, Maternity, CSSD
 - Phase 5: Employee, Payroll, Fraction and Incentive
-- Phase 6: Helpdesk, Marketing and Referral, Social Service Unit, Notification, Document and
-  Print, full Reporting/Dashboard
+- Phase 6: Helpdesk, Marketing and Referral, Social Service Unit, Document and Print, full
+  Reporting/Dashboard — not started. **Notification** is now started/done as a slice ahead of its
+  phase slot: the module (CRUD + summary + mark-read/mark-all-read endpoints, in-app
+  `notifications` table migration `0028`, and in-process subscribers wired for admission and
+  appointment creation) shipped in `a203100` + `93df331`; no email/SMS/push channel exists yet,
+  and the frontend has a notifications feature folder but no routed page yet.
 
 ## Dependencies worth calling out explicitly
 
@@ -238,9 +250,12 @@ Follow the PRD's own phase ordering as-is:
 - **New gap, not yet its own item**: neither `apps/api/src/database/migrate.ts` (platform
   migrations) nor `migrate-tenants.ts` (tenant migrations) can currently be invoked outside Jest —
   both fail under `tsx` and `node --loader ts-node/esm` with a decorator-parsing error surfacing
-  through `libs/audit-emitter`. The underlying migration logic is proven correct (passes under
-  Jest), so this is a standalone-script tooling fix (decorator-safe runner or a build step), not a
-  logic fix. Should land before any real deployment — bundle with Phase 3 ops-readiness work.
+  through `libs/audit-emitter`. The SWC-based nx targets added since (`api:migrate`, `api:migrate-tenants`,
+  added in `56a9747`) do not fix this — **verified 2026-08-20**: `nx run api:migrate` against the
+  compose DB hangs indefinitely with no output (120s+ timeout, killed). The underlying migration
+  logic is proven correct (passes under Jest), so this is a standalone-script tooling fix
+  (decorator-safe runner or a build step), not a logic fix. Should land before any real deployment —
+  bundle with Phase 3 ops-readiness work.
 - **New gap, not yet its own item, codebase-wide**: every domain module's "actor" DTO fields
   (`enteredBy`, `verifiedBy`, `sampleCollectedBy` in Lab, Radiology's `scannedBy`/`reportEnteredBy`/
   `verifiedBy`, Billing's `createdBy`/`receivedBy`/`returnedBy`, and the pre-existing
@@ -251,40 +266,47 @@ Follow the PRD's own phase ordering as-is:
   authorization — flagged during the 2026-08-09 Return/credit-note security review), but this is a
   pattern across the whole codebase, not module-specific — worth its own future item to derive
   these fields from `authContext` instead of trusting the body, across every domain.
-- **New gap, not yet its own item**: `InvoicesService.recordPayment` and `.cancel` read the
-  `Invoice` row with a plain `findOne` (no `pessimistic_write` lock) before mutating
-  `paidAmount`/`status`, unlike every other status-transition mutator in this codebase (Lab,
-  Radiology, Inventory, Pharmacy all lock on their initial lookup — see
-  `Development-Standards.md` §15/§16). Flagged by the 2026-08-09 Return/credit-note security
-  review, which fixed it for the new `createReturn` method but left the two pre-existing methods
-  untouched (out of scope for that item). Two concurrent writes to the same invoice (e.g. two
-  payments, or a payment racing a return) can lose an update under Postgres's default READ
-  COMMITTED. Worth its own future item to retrofit the same lock onto `recordPayment`/`cancel`.
-- **New gap, not yet its own item**: one test in
-  `apps/api/src/reporting/persisting-reporting-event-publisher.integration-spec.ts` (the
-  "SQL-level failure gets logged" assertion around its `loggedErrors` spy on
-  `Logger.prototype.error`) fails consistently as of the Phase 5 item 11 work — confirmed
-  unrelated to that work (reproduces identically with those changes fully reverted). Not
-  investigated further; worth a focused look, possibly related to the structured-logging change
-  (Phase 3 item 6) altering how/whether `Logger.prototype.error` gets called once
-  `app.useLogger()` is active.
+- [x] **Resolved (2026-08-20):** `InvoicesService.recordPayment`/`.cancel` missing locks — both
+  methods already take `pessimistic_write` on their initial invoice lookup in HEAD (added in
+  `c416f0a`, 2026-08-14, the same commit that introduced the billing adapters); the review that
+  flagged this predates that commit, so the item was stale. Verified in code (`cancel`,
+  `recordPayment`, and `createReturn` all lock).
+- [x] **Resolved (2026-08-20):** the flaky
+  `persisting-reporting-event-publisher.integration-spec.ts` "SQL-level failure" test. Root cause:
+  `runInTenantSchema` sets `search_path` to `("tenant_X", public)`; when the test renames the
+  tenant's `reporting_events` table away, the unqualified INSERT falls through to a stale
+  `public.reporting_events` leftover from the pre-tenant-schema era, so the failure surfaces as
+  42501 `permission denied for table reporting_events` (the tenant role has no grants on public
+  tables) instead of the expected 42P01 `relation ... does not exist` — and the old assertion only
+  accepted 42P01. The assertion now accepts both SQL-level failure modes; the
+  business-transaction-commits invariant is unchanged. Related gotcha also found: the global RBAC
+  catalog tables (`roles`/`permissions`/`role_permissions`) live in `public`, not per tenant, so
+  removing a mapping from `seed-rbac-catalog.ts` never propagates to an existing dev DB — four
+  leftover `Super Admin → patients.*` rows from an older seed made
+  `seed-rbac-catalog.integration-spec.ts` fail until deleted by hand.
 - [x] **Resolved**: `database/migrations/0008-create-patient-tables.ts`'s migration `name` had a
   malformed timestamp suffix (`CreatePatientTables0008200000000008`, parsing to `8200000000008`),
   sorting it dead-last among all 28 migrations instead of 8th and breaking every migration with an
   FK on `patients` on any freshly-provisioned schema. Found and fixed during the 2026-08-14
   architecture-review pass; see `Development-Standards.md` §23 for the full analysis.
-- **New gap, not yet its own item**: `apps/api/src/clinical/encounters/encounters.controller.integration-spec.ts`
-  hangs indefinitely when run in isolation — confirmed not a parallel-suite resource-contention
-  artifact (reproduces with a freshly-cleared Postgres session table). Found incidentally during the
-  2026-08-14 architecture-review pass; unrelated to that pass's changes (Clinical/Encounters wasn't
-  touched). Not investigated further — worth a focused look.
-- **New gap, not yet its own item**: `DepositsService.list`/`InvoicesService.list` both take a single
-  `PaginationQueryDto & { patientId?: string }` object, but `deposits.service.integration-spec.ts` and
-  `invoices.service.integration-spec.ts` call them with positional arguments
-  (`list(patientA.id)`, `list(patient.id, 1, 500)`) — a pre-existing signature mismatch, not something
-  the 2026-08-14 architecture-review pass touched. 3 tests fail as a result; confirmed unrelated via
-  sanity-check (same failures with that pass's changes fully reverted). Worth a focused look — either
-  the tests or the callers they meant to exercise are wrong.
+- [x] **Resolved (2026-08-17, commit `56c5ae6`):** `encounters.controller.integration-spec.ts`
+  hanging in isolation — root cause was `ThrottlerStorageRedisService` defaulting to port 6379
+  while the dev compose maps Redis to 6380; every authenticated HTTP request hung retrying
+  (ioredis `maxRetriesPerRequest`) and blew past Jest's timeout. Documented in `app.module.ts`'s
+  throttler comment block.
+- [x] **Resolved (2026-08-20):** the `DepositsService.list`/`InvoicesService.list` positional-arg
+  signature mismatch — the tests were stale (pre-pagination). All four call sites now use the
+  query-object signature and assert the `{ data, meta }` shape (`meta.total`/`meta.page`/
+  `meta.limit`); `appointments.service.integration-spec.ts` had the same two stale patterns and
+  was fixed alongside.
+- **New infra note (2026-08-20):** full-AppModule integration suites need more than Jest's
+  default 5000ms per hook/test when many suites run in parallel workers;
+  `apps/api/jest.config.cts` now sets `testTimeout: 60000`. Separately, the ThrottlerGuard
+  previously shared ONE Redis-backed counter across every parallel test app instance, so a
+  full-suite run could aggregate past the guest/authenticated limits and 429 unrelated suites; in
+  test mode (`NODE_ENV=test`) the throttler now uses its default per-app in-memory storage (the
+  real guard path still runs; see `app.module.ts`). Both verified with the full suite green
+  (2026-08-20).
 - [x] **Resolved**: `eslint.config.mjs`'s `boundaries/elements` never tagged `lab`/`radiology`/
   `pharmacy`/`inventory` — the module-boundary lint had zero coverage of the four newest, most
   cross-coupled domains, and (exploiting that blind spot) Lab/Radiology/Pharmacy were bypassing
