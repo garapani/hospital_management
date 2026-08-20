@@ -351,6 +351,30 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'employee.manage',
     description: 'Manage the employee master',
   },
+  {
+    name: 'payroll.read',
+    description: 'View payslips and payroll runs',
+  },
+  {
+    name: 'payroll.manage',
+    description: 'Generate and mark payslips paid',
+  },
+  {
+    name: 'fraction.read',
+    description: 'View fraction rules and entries',
+  },
+  {
+    name: 'fraction.manage',
+    description: 'Manage fraction rules and record entries',
+  },
+  {
+    name: 'helpdesk.read',
+    description: 'View helpdesk tickets',
+  },
+  {
+    name: 'helpdesk.manage',
+    description: 'Manage helpdesk tickets',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -544,6 +568,24 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'employee.manage' },
   { roleName: 'HR/Payroll Admin', permissionName: 'employee.read' },
   { roleName: 'HR/Payroll Admin', permissionName: 'employee.manage' },
+  { roleName: 'Super Admin', permissionName: 'payroll.read' },
+  { roleName: 'Super Admin', permissionName: 'payroll.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'payroll.read' },
+  { roleName: 'Hospital Admin', permissionName: 'payroll.manage' },
+  { roleName: 'HR/Payroll Admin', permissionName: 'payroll.read' },
+  { roleName: 'HR/Payroll Admin', permissionName: 'payroll.manage' },
+  { roleName: 'Super Admin', permissionName: 'fraction.read' },
+  { roleName: 'Super Admin', permissionName: 'fraction.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'fraction.read' },
+  { roleName: 'Hospital Admin', permissionName: 'fraction.manage' },
+  { roleName: 'Billing/Accounts Staff', permissionName: 'fraction.read' },
+  { roleName: 'Billing/Accounts Staff', permissionName: 'fraction.manage' },
+  { roleName: 'Super Admin', permissionName: 'helpdesk.read' },
+  { roleName: 'Super Admin', permissionName: 'helpdesk.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'helpdesk.read' },
+  { roleName: 'Hospital Admin', permissionName: 'helpdesk.manage' },
+  { roleName: 'Helpdesk Agent', permissionName: 'helpdesk.read' },
+  { roleName: 'Helpdesk Agent', permissionName: 'helpdesk.manage' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {

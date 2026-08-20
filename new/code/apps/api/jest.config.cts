@@ -30,5 +30,10 @@ module.exports = {
   // schema twice (two full migration runs) — stays comfortably inside it even under full-suite
   // parallel load.
   testTimeout: 60000,
+  // The suite keeps growing (78 suites, each provisioning tenant schemas against one shared
+  // Postgres); Jest's default worker count parallelizes that provisioning faster than the DB (and
+  // this dev machine) can serve it, pushing beforeAll past the timeout. Cap workers so the DB is
+  // the bottleneck, not the timeouts.
+  maxWorkers: 4,
   coverageDirectory: 'test-output/jest/coverage',
 };

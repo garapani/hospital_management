@@ -33,6 +33,9 @@ import { OtModule } from '../ot/ot.module.js';
 import { MaternityModule } from '../maternity/maternity.module.js';
 import { CssdModule } from '../cssd/cssd.module.js';
 import { EmployeeModule } from '../employee/employee.module.js';
+import { PayrollModule } from '../payroll/payroll.module.js';
+import { FractionModule } from '../fraction/fraction.module.js';
+import { HelpdeskModule } from '../helpdesk/helpdesk.module.js';
 
 @Module({
   imports: [
@@ -112,6 +115,9 @@ import { EmployeeModule } from '../employee/employee.module.js';
     MaternityModule,
     CssdModule,
     EmployeeModule,
+    PayrollModule,
+    FractionModule,
+    HelpdeskModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
