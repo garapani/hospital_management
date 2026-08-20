@@ -19,6 +19,11 @@ export class InventoryItem {
   /** Selling price in INR (e.g. a drug's retail price); null = not priced. */
   @Column({ type: 'numeric', precision: 10, scale: 2, nullable: true, transformer: numericTransformer })
   salePrice!: number | null;
+  /** Soft-delete flag: deactivated catalog entries stay visible to existing records but are rejected for new use. */
+  @Column({ type: 'boolean', default: true })
+  isActive!: boolean;
+
+
   @CreateDateColumn({ type: 'timestamptz' }) createdAt!: Date;
   @UpdateDateColumn({ type: 'timestamptz' }) updatedAt!: Date;
 }

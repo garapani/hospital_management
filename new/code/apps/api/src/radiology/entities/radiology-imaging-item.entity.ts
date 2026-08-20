@@ -27,6 +27,11 @@ export class RadiologyImagingItem {
   /** Selling price in INR; null = not priced (charge-capture skips unpriced items). */
   @Column({ type: 'numeric', precision: 10, scale: 2, nullable: true, transformer: numericTransformer })
   price!: number | null;
+  /** Soft-delete flag: deactivated catalog entries stay visible to existing records but are rejected for new use. */
+  @Column({ type: 'boolean', default: true })
+  isActive!: boolean;
+
+
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;

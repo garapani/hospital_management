@@ -5,6 +5,7 @@ import { CreateInventoryItemCategoryDto } from './dto/create-inventory-item-cate
 import { CreateInventoryItemSubCategoryDto } from './dto/create-inventory-item-sub-category.dto.js';
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto.js';
 import { CreateInventoryVendorDto } from './dto/create-inventory-vendor.dto.js';
+import { UpdateInventoryItemDto } from './dto/update-inventory-item.dto.js';
 import { UpdatePriceDto } from './dto/update-price.dto.js';
 
 @Controller('inventory')
@@ -58,6 +59,60 @@ export class InventoryCatalogController {
   @RequirePermission('inventory.catalog.manage')
   async updateItemSalePrice(@Param('id') id: string, @Body() dto: UpdatePriceDto) {
     return this.inventoryCatalogService.updateItemSalePrice(id, dto.price);
+  }
+
+  @Patch('items/:id')
+  @RequirePermission('inventory.catalog.manage')
+  async updateItem(@Param('id') id: string, @Body() dto: UpdateInventoryItemDto) {
+    return this.inventoryCatalogService.updateItem(id, dto);
+  }
+
+  @Patch('items/:id/deactivate')
+  @RequirePermission('inventory.catalog.manage')
+  async deactivateItem(@Param('id') id: string) {
+    return this.inventoryCatalogService.deactivateItem(id);
+  }
+
+  @Patch('items/:id/reactivate')
+  @RequirePermission('inventory.catalog.manage')
+  async reactivateItem(@Param('id') id: string) {
+    return this.inventoryCatalogService.reactivateItem(id);
+  }
+
+  @Patch('categories/:id/deactivate')
+  @RequirePermission('inventory.catalog.manage')
+  async deactivateCategory(@Param('id') id: string) {
+    return this.inventoryCatalogService.deactivateCategory(id);
+  }
+
+  @Patch('categories/:id/reactivate')
+  @RequirePermission('inventory.catalog.manage')
+  async reactivateCategory(@Param('id') id: string) {
+    return this.inventoryCatalogService.reactivateCategory(id);
+  }
+
+  @Patch('sub-categories/:id/deactivate')
+  @RequirePermission('inventory.catalog.manage')
+  async deactivateSubCategory(@Param('id') id: string) {
+    return this.inventoryCatalogService.deactivateSubCategory(id);
+  }
+
+  @Patch('sub-categories/:id/reactivate')
+  @RequirePermission('inventory.catalog.manage')
+  async reactivateSubCategory(@Param('id') id: string) {
+    return this.inventoryCatalogService.reactivateSubCategory(id);
+  }
+
+  @Patch('vendors/:id/deactivate')
+  @RequirePermission('inventory.catalog.manage')
+  async deactivateVendor(@Param('id') id: string) {
+    return this.inventoryCatalogService.deactivateVendor(id);
+  }
+
+  @Patch('vendors/:id/reactivate')
+  @RequirePermission('inventory.catalog.manage')
+  async reactivateVendor(@Param('id') id: string) {
+    return this.inventoryCatalogService.reactivateVendor(id);
   }
 
   @Post('vendors')

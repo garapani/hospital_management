@@ -47,7 +47,12 @@ export class RadiologyWorkflowService {
   }
 
   async createRequisition(input: CreateRequisitionInput): Promise<RadiologyRequisition> {
-    await this.radiologyCatalogService.getItem(input.imagingItemId); // throws NotFoundException if missing
+    const item = await this.radiologyCatalogService.getItem(input.imagingItemId); // throws NotFoundException if missing
+    if (!item.isActive) {
+      throw new ConflictException(
+        `Radiology imaging item ${input.imagingItemId} is deactivated; cannot create a new requisition against it`,
+      );
+    }
 
     const requisitionNumber = await this.requisitionNumberGenerator.generateNextRequisitionNumber();
 

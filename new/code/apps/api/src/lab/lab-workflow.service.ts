@@ -50,7 +50,12 @@ export class LabWorkflowService {
   }
 
   async createRequisition(input: CreateRequisitionInput): Promise<LabRequisition> {
-    await this.labCatalogService.getTest(input.testId); // throws NotFoundException if missing
+    const test = await this.labCatalogService.getTest(input.testId); // throws NotFoundException if missing
+    if (!test.isActive) {
+      throw new ConflictException(
+        `Test ${input.testId} is deactivated; cannot create a new requisition against it`,
+      );
+    }
     const components = await this.labCatalogService.listComponentsByTest(input.testId);
     if (components.length === 0) {
       throw new BadRequestException(

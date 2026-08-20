@@ -10,6 +10,11 @@ export class LabTestCategory {
 
   @Column({ type: 'int', default: 0 })
   displaySequence!: number;
+  /** Soft-delete flag: deactivated catalog entries stay visible to existing records but are rejected for new use. */
+  @Column({ type: 'boolean', default: true })
+  isActive!: boolean;
+
+
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;

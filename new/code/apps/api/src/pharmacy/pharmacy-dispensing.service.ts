@@ -50,7 +50,12 @@ export class PharmacyDispensingService {
       throw new BadRequestException('quantity must be a positive number');
     }
 
-    await this.inventoryCatalogService.getItem(input.inventoryItemId); // throws NotFoundException if missing
+    const item = await this.inventoryCatalogService.getItem(input.inventoryItemId); // throws NotFoundException if missing
+    if (!item.isActive) {
+      throw new ConflictException(
+        `Inventory item ${input.inventoryItemId} is deactivated; cannot create a new dispensing against it`,
+      );
+    }
 
     const dispensingNumber = await this.dispensingNumberGenerator.generateNextDispensingNumber();
 

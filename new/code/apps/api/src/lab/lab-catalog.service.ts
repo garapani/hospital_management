@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { LabTestCategory } from './entities/lab-test-category.entity.js';
 import { LabTest } from './entities/lab-test.entity.js';
@@ -14,6 +14,14 @@ export interface CreateLabTestInput {
   name: string;
   code: string;
   specimenType: string;
+  /** Selling price in INR; null = not priced yet. */
+  price?: number;
+}
+
+export interface UpdateLabTestInput {
+  name?: string;
+  code?: string;
+  specimenType?: string;
   /** Selling price in INR; null = not priced yet. */
   price?: number;
 }
@@ -49,6 +57,33 @@ export class LabCatalogService {
     );
   }
 
+  async deactivateCategory(id: string): Promise<LabTestCategory> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(LabTestCategory);
+      const category = await repository.findOne({ where: { id } });
+      if (!category) {
+        throw new NotFoundException(`Lab test category ${id} not found`);
+      }
+      if (!category.isActive) {
+        throw new ConflictException(`Lab test category ${id} is already deactivated`);
+      }
+      category.isActive = false;
+      return repository.save(category);
+    });
+  }
+
+  async reactivateCategory(id: string): Promise<LabTestCategory> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(LabTestCategory);
+      const category = await repository.findOne({ where: { id } });
+      if (!category) {
+        throw new NotFoundException(`Lab test category ${id} not found`);
+      }
+      category.isActive = true;
+      return repository.save(category);
+    });
+  }
+
   async createTest(input: CreateLabTestInput): Promise<LabTest> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const category = await manager
@@ -82,6 +117,59 @@ export class LabCatalogService {
         throw new NotFoundException(`Lab test ${id} not found`);
       }
       test.price = price;
+      return repository.save(test);
+    });
+  }
+
+  async updateTest(id: string, input: UpdateLabTestInput): Promise<LabTest> {
+    if (input.price !== undefined && (!Number.isFinite(input.price) || input.price < 0)) {
+      throw new BadRequestException('Price must be a non-negative number');
+    }
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(LabTest);
+      const test = await repository.findOne({ where: { id } });
+      if (!test) {
+        throw new NotFoundException(`Lab test ${id} not found`);
+      }
+      if (input.name !== undefined) {
+        test.name = input.name;
+      }
+      if (input.code !== undefined) {
+        test.code = input.code;
+      }
+      if (input.specimenType !== undefined) {
+        test.specimenType = input.specimenType;
+      }
+      if (input.price !== undefined) {
+        test.price = input.price;
+      }
+      return repository.save(test);
+    });
+  }
+
+  async deactivateTest(id: string): Promise<LabTest> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(LabTest);
+      const test = await repository.findOne({ where: { id } });
+      if (!test) {
+        throw new NotFoundException(`Lab test ${id} not found`);
+      }
+      if (!test.isActive) {
+        throw new ConflictException(`Lab test ${id} is already deactivated`);
+      }
+      test.isActive = false;
+      return repository.save(test);
+    });
+  }
+
+  async reactivateTest(id: string): Promise<LabTest> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(LabTest);
+      const test = await repository.findOne({ where: { id } });
+      if (!test) {
+        throw new NotFoundException(`Lab test ${id} not found`);
+      }
+      test.isActive = true;
       return repository.save(test);
     });
   }

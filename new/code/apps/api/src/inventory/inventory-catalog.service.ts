@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { In } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { InventoryItemCategory } from './entities/inventory-item-category.entity.js';
@@ -33,6 +33,16 @@ export interface CreateVendorInput {
   contactPerson?: string;
   phone?: string;
   address?: string;
+}
+
+export interface UpdateItemInput {
+  name?: string;
+  code?: string;
+  unitOfMeasure?: string;
+  reorderLevel?: number;
+  minimumStock?: number;
+  /** Selling price in INR (e.g. a drug's retail price); null = not priced yet. */
+  salePrice?: number;
 }
 
 /**
@@ -74,6 +84,33 @@ export class InventoryCatalogService {
     );
   }
 
+  async deactivateCategory(id: string): Promise<InventoryItemCategory> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(InventoryItemCategory);
+      const category = await repository.findOne({ where: { id } });
+      if (!category) {
+        throw new NotFoundException(`Inventory item category ${id} not found`);
+      }
+      if (!category.isActive) {
+        throw new ConflictException(`Inventory item category ${id} is already deactivated`);
+      }
+      category.isActive = false;
+      return repository.save(category);
+    });
+  }
+
+  async reactivateCategory(id: string): Promise<InventoryItemCategory> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(InventoryItemCategory);
+      const category = await repository.findOne({ where: { id } });
+      if (!category) {
+        throw new NotFoundException(`Inventory item category ${id} not found`);
+      }
+      category.isActive = true;
+      return repository.save(category);
+    });
+  }
+
   async createSubCategory(input: CreateItemSubCategoryInput): Promise<InventoryItemSubCategory> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const category = await manager
@@ -97,6 +134,33 @@ export class InventoryCatalogService {
     return this.tenantConnection.runInTenantSchema((manager) =>
       manager.getRepository(InventoryItemSubCategory).find({ where: { categoryId } }),
     );
+  }
+
+  async deactivateSubCategory(id: string): Promise<InventoryItemSubCategory> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(InventoryItemSubCategory);
+      const subCategory = await repository.findOne({ where: { id } });
+      if (!subCategory) {
+        throw new NotFoundException(`Inventory item sub-category ${id} not found`);
+      }
+      if (!subCategory.isActive) {
+        throw new ConflictException(`Inventory item sub-category ${id} is already deactivated`);
+      }
+      subCategory.isActive = false;
+      return repository.save(subCategory);
+    });
+  }
+
+  async reactivateSubCategory(id: string): Promise<InventoryItemSubCategory> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(InventoryItemSubCategory);
+      const subCategory = await repository.findOne({ where: { id } });
+      if (!subCategory) {
+        throw new NotFoundException(`Inventory item sub-category ${id} not found`);
+      }
+      subCategory.isActive = true;
+      return repository.save(subCategory);
+    });
   }
 
   async createItem(input: CreateItemInput): Promise<InventoryItem> {
@@ -135,6 +199,69 @@ export class InventoryCatalogService {
         throw new NotFoundException(`Inventory item ${id} not found`);
       }
       item.salePrice = salePrice;
+      return repository.save(item);
+    });
+  }
+
+  async updateItem(id: string, input: UpdateItemInput): Promise<InventoryItem> {
+    const reorderLevel =
+      input.reorderLevel !== undefined ? coerceOptionalNonNegativeNumber(input.reorderLevel, 'reorderLevel') : undefined;
+    const minimumStock =
+      input.minimumStock !== undefined ? coerceOptionalNonNegativeNumber(input.minimumStock, 'minimumStock') : undefined;
+    if (input.salePrice !== undefined && (!Number.isFinite(input.salePrice) || input.salePrice < 0)) {
+      throw new BadRequestException('Sale price must be a non-negative number');
+    }
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(InventoryItem);
+      const item = await repository.findOne({ where: { id } });
+      if (!item) {
+        throw new NotFoundException(`Inventory item ${id} not found`);
+      }
+      if (input.name !== undefined) {
+        item.name = input.name;
+      }
+      if (input.code !== undefined) {
+        item.code = input.code;
+      }
+      if (input.unitOfMeasure !== undefined) {
+        item.unitOfMeasure = input.unitOfMeasure;
+      }
+      if (reorderLevel !== undefined) {
+        item.reorderLevel = String(reorderLevel);
+      }
+      if (minimumStock !== undefined) {
+        item.minimumStock = String(minimumStock);
+      }
+      if (input.salePrice !== undefined) {
+        item.salePrice = input.salePrice;
+      }
+      return repository.save(item);
+    });
+  }
+
+  async deactivateItem(id: string): Promise<InventoryItem> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(InventoryItem);
+      const item = await repository.findOne({ where: { id } });
+      if (!item) {
+        throw new NotFoundException(`Inventory item ${id} not found`);
+      }
+      if (!item.isActive) {
+        throw new ConflictException(`Inventory item ${id} is already deactivated`);
+      }
+      item.isActive = false;
+      return repository.save(item);
+    });
+  }
+
+  async reactivateItem(id: string): Promise<InventoryItem> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(InventoryItem);
+      const item = await repository.findOne({ where: { id } });
+      if (!item) {
+        throw new NotFoundException(`Inventory item ${id} not found`);
+      }
+      item.isActive = true;
       return repository.save(item);
     });
   }
@@ -198,6 +325,33 @@ export class InventoryCatalogService {
         throw new NotFoundException(`Inventory vendor ${id} not found`);
       }
       return vendor;
+    });
+  }
+
+  async deactivateVendor(id: string): Promise<InventoryVendor> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(InventoryVendor);
+      const vendor = await repository.findOne({ where: { id } });
+      if (!vendor) {
+        throw new NotFoundException(`Inventory vendor ${id} not found`);
+      }
+      if (!vendor.isActive) {
+        throw new ConflictException(`Inventory vendor ${id} is already deactivated`);
+      }
+      vendor.isActive = false;
+      return repository.save(vendor);
+    });
+  }
+
+  async reactivateVendor(id: string): Promise<InventoryVendor> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(InventoryVendor);
+      const vendor = await repository.findOne({ where: { id } });
+      if (!vendor) {
+        throw new NotFoundException(`Inventory vendor ${id} not found`);
+      }
+      vendor.isActive = true;
+      return repository.save(vendor);
     });
   }
 }
