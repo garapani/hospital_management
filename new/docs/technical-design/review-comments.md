@@ -28,7 +28,10 @@ inside a real transaction in `TenantConnectionService`. See
 `new/docs/superpowers/plans/2026-08-04-database-enforced-tenant-isolation.md`. Note: the dedicated
 DB-level cross-tenant proof test (Postgres itself rejecting a cross-schema query under the wrong
 role) was deferred at the human partner's request to prioritize a prototype demo — test coverage
-for this item is still outstanding.
+for this item is still outstanding. **Closed 2026-08-20:** the proof now lives in
+`tenant-connection.service.integration-spec.ts` (`SET LOCAL ROLE` describe): a schema-qualified
+read and a write against another tenant's schema both fail with `permission denied for schema`
+under the tenant's own role, with a same-schema positive control.
 
 The PRD says tenant schemas are isolated by Postgres role-level schema grants:
 

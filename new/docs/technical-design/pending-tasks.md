@@ -97,7 +97,10 @@ scope, not merely lower priority.
    item), and the `migrate-tenants` backfill runner that closed the dependency below. Note: the
    dedicated cross-role DB-level isolation test (proving Postgres itself rejects a cross-tenant
    query) was deferred — the human partner is prioritizing a prototype demo and will add test
-   coverage for this item afterward.
+   coverage for this item afterward. **Done 2026-08-20:** the DB-level proof now lives in the
+   `SET LOCAL ROLE` describe of `tenant-connection.service.integration-spec.ts` — a
+   schema-qualified read AND a write against another tenant's schema both fail with
+   `permission denied for schema` under the tenant's own role, with a same-schema positive control.
 
 ## Phase 2 — Guardrails while the backlog grows
 
@@ -182,18 +185,20 @@ Follow the PRD's own phase ordering as-is:
         multi-level verification, catalog update/delete (create+list only shipped; see
         `Development-Standards.md` §14), result amendment history/audit trail (corrections
         currently overwrite in place with no version row — acceptable for now since only
-        pre-verification edits are allowed, but named explicitly rather than left silent), and
-        `OrderItem.status` never advancing when its lab requisition is verified (the ordering
-        doctor has no signal from the Order module itself that results are ready; they'd need to
-        check Lab directly) — each a distinct future item.
+        pre-verification edits are allowed, but named explicitly rather than left silent) — each a
+        distinct future item. ~~`OrderItem.status` never advancing when its lab requisition is
+        verified~~ **closed 2026-08-20:** verification now routes through
+        `OrdersService.completeItemInTransaction`, so the `OrderItem` advances to `Completed` at
+        the same time (the ordering doctor gets the signal from the Order module).
   - [x] Radiology core pipeline (imaging catalog, requisition/scan tracking, single-field report
         entry, single-level verification) — done. **Not done:** image attachment
         (`@hospital/object-storage` integration), film type/quantity billing tracking, DICOM
         integration (confirmed a wholly separate old-system domain — its own models, own
         controller), report template HTML rendering/PDF export, catalog update/delete (create+list
-        only, same scope cut as Lab), result amendment history/audit trail, and `OrderItem.status`
-        never advancing on verification (same two gaps Lab has, named here rather than left
-        silent) — each a distinct future item. Request-body validation for the required workflow
+        only, same scope cut as Lab), result amendment history/audit trail — each a distinct
+        future item. ~~`OrderItem.status` never advancing on verification~~ **closed 2026-08-20:**
+        Radiology verification also routes through `OrdersService.completeItemInTransaction` (same
+        fix as Lab's). Request-body validation for the required workflow
         fields (`reportText`, `reportEnteredBy`, `scannedBy`, `verifiedBy`) is now enforced by
         explicit service-layer guard clauses plus database CHECK constraints (added in a final-review
         fix), closing a gap where an empty/malformed request body could previously have produced a

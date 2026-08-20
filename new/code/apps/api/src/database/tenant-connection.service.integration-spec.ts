@@ -79,21 +79,28 @@ describe('TenantConnectionService (integration)', () => {
     let roleTenantContext: TenantContextService;
     let roleConnectionService: TenantConnectionService;
     const tenantId = 'conn_svc_role_test';
+    const tenantBId = 'conn_svc_role_test_b';
     const schemaName = `tenant_${tenantId}`;
+    const schemaNameB = `tenant_${tenantBId}`;
 
     beforeAll(async () => {
       roleDataSource = createDataSource();
       await roleDataSource.initialize();
       roleTenantContext = new TenantContextService();
       roleConnectionService = new TenantConnectionService(roleDataSource, roleTenantContext);
-      await roleDataSource.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
-      await roleDataSource.query(`DROP ROLE IF EXISTS "${schemaName}"`);
+      for (const schema of [schemaName, schemaNameB]) {
+        await roleDataSource.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+        await roleDataSource.query(`DROP ROLE IF EXISTS "${schema}"`);
+      }
       await new TenantProvisioningService(roleDataSource).provisionTenantSchema(tenantId);
+      await new TenantProvisioningService(roleDataSource).provisionTenantSchema(tenantBId);
     });
 
     afterAll(async () => {
-      await roleDataSource.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
-      await roleDataSource.query(`DROP ROLE IF EXISTS "${schemaName}"`);
+      for (const schema of [schemaName, schemaNameB]) {
+        await roleDataSource.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+        await roleDataSource.query(`DROP ROLE IF EXISTS "${schema}"`);
+      }
       await roleDataSource.destroy();
     });
 
@@ -132,6 +139,47 @@ describe('TenantConnectionService (integration)', () => {
           }),
         ),
       ).rejects.toThrow('boom');
+    });
+
+    it('Postgres itself rejects a cross-tenant query under the wrong tenant role (the deferred DB-level proof)', async () => {
+      // The application layer is not the isolation boundary: even a hand-written SQL query that
+      // names another tenant's schema must be rejected by Postgres, because the SET LOCAL ROLE'd
+      // connection runs as tenant_conn_svc_role_test, which has no USAGE on
+      // tenant_conn_svc_role_test_b. This is the dedicated proof deferred when Phase 1 item 3
+      // landed (see pending-tasks.md / review-comments.md).
+      await expect(
+        roleTenantContext.run({ tenantId, correlationId: 'test' }, () =>
+          roleConnectionService.runInTenantSchema((manager) =>
+            manager.query(`SELECT count(*) FROM "${schemaNameB}"."patients"`),
+          ),
+        ),
+      ).rejects.toThrow(/permission denied for schema/i);
+    });
+
+    it('the same schema-qualified query succeeds from the tenant\'s own role', async () => {
+      // Positive control for the test above: the identical query shape against the tenant's own
+      // schema is allowed — proving the denial is role-based, not a syntax/quoting artifact.
+      const count = await roleTenantContext.run({ tenantId, correlationId: 'test' }, () =>
+        roleConnectionService.runInTenantSchema(async (manager) => {
+          const rows = await manager.query(
+            `SELECT count(*)::int AS n FROM "${schemaName}"."patients"`,
+          );
+          return rows[0].n as number;
+        }),
+      );
+      expect(count).toBeGreaterThanOrEqual(0);
+    });
+
+    it('cross-schema writes are rejected too, not just reads', async () => {
+      // Permission checks fire when the relation is opened for the write — before any NOT NULL /
+      // column validation — so DEFAULT VALUES is a shape-independent probe.
+      await expect(
+        roleTenantContext.run({ tenantId, correlationId: 'test' }, () =>
+          roleConnectionService.runInTenantSchema((manager) =>
+            manager.query(`INSERT INTO "${schemaNameB}"."patients" DEFAULT VALUES`),
+          ),
+        ),
+      ).rejects.toThrow(/permission denied for schema/i);
     });
   });
 });
