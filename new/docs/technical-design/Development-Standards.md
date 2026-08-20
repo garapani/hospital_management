@@ -1287,3 +1287,25 @@ job (same trade as Fixed Asset depreciation, §29):
 (`ctx.createTenant()` + a service bound to that context) — reports aggregate the whole tenant, so
 sharing the suite's tenant leaks earlier tests' journals into the numbers. This doubles as an
 extra tenant-isolation assertion.
+
+## 32. Ward Supply, Nursing, and OT modules (2026-08-20)
+
+Three more modules on the same template (entities + migration + §25 actor derivation + status
+machines + permissions + `TenantTestContext` spec), notable specifics:
+
+- **Ward Supply** — the one module with a **balance ledger**: `receiveStock` atomically upserts
+  `ward_stock_balances` (`INSERT ... ON CONFLICT (departmentId, itemId) DO UPDATE
+  availableQuantity = availableQuantity + excluded.availableQuantity`) inside the same transaction
+  as the `Receive` transaction row, so the ledger can never drift from the balances; `consumeStock`
+  row-locks the balance and rejects over-consumption with `ConflictException`. Consumption can be
+  tied to a patient/admission. The Inventory requisition→fulfillment pipeline is NOT yet wired to
+  auto-post receipts (named future item, needs the store/location dimension).
+- **Nursing** — two status machines on one module (tasks `Pending→InProgress→Completed` /
+  `Pending→Cancelled`; MAR `Scheduled→Administered|Skipped`), all row-locked. MAR `administeredBy`
+  is a clinical sign-off, so §25 actor derivation matters here exactly as it does for Lab verify.
+- **OT** — `SUR-…` surgery numbers via the wrapped sequence generator; `scheduleSurgery` validates
+  patient existence and, when an admission is given, that it belongs to the patient (raw-query
+  cross-module validation, same as insurance).
+
+All three wired in `app.module.ts`; permissions in `seed-rbac-catalog.ts` (Nurse finally gets its
+own manage grants beyond triage); migrations `0036`–`0038`.

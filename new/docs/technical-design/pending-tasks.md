@@ -242,7 +242,13 @@ Follow the PRD's own phase ordering as-is:
         credit billing/credit notes/supplier ledger, narcotic/controlled-substance regulatory
         logging, sales returns, write-offs (a `Dispensed` record is terminal, no reversal path),
         and provisional IPD consumption billing — each a distinct future item if ever needed.
-  - DICOM, Ward Supply — not started
+  - DICOM — not started (confirmed a wholly separate PACS-facing domain in the 2026-08-14
+    review; needs its own scoping). **Ward Supply is done (2026-08-20):** ward sub-store stock
+    ledger — receive/consume transactions, per-department+item balances (atomic upsert),
+    consumption optionally tied to patient/admission, actor-derived performedBy. Permissions
+    `ward-supply.read`/`ward-supply.manage` → Nurse, Hospital Admin, Super Admin. Migration
+    `0036`; 9 tests. Future items: auto-posting fulfilled Inventory requisitions into ward
+    balances (needs the store/location dimension), ward-to-ward transfers.
 - **Frontend feature pages (2026-08-20, separate repo `frontend/`):** the tenant console's missing
   pages are now built and routed — Lab/LIS (requisitions workflow + test catalog), Radiology
   (requisitions workflow + imaging catalog), Pharmacy (dispensing + dispense), Inventory (items,
@@ -283,7 +289,16 @@ Follow the PRD's own phase ordering as-is:
   Inventory & Store Manager. Migration `0033`. Not done (future items): depreciation
   schedules/periodic accrual, disposal/write-off, asset transfers between departments,
   maintenance/AMC tracking, and a frontend page.
-- Phase 4: Clinical/EMR long tail, Nursing, Emergency, OT, Maternity, CSSD
+- Phase 4: Clinical/EMR long tail, Maternity, CSSD — not started. **Nursing** and **OT are done
+  (2026-08-20); Emergency is covered by the existing triage module** (ER intake/triage per PRD).
+  - **Nursing:** nursing tasks (Pending -> InProgress -> Completed / Cancelled, row-locked,
+    actor-derived createdBy/completedBy) + MAR medication-administration records
+    (Scheduled -> Administered / Skipped, actor-derived administeredBy). Permissions
+    `nursing.read`/`nursing.manage` → Nurse, Doctor (read), Hospital Admin, Super Admin. Migration
+    `0037`; 12 tests.
+  - **OT:** surgery scheduling (auto `SUR-…` numbers, patient + admission-ownership validation,
+    Scheduled -> InProgress -> Completed / Cancelled, actor-derived scheduledBy). Permissions
+    `ot.read`/`ot.manage` → Doctor, Nurse, Hospital Admin, Super Admin. Migration `0038`; 7 tests.
 - Phase 5: Employee, Payroll, Fraction and Incentive
 - Phase 6: Helpdesk, Marketing and Referral, Social Service Unit, Document and Print, full
   Reporting/Dashboard — not started. **Notification** is now started/done as a slice ahead of its
