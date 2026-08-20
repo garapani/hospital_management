@@ -23,6 +23,9 @@
     },
     {
       "path": "./libs/pagination"
+    },
+    {
+      "path": "./libs/pdf"
     }
   ],
   "compilerOptions": {}

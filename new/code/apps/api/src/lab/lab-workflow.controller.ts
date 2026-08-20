@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Param,
+  Patch,
+  Post,
+  Query,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { LabWorkflowService } from './lab-workflow.service.js';
 import { CreateRequisitionDto } from './dto/create-requisition.dto.js';
@@ -23,6 +34,17 @@ export class LabWorkflowController {
   @RequirePermission('lab.read')
   async listByOrderItem(@Query() query: SearchLabRequisitionsDto) {
     return this.labWorkflowService.listByOrderItem(query);
+  }
+
+  /** PDF export of a Verified requisition's report. Must precede `@Get(':id')` so the literal
+   *  `report.pdf` segment isn't captured as an id. */
+  @Get(':id/report.pdf')
+  @RequirePermission('lab.read')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Content-Disposition', 'inline; filename="lab-report.pdf"')
+  async reportPdf(@Param('id') id: string): Promise<StreamableFile> {
+    const buffer = await this.labWorkflowService.renderReportPdf(id);
+    return new StreamableFile(buffer);
   }
 
   @Get(':id')

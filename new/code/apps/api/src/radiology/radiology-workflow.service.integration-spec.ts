@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { PdfService } from '@hospital/pdf';
+import { ObjectStorageService } from '@hospital/object-storage';
 import { RadiologyWorkflowService } from './radiology-workflow.service.js';
 import { RadiologyCatalogService } from './radiology-catalog.service.js';
 import { RadiologyRequisitionNumberGeneratorService } from './radiology-requisition-number-generator.service.js';
@@ -28,6 +30,8 @@ describe('RadiologyWorkflowService (integration)', () => {
       catalogService,
       ordersService,
       ctx.tenantContext,
+      new PdfService(),
+      new ObjectStorageService(),
     );
     patientsService = new PatientsService(
       ctx.tenantConnection,

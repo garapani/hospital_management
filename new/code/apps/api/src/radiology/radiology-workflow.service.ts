@@ -1,13 +1,23 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Not, QueryFailedError } from 'typeorm';
+import { PdfService } from '@hospital/pdf';
+import { ObjectStorageService } from '@hospital/object-storage';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { RadiologyRequisition } from './entities/radiology-requisition.entity.js';
+import { RadiologyImagingItem } from './entities/radiology-imaging-item.entity.js';
 import { RadiologyRequisitionNumberGeneratorService } from './radiology-requisition-number-generator.service.js';
 import { RadiologyCatalogService } from './radiology-catalog.service.js';
 import { ListRadiologyRequisitionDto } from './dto/list-radiology-requisition.dto.js';
+import { buildRadiologyReportDocument } from './radiology-report-document.js';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 export interface CreateRequisitionInput {
@@ -27,12 +37,16 @@ const NON_TERMINAL_STATUSES = ['Pending', 'Scanned', 'ReportEntered'];
 
 @Injectable()
 export class RadiologyWorkflowService {
+  private readonly logger = new Logger(RadiologyWorkflowService.name);
+
   constructor(
     private readonly tenantConnection: TenantConnectionService,
     private readonly requisitionNumberGenerator: RadiologyRequisitionNumberGeneratorService,
     private readonly radiologyCatalogService: RadiologyCatalogService,
     private readonly ordersService: OrdersService,
     private readonly tenantContext: TenantContextService,
+    private readonly pdfService: PdfService,
+    private readonly objectStorage: ObjectStorageService,
   ) {}
 
   /**
@@ -233,6 +247,65 @@ export class RadiologyWorkflowService {
       requisition.status = 'Cancelled';
       requisition.cancelReason = cancelReason ?? null;
       return repository.save(requisition);
+    });
+  }
+
+  /** Renders a PDF of a Verified requisition's report and (best-effort) stores it in object storage. */
+  async renderReportPdf(id: string): Promise<Buffer> {
+    const requisition = await this.findOne(id);
+    if (requisition.status !== 'Verified') {
+      throw new ConflictException(
+        `Report is only available for Verified requisitions (current: ${requisition.status})`,
+      );
+    }
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const imagingItem = await manager
+        .getRepository(RadiologyImagingItem)
+        .findOne({ where: { id: requisition.imagingItemId } });
+
+      const orderRows = await manager.query(
+        `SELECT o."patientId" FROM orders o JOIN order_items oi ON oi."orderId" = o.id WHERE oi.id = $1`,
+        [requisition.orderItemId],
+      );
+      const patient = orderRows.length > 0
+        ? await manager.query(`SELECT "firstName", "lastName", "phoneNumber" FROM patients WHERE id = $1`, [orderRows[0].patientId])
+        : [];
+      const patientName = patient.length > 0 ? `${patient[0].firstName} ${patient[0].lastName}` : 'Unknown';
+
+      const buffer = await this.pdfService.render(
+        buildRadiologyReportDocument({
+          patientName,
+          patientPhone: patient[0]?.phoneNumber ?? '',
+          requisitionNumber: requisition.requisitionNumber,
+          imagingItemName: imagingItem?.name ?? requisition.imagingItemId,
+          procedureCode: imagingItem?.procedureCode ?? null,
+          indication: requisition.indication,
+          reportText: requisition.reportText ?? '',
+          verifiedBy: requisition.verifiedBy ?? '',
+          verifiedAt: requisition.verifiedAt?.toISOString() ?? '',
+        }),
+      );
+
+      const tenantId = this.tenantContext.getTenantId();
+      if (tenantId) {
+        try {
+          await this.objectStorage.putObject(
+            tenantId,
+            `reports/radiology/${requisition.requisitionNumber}.pdf`,
+            buffer,
+            buffer.length,
+            { 'Content-Type': 'application/pdf' },
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to store radiology report ${requisition.requisitionNumber}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+      return buffer;
     });
   }
 }

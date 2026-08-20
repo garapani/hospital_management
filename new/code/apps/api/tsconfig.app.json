@@ -22,6 +22,12 @@
   ],
   "references": [
     {
+      "path": "../../libs/pdf/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/object-storage/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/tenant-context/tsconfig.lib.json"
     },
     {

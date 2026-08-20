@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { PdfService } from '@hospital/pdf';
+import { ObjectStorageService } from '@hospital/object-storage';
 import { RadiologyCatalogService } from './radiology-catalog.service.js';
 import { RadiologyWorkflowService } from './radiology-workflow.service.js';
 import { RadiologyRequisitionNumberGeneratorService } from './radiology-requisition-number-generator.service.js';
@@ -28,6 +30,8 @@ describe('RadiologyCatalogService catalog update/deactivate (integration)', () =
       catalogService,
       ordersService,
       ctx.tenantContext,
+      new PdfService(),
+      new ObjectStorageService(),
     );
     patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection));
   });

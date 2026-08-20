@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Param,
+  Patch,
+  Post,
+  Query,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { RadiologyWorkflowService } from './radiology-workflow.service.js';
 import { CreateRadiologyRequisitionDto } from './dto/create-radiology-requisition.dto.js';
@@ -23,6 +34,17 @@ export class RadiologyWorkflowController {
   @RequirePermission('radiology.read')
   async findAll(@Query() query: ListRadiologyRequisitionDto) {
     return this.radiologyWorkflowService.findAll(query);
+  }
+
+  /** PDF export of a Verified requisition's report. Must precede `@Get(':id')` so the literal
+   *  `report.pdf` segment isn't captured as an id. */
+  @Get(':id/report.pdf')
+  @RequirePermission('radiology.read')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Content-Disposition', 'inline; filename="radiology-report.pdf"')
+  async reportPdf(@Param('id') id: string): Promise<StreamableFile> {
+    const buffer = await this.radiologyWorkflowService.renderReportPdf(id);
+    return new StreamableFile(buffer);
   }
 
   @Get(':id')

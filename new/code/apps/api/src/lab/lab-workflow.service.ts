@@ -2,15 +2,20 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Not, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
+import { Logger } from '@nestjs/common';
+import { PdfService } from '@hospital/pdf';
+import { ObjectStorageService } from '@hospital/object-storage';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { LabRequisition } from './entities/lab-requisition.entity.js';
 import { LabResult } from './entities/lab-result.entity.js';
 import { LabTestComponent } from './entities/lab-test-component.entity.js';
+import { LabTest } from './entities/lab-test.entity.js';
 import { LabRequisitionNumberGeneratorService } from './lab-requisition-number-generator.service.js';
 import { LabCatalogService } from './lab-catalog.service.js';
 import { paginate, PaginatedResponseDto, requireParam } from '@hospital/pagination';
 import { SearchLabRequisitionsDto } from './dto/search-lab-requisitions.dto.js';
+import { buildLabReportDocument } from './lab-report-document.js';
 
 export interface CreateRequisitionInput {
   orderItemId: string;
@@ -30,12 +35,16 @@ const NON_TERMINAL_STATUSES = ['Pending', 'SampleCollected', 'ResultsEntered'];
 
 @Injectable()
 export class LabWorkflowService {
+  private readonly logger = new Logger(LabWorkflowService.name);
+
   constructor(
     private readonly tenantConnection: TenantConnectionService,
     private readonly requisitionNumberGenerator: LabRequisitionNumberGeneratorService,
     private readonly labCatalogService: LabCatalogService,
     private readonly ordersService: OrdersService,
     private readonly tenantContext: TenantContextService,
+    private readonly pdfService: PdfService,
+    private readonly objectStorage: ObjectStorageService,
   ) {}
 
   /**
@@ -269,6 +278,75 @@ export class LabWorkflowService {
       requisition.status = 'Cancelled';
       requisition.cancelReason = cancelReason ?? null;
       return repository.save(requisition);
+    });
+  }
+
+  /** Renders a PDF of a Verified requisition's report and (best-effort) stores it in object storage. */
+  async renderReportPdf(id: string): Promise<Buffer> {
+    const requisition = await this.findOne(id);
+    if (requisition.status !== 'Verified') {
+      throw new ConflictException(`Report is only available for Verified requisitions (current: ${requisition.status})`);
+    }
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const test = await manager.getRepository(LabTest).findOne({ where: { id: requisition.testId } });
+      const components = await manager.getRepository(LabTestComponent).find({
+        where: { testId: requisition.testId },
+        order: { displaySequence: 'ASC' },
+      });
+      const results = await manager.getRepository(LabResult).find({ where: { requisitionId: id } });
+      const resultByComponent = new Map(results.map((r) => [r.componentId, r]));
+
+      const orderRows = await manager.query(
+        `SELECT o."patientId" FROM orders o JOIN order_items oi ON oi."orderId" = o.id WHERE oi.id = $1`,
+        [requisition.orderItemId],
+      );
+      const patient = orderRows.length > 0
+        ? await manager.query(`SELECT "firstName", "lastName", "phoneNumber" FROM patients WHERE id = $1`, [orderRows[0].patientId])
+        : [];
+      const patientName = patient.length > 0 ? `${patient[0].firstName} ${patient[0].lastName}` : 'Unknown';
+
+      const buffer = await this.pdfService.render(
+        buildLabReportDocument({
+          patientName,
+          patientPhone: patient[0]?.phoneNumber ?? '',
+          requisitionNumber: requisition.requisitionNumber,
+          testName: test?.name ?? requisition.testId,
+          specimenType: requisition.specimenType,
+          verifiedBy: requisition.verifiedBy ?? '',
+          verifiedAt: requisition.verifiedAt?.toISOString() ?? '',
+          results: components.map((component) => {
+            const result = resultByComponent.get(component.id);
+            return {
+              componentName: component.name,
+              unit: component.unit ?? null,
+              value: result?.value ?? '',
+              referenceRange: component.referenceRangeText ?? null,
+              isAbnormal: result?.isAbnormal ?? false,
+            };
+          }),
+        }),
+      );
+
+      const tenantId = this.tenantContext.getTenantId();
+      if (tenantId) {
+        try {
+          await this.objectStorage.putObject(
+            tenantId,
+            `reports/lab/${requisition.requisitionNumber}.pdf`,
+            buffer,
+            buffer.length,
+            { 'Content-Type': 'application/pdf' },
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to store lab report ${requisition.requisitionNumber}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+      return buffer;
     });
   }
 }
