@@ -166,10 +166,12 @@ scope, not merely lower priority.
     (deferred, no driving need yet).
 12. [x] **MinIO/object storage integration** (new-features.md #12) — done: `@hospital/object-storage`
     library (MinIO client + tenant-namespaced key policy, single shared bucket per PRD.md §9.1),
-    local dev MinIO container. **Not done:** upload/download REST endpoints (deferred — no domain
-    module produces or consumes files yet; the first real consumer wires directly against
-    `ObjectStorageService`) and an actual backup script (deferred — nothing to back up yet;
-    `Runbook.md` §7 documents the policy for when one exists).
+    local dev MinIO container. **Not done:** upload/download REST endpoints (deferred — domain
+    modules consume `ObjectStorageService` directly instead) and an actual backup script (deferred —
+    `Runbook.md` §7 documents the policy for when one exists). **First real consumer shipped
+    2026-08-21:** Lab and Radiology verified-report PDF export mirrors each rendered PDF to
+    `reports/lab/<requisitionNumber>.pdf` / `reports/radiology/<requisitionNumber>.pdf`
+    (best-effort — the completing workflow never rolls back if the mirror fails).
 13. **India compliance roadmap** (new-features.md #14) — product-scoping work, not blocking
     engineering.
 14. [x] **Platform (Super Admin) console above tenants.** Super Admin accounts moved out of the
@@ -186,22 +188,29 @@ Follow the PRD's own phase ordering as-is:
 
 - Phase 2:
   - [x] Lab/LIS core pipeline (test catalog, requisition/sample tracking, result entry,
-        single-level verification) — done. **Not done:** report/PDF export, machine/instrument
-        (LIS) integration, external lab send-out, government disease-reporting mapping,
-        multi-level verification, result amendment history/audit trail (corrections
-        currently overwrite in place with no version row — acceptable for now since only
-        pre-verification edits are allowed, but named explicitly rather than left silent) — each a
-        distinct future item. ~~`OrderItem.status` never advancing when its lab requisition is
-        verified~~ **closed 2026-08-20:** verification now routes through
+        single-level verification) — done. ~~report/PDF export~~ **closed 2026-08-21:** verified
+        reports export as PDF via the `@hospital/pdf` platform lib (pdfmake 0.2.20 UMD + bundled
+        Roboto vfs) at `GET /lab/requisitions/:id/report.pdf` (Verified-only, `application/pdf`,
+        mirrored to object storage under `reports/lab/<requisitionNumber>.pdf`); unit + endpoint
+        integration tests assert `%PDF-` magic bytes and the 409 pre-verification guard. **Not
+        done:** machine/instrument (LIS) integration, external lab send-out, government
+        disease-reporting mapping, multi-level verification, result amendment history/audit trail
+        (corrections currently overwrite in place with no version row — acceptable for now since
+        only pre-verification edits are allowed, but named explicitly rather than left silent) —
+        each a distinct future item. ~~`OrderItem.status` never advancing when its lab requisition
+        is verified~~ **closed 2026-08-20:** verification now routes through
         `OrdersService.completeItemInTransaction`, so the `OrderItem` advances to `Completed` at
         the same time (the ordering doctor gets the signal from the Order module).
   - [x] Radiology core pipeline (imaging catalog, requisition/scan tracking, single-field report
-        entry, single-level verification) — done. **Not done:** image attachment
-        (`@hospital/object-storage` integration), film type/quantity billing tracking, DICOM
-        integration (confirmed a wholly separate old-system domain — its own models, own
-        controller), report template HTML rendering/PDF export, result amendment history/audit
-        trail — each a distinct
-        future item. ~~`OrderItem.status` never advancing on verification~~ **closed 2026-08-20:**
+        entry, single-level verification) — done. ~~PDF export~~ **closed 2026-08-21:** verified
+        reports export as PDF via the shared `@hospital/pdf` lib at
+        `GET /radiology/requisitions/:id/report.pdf` (Verified-only, `application/pdf`, mirrored
+        to object storage under `reports/radiology/<requisitionNumber>.pdf`). **Not done:** image
+        attachment (`@hospital/object-storage` integration), film type/quantity billing tracking,
+        DICOM integration (confirmed a wholly separate old-system domain — its own models, own
+        controller), report template HTML rendering, result amendment history/audit trail — each
+        a distinct future item. ~~`OrderItem.status` never advancing on verification~~
+        **closed 2026-08-20:**
         Radiology verification also routes through `OrdersService.completeItemInTransaction` (same
         fix as Lab's). Request-body validation for the required workflow
         fields (`reportText`, `reportEnteredBy`, `scannedBy`, `verifiedBy`) is now enforced by

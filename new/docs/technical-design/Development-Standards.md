@@ -1400,3 +1400,49 @@ first) for the tenant label and `req.route.path` (set by Express) for the route 
 
 **Still missing for full observability (tracked):** OpenTelemetry tracing, Grafana/Loki dashboards
 and alert rules — load testing (Phase 3 item 9) should wait on those.
+
+## 37. Document & Print: PDF report export (2026-08-21)
+
+The first real consumer of `@hospital/object-storage` is verified-report PDF export for Lab and
+Radiology. Pattern, codified so future Document & Print modules (discharge summaries, invoices,
+certificates) follow it:
+
+**`@hospital/pdf` platform lib** (`libs/pdf`, standalone Nx project with the standard
+tsconfig trio + jest scaffold) wraps pdfmake at **0.2.20 pinned exactly** (no caret): the 0.2.x
+UMD build's API is `pdfMake.createPdf(def).getBuffer(cb)` with `pdfMake.vfs = vfs_fonts` (base64
+Roboto family) — 0.3.x changes both the entry-point and the `createPdf` surface and is rejected.
+`PdfService.render(docDefinition): Promise<Buffer>` is the only API; it returns a Buffer (never
+writes to disk). Because `pdfmake@0.2.20` ships no types and `@types/pdfmake` targets 0.3.x,
+`pdfmake.d.ts` declares the `pdfmake/interfaces`, `pdfmake/build/pdfmake.js` and
+`pdfmake/build/vfs_fonts.js` modules with a pragmatic surface (index signatures keep pdfmake's rich
+content model permissive), and `pdf.service.ts` pulls it into the program with a **triple-slash
+reference placed before the first import statement** — a `/// <reference path>` after any import is
+silently ignored, and an ambient `declare module` inside a module-scoped `.d.ts` (one with a
+top-level `export`) is treated as augmentation, not declaration.
+
+**Builder/service split** — each module keeps a pure `*-report-document.ts` builder
+(`buildLabReportDocument` / `buildRadiologyReportDocument`) returning a `PdfDocumentDefinition`,
+unit-testable without rendering; the workflow service owns data loading and calls
+`pdfService.render(...)`. Report access is gated to `Verified` requisitions (ConflictException
+409 otherwise — a report must not exist pre-sign-off). The rendered buffer is mirrored to object
+storage **best-effort** (`reports/lab/<requisitionNumber>.pdf` / `reports/radiology/...`): the
+put is wrapped in try/catch that logs and continues — a storage failure never fails the request or
+rolls back the completing workflow.
+
+**Endpoints** — `GET /lab/requisitions/:id/report.pdf` and
+`GET /radiology/requisitions/:id/report.pdf`, gated by `lab.read`/`radiology.read`, declared
+**before** `@Get(':id')` so the literal `report.pdf` segment isn't captured as an id, and served
+with `@Header('Content-Type', 'application/pdf')` + `StreamableFile` (a raw Buffer return would be
+JSON-encoded by Nest's default serializer; `@Header` + string works for CSV but not binary).
+
+**Module wiring** — `LabModule`/`RadiologyModule` import `PdfModule` + `ObjectStorageModule`, and
+must import `DatabaseModule` (the `@Global` provider of `TenantConnectionService`/`DataSource`)
+the way the other feature modules do — otherwise a standalone `Test.createTestingModule({imports:
+[LabModule]})` fails DI resolution for `OrdersService → TenantConnectionService`. Tests: builder
+unit specs (structure assertions against `doc.content as unknown[]` — the `PdfContent` union
+doesn't support numeric indexing) plus endpoint integration specs booting `[DatabaseModule,
+LabModule]` with `overrideProvider(DataSource).useValue(ctx.dataSource)`, walking a requisition to
+Verified and asserting `%PDF-` magic bytes, `application/pdf`, and the 409 pre-verification guard.
+Note actor fallbacks: `enteredBy` on `lab_results` is NOT NULL, so service-level setup outside the
+HTTP path must pass the fallback actor explicitly (`resolveActor` still prefers the authenticated
+principal when a tenant context with an accountId is active).
