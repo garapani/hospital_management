@@ -279,6 +279,14 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     name: 'pharmacy.dispensing.dispense',
     description: 'Dispense against a pharmacy dispensing record, decrementing stock',
   },
+  {
+    name: 'fixed-asset.read',
+    description: 'View the fixed asset register and valuations',
+  },
+  {
+    name: 'fixed-asset.manage',
+    description: 'Create/update/deactivate fixed assets and categories',
+  },
 ];
 
 interface RolePermissionMapping {
@@ -413,6 +421,12 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Pharmacist', permissionName: 'pharmacy.dispensing.create' },
   { roleName: 'Super Admin', permissionName: 'pharmacy.dispensing.dispense' },
   { roleName: 'Pharmacist', permissionName: 'pharmacy.dispensing.dispense' },
+  { roleName: 'Super Admin', permissionName: 'fixed-asset.read' },
+  { roleName: 'Super Admin', permissionName: 'fixed-asset.manage' },
+  { roleName: 'Hospital Admin', permissionName: 'fixed-asset.read' },
+  { roleName: 'Hospital Admin', permissionName: 'fixed-asset.manage' },
+  { roleName: 'Inventory/Store Manager', permissionName: 'fixed-asset.read' },
+  { roleName: 'Inventory/Store Manager', permissionName: 'fixed-asset.manage' },
 ];
 
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {

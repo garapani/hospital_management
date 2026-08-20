@@ -24,6 +24,7 @@ import { RadiologyModule } from '../radiology/radiology.module.js';
 import { InventoryModule } from '../inventory/inventory.module.js';
 import { PharmacyModule } from '../pharmacy/pharmacy.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
+import { FixedAssetsModule } from '../fixed-assets/fixed-assets.module.js';
 
 @Module({
   imports: [
@@ -94,6 +95,7 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
     InventoryModule,
     PharmacyModule,
     NotificationsModule,
+    FixedAssetsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
