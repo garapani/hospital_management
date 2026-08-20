@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { InventoryProcurementService } from './inventory-procurement.service.js';
 import { InventoryCatalogService } from './inventory-catalog.service.js';
 import { PurchaseOrderNumberGeneratorService } from './purchase-order-number-generator.service.js';
+import { StockTransaction } from './entities/stock-transaction.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -20,6 +21,7 @@ describe('InventoryProcurementService.listByVendor (integration)', () => {
       ctx.tenantConnection,
       new PurchaseOrderNumberGeneratorService(ctx.tenantConnection),
       catalogService,
+      ctx.tenantContext,
     );
   });
 
@@ -85,5 +87,67 @@ describe('InventoryProcurementService.listByVendor (integration)', () => {
     expect(result.meta.total).toBe(1);
     expect(result.meta.page).toBe(1);
     expect(result.meta.limit).toBe(20);
+  });
+
+  describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {
+    // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
+    // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
+    // service must record THIS account, ignoring the spoofed value passed to it.
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+
+    function withActor<T>(work: () => Promise<T>): Promise<T> {
+      return ctx.tenantContext.run(
+        { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'actor-test' },
+        work,
+      );
+    }
+
+    it('createPurchaseOrder records the authenticated account as orderedBy, not the body value', async () => {
+      const item = await makeItem('actor-po');
+      const vendor = await makeVendor('Actor Vendor');
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const po = await withActor(() =>
+        procurementService.createPurchaseOrder({
+          vendorId: vendor.id,
+          orderedBy: spoofed,
+          items: [{ itemId: item.id, orderedQuantity: 10, unitCost: 5 }],
+        }),
+      );
+      expect(po.orderedBy).toBe(AUTHENTICATED_ACCOUNT);
+
+      const persisted = await ctx.inTenant(() => procurementService.findOne(po.id));
+      expect(persisted.orderedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('recordGoodsReceipt records the authenticated account as recordedBy, not the body value', async () => {
+      const item = await makeItem('actor-gr');
+      const vendor = await makeVendor('Actor GR Vendor');
+      const po = await ctx.inTenant(() =>
+        procurementService.createPurchaseOrder({
+          vendorId: vendor.id,
+          orderedBy: ORDERED_BY,
+          items: [{ itemId: item.id, orderedQuantity: 10, unitCost: 5 }],
+        }),
+      );
+      const poItem = po.items[0];
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      await withActor(() =>
+        procurementService.recordGoodsReceipt(poItem.id, {
+          batchNumber: 'BATCH-ACTOR-1',
+          unitCost: 5,
+          receivedQuantity: 5,
+          recordedBy: spoofed,
+        }),
+      );
+
+      const transaction = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(StockTransaction).findOne({ where: { referenceId: poItem.id } }),
+        ),
+      );
+      expect(transaction?.recordedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
   });
 });

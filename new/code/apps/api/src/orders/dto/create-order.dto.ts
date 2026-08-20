@@ -6,7 +6,8 @@ export class CreateOrderItemDto {
 
 export class CreateOrderDto {
   patientId!: string;
-  orderedBy!: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  orderedBy?: string;
   sourceAppointmentId?: string;
   sourceAdmissionId?: string;
   notes?: string;

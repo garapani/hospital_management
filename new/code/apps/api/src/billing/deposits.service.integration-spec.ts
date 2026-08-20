@@ -20,7 +20,7 @@ describe('DepositsService (integration)', () => {
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
     patientsService = new PatientsService(ctx.tenantConnection, patientSequence);
-    depositsService = new DepositsService(ctx.tenantConnection);
+    depositsService = new DepositsService(ctx.tenantConnection, ctx.tenantContext);
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
@@ -148,5 +148,51 @@ describe('DepositsService (integration)', () => {
     await expect(
       tenantB.inTenant(() => depositsService.refund(deposit.id, { amount: 100, refundedBy: STAFF_ID })),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {
+    // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
+    // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
+    // service must record THIS account, ignoring the spoofed value passed to it.
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+
+    function withActor<T>(work: () => Promise<T>): Promise<T> {
+      return ctx.tenantContext.run(
+        { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'actor-test' },
+        work,
+      );
+    }
+
+    // Unique phone numbers per patient — the patients duplicate check throws ConflictException
+    // on reuse.
+    let patientSeq = 10;
+    async function makePatientWithDeposit(amount: number) {
+      patientSeq += 1;
+      const patient = await makePatient(ctx, `66600000${patientSeq}`);
+      const deposit = await ctx.inTenant(() =>
+        depositsService.create({ patientId: patient.id, amount, receivedBy: STAFF_ID }),
+      );
+      return { patient, deposit };
+    }
+
+    it('create records the authenticated account as receivedBy, never the spoofed value', async () => {
+      const { patient } = await makePatientWithDeposit(1000);
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const created = await withActor(() =>
+        depositsService.create({ patientId: patient.id, amount: 500, receivedBy: spoofed }),
+      );
+      expect(created.receivedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('refund records the authenticated account as refundedBy, never the spoofed value', async () => {
+      const { deposit } = await makePatientWithDeposit(1000);
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const refunded = await withActor(() =>
+        depositsService.refund(deposit.id, { amount: 100, refundedBy: spoofed }),
+      );
+      expect(refunded.refundedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
   });
 });

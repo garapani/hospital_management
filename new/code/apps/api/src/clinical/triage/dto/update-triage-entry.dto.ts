@@ -10,6 +10,7 @@ export class UpdateTriageEntryDto {
   chiefComplaint?: string;
   acuityLevel?: number;
   colorCode?: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
   triagedBy?: string;
   triagedAt?: Date;
   status?: string;

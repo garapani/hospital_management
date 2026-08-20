@@ -10,7 +10,8 @@ export class CreateInvoiceItemDto {
 
 export class CreateInvoiceDto {
   patientId!: string;
-  createdBy!: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  createdBy?: string;
   sourceAppointmentId?: string;
   sourceAdmissionId?: string;
   notes?: string;

@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { Admission } from './entities/admission.entity.js';
 import { BedTransfer } from './entities/bed-transfer.entity.js';
 import { DischargeSummary } from './entities/discharge-summary.entity.js';
@@ -21,12 +22,12 @@ export interface CreateAdmissionInput {
 
 export interface TransferAdmissionInput {
   toBedId: string;
-  transferredBy: string;
+  transferredBy?: string;
   reason?: string;
 }
 
 export interface DischargeAdmissionInput {
-  dischargedBy: string;
+  dischargedBy?: string;
   dischargeType?: string;
   dischargeCondition?: string;
   dischargeSummary?: string;
@@ -47,7 +48,7 @@ export interface CreateDischargeSummaryInput {
   followUpDoctorId?: string;
   dietRecommendations?: string;
   additionalNotes?: string;
-  preparedBy: string;
+  preparedBy?: string;
 }
 
 export interface UpdateDischargeSummaryInput {
@@ -68,7 +69,21 @@ export interface UpdateDischargeSummaryInput {
 
 @Injectable()
 export class AdmissionsService {
-  constructor(private readonly tenantConnection: TenantConnectionService) {}
+  constructor(
+    private readonly tenantConnection: TenantConnectionService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
+
+  /**
+   * Actor fields (`transferredBy`, `dischargedBy`, `preparedBy`, `reviewedBy`) are never trusted
+   * from the caller: the authenticated principal (TenantContextService.accountId, set by
+   * TenantContextMiddleware from the verified JWT) wins; the passed value is only a fallback for
+   * non-HTTP callers (service specs) that run without a tenant context. `reviewedBy` is a
+   * clinical sign-off, so spoofing it would be an audit-trail integrity breach.
+   */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
 
   async admit(input: CreateAdmissionInput): Promise<Admission> {
     if (input.sourceAppointmentId && input.sourceTriageEntryId) {
@@ -228,7 +243,7 @@ export class AdmissionsService {
           admissionId: admission.id,
           fromBedId,
           toBedId: toBed.id,
-          transferredBy: input.transferredBy,
+          transferredBy: this.resolveActor(input.transferredBy),
           reason: input.reason ?? null,
         }),
       );
@@ -260,7 +275,7 @@ export class AdmissionsService {
       admission.dischargeType = input.dischargeType ?? null;
       admission.dischargeCondition = input.dischargeCondition ?? null;
       admission.dischargeSummary = input.dischargeSummary ?? null;
-      admission.dischargedBy = input.dischargedBy;
+      admission.dischargedBy = this.resolveActor(input.dischargedBy);
 
       return admissionRepository.save(admission);
     });
@@ -303,7 +318,7 @@ export class AdmissionsService {
           followUpDoctorId: input.followUpDoctorId ?? null,
           dietRecommendations: input.dietRecommendations ?? null,
           additionalNotes: input.additionalNotes ?? null,
-          preparedBy: input.preparedBy,
+          preparedBy: this.resolveActor(input.preparedBy),
         }),
       );
     });
@@ -351,7 +366,7 @@ export class AdmissionsService {
       if (input.dietRecommendations !== undefined) summary.dietRecommendations = input.dietRecommendations;
       if (input.additionalNotes !== undefined) summary.additionalNotes = input.additionalNotes;
       if (input.reviewedBy !== undefined) {
-        summary.reviewedBy = input.reviewedBy;
+        summary.reviewedBy = this.resolveActor(input.reviewedBy);
         summary.reviewedAt = new Date();
       }
 
@@ -359,14 +374,14 @@ export class AdmissionsService {
     });
   }
 
-  async reviewDischargeSummary(id: string, reviewedBy: string): Promise<DischargeSummary> {
+  async reviewDischargeSummary(id: string, reviewedBy?: string): Promise<DischargeSummary> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(DischargeSummary);
       const summary = await repository.findOne({ where: { id } });
       if (!summary) {
         throw new NotFoundException(`Discharge summary ${id} not found`);
       }
-      summary.reviewedBy = reviewedBy;
+      summary.reviewedBy = this.resolveActor(reviewedBy);
       summary.reviewedAt = new Date();
       return repository.save(summary);
     });

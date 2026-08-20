@@ -13,7 +13,7 @@ export class CreateDischargeSummaryDto {
   followUpDoctorId?: string;
   dietRecommendations?: string;
   additionalNotes?: string;
-  preparedBy!: string;
+  preparedBy?: string;
 }
 
 export class UpdateDischargeSummaryDto {
@@ -33,5 +33,5 @@ export class UpdateDischargeSummaryDto {
 }
 
 export class ReviewDischargeSummaryDto {
-  reviewedBy!: string;
+  reviewedBy?: string;
 }

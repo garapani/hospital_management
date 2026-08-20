@@ -129,4 +129,31 @@ describe('TenantsService (integration)', () => {
       NotFoundException,
     );
   });
+
+  describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {
+    // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
+    // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
+    // service must record THIS account, ignoring the spoofed value passed to it.
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+
+    function withActor<T>(work: () => Promise<T>): Promise<T> {
+      return ctx.tenantContext.run(
+        { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'actor-test' },
+        work,
+      );
+    }
+
+    it('provisionTenant records the authenticated account as createdBy, not the body value', async () => {
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const tenant = await withActor(() =>
+        tenantsService.provisionTenant({
+          hospitalId: 'test_tenant_svc_actor',
+          hospitalName: 'Actor Hospital',
+          createdBy: spoofed,
+        }),
+      );
+      expect(tenant.createdBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+  });
 });

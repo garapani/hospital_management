@@ -1,5 +1,5 @@
 export class TransferAdmissionDto {
   toBedId!: string;
-  transferredBy!: string;
+  transferredBy?: string;
   reason?: string;
 }

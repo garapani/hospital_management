@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { Order } from './entities/order.entity.js';
 import { OrderItem } from './entities/order-item.entity.js';
 import { Patient } from '../patients/entities/patient.entity.js';
@@ -15,7 +16,8 @@ export interface CreateOrderItemInput {
 
 export interface CreateOrderInput {
   patientId: string;
-  orderedBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  orderedBy?: string;
   sourceAppointmentId?: string;
   sourceAdmissionId?: string;
   notes?: string;
@@ -23,7 +25,8 @@ export interface CreateOrderInput {
 }
 
 export interface CompleteOrderItemInput {
-  completedBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  completedBy?: string;
 }
 
 export interface CancelOrderItemInput {
@@ -32,7 +35,24 @@ export interface CancelOrderItemInput {
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly tenantConnection: TenantConnectionService) {}
+  constructor(
+    private readonly tenantConnection: TenantConnectionService,
+    // Optional only for TypeScript call sites: Nest DI always injects the @Global()
+    // TenantContextService instance, and resolveActor() guards against the pre-existing manual
+    // constructions in other modules' specs that predate this parameter.
+    private readonly tenantContext?: TenantContextService,
+  ) {}
+
+  /**
+   * Actor fields (`orderedBy`, `completedBy`) are never trusted from the caller: the authenticated
+   * principal (TenantContextService.accountId, set by TenantContextMiddleware from the verified
+   * JWT) wins; the passed value is only a fallback for non-HTTP callers (service specs) that run
+   * without a tenant context. `completedBy` is a clinical sign-off, so spoofing it would be an
+   * audit-trail integrity breach.
+   */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext?.getAccountId() ?? (fallback as string);
+  }
 
   async create(input: CreateOrderInput): Promise<Order & { items: OrderItem[] }> {
     if (input.sourceAppointmentId && input.sourceAdmissionId) {
@@ -54,7 +74,7 @@ export class OrdersService {
       const order = await orderRepository.save(
         orderRepository.create({
           patientId: input.patientId,
-          orderedBy: input.orderedBy,
+          orderedBy: this.resolveActor(input.orderedBy),
           sourceAppointmentId: input.sourceAppointmentId ?? null,
           sourceAdmissionId: input.sourceAdmissionId ?? null,
           notes: input.notes ?? null,
@@ -114,7 +134,7 @@ export class OrdersService {
       }
 
       item.status = 'Completed';
-      item.completedBy = input.completedBy;
+      item.completedBy = this.resolveActor(input.completedBy);
       item.completedAt = new Date();
       return repository.save(item);
     });
@@ -139,7 +159,7 @@ export class OrdersService {
     }
 
     item.status = 'Completed';
-    item.completedBy = input.completedBy;
+    item.completedBy = this.resolveActor(input.completedBy);
     item.completedAt = new Date();
     return repository.save(item);
   }

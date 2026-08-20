@@ -1,3 +1,3 @@
 export class CollectSampleDto {
-  sampleCollectedBy!: string;
+  sampleCollectedBy?: string;
 }

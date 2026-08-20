@@ -1,3 +1,3 @@
 export class MarkScannedDto {
-  scannedBy!: string;
+  scannedBy?: string;
 }

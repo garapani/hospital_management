@@ -32,6 +32,7 @@ describe('PharmacyDispensingService (integration)', () => {
       inventoryCatalogService,
       ordersService,
       new FefoStockDecrementService(),
+      ctx.tenantContext,
     );
     patientsService = new PatientsService(
       ctx.tenantConnection,
@@ -272,6 +273,59 @@ describe('PharmacyDispensingService (integration)', () => {
       await expect(ctx.inTenant(() => dispensingService.cancel(dispensing.id))).rejects.toThrow(
         ConflictException,
       );
+    });
+  });
+
+  describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {
+    // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
+    // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
+    // service must record THIS account, ignoring the spoofed value passed to it.
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+
+    function withActor<T>(work: () => Promise<T>): Promise<T> {
+      return ctx.tenantContext.run(
+        { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'actor-test' },
+        work,
+      );
+    }
+
+    let dispensingSeq = 0;
+    async function makePendingDispensing() {
+      dispensingSeq += 1;
+      const item = await makeDrugItem(`actor-derivation-${dispensingSeq}`);
+      await seedBatch(item.id, `BATCH-ACTOR-${dispensingSeq}`, '2025-06-01', 5);
+      const orderItem = await makeOrderItem(`44700000${String(10 + dispensingSeq).padStart(2, '0')}`);
+      const dispensing = await ctx.inTenant(() =>
+        dispensingService.createDispensing({
+          orderItemId: orderItem.id,
+          inventoryItemId: item.id,
+          quantity: 1,
+        }),
+      );
+      return { orderItem, dispensing };
+    }
+
+    it('dispenseDrug records the authenticated account as dispensedBy, not the caller-supplied value', async () => {
+      const { orderItem, dispensing } = await makePendingDispensing();
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const dispensed = await withActor(() =>
+        dispensingService.dispenseDrug(dispensing.id, { dispensedBy: spoofed }),
+      );
+      expect(dispensed.dispensedBy).toBe(AUTHENTICATED_ACCOUNT);
+
+      // The resolved actor also flows to the FEFO stock transactions and the completed order item.
+      const transactions = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(StockTransaction).find({ where: { referenceId: dispensing.id } }),
+        ),
+      );
+      expect(transactions).toHaveLength(1);
+      expect(transactions[0].recordedBy).toBe(AUTHENTICATED_ACCOUNT);
+
+      const completedOrder = await ctx.inTenant(() => ordersService.findOne(orderItem.orderId));
+      const completedItem = completedOrder.items.find((i) => i.id === orderItem.id);
+      expect(completedItem?.completedBy).toBe(AUTHENTICATED_ACCOUNT);
     });
   });
 });

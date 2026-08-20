@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { IsNull } from 'typeorm';
 import type { EntityManager } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { PurchaseOrder } from './entities/purchase-order.entity.js';
 import { PurchaseOrderItem } from './entities/purchase-order-item.entity.js';
 import { PurchaseOrderNumberGeneratorService } from './purchase-order-number-generator.service.js';
@@ -21,7 +22,8 @@ export interface CreatePurchaseOrderItemInput {
 
 export interface CreatePurchaseOrderInput {
   vendorId: string;
-  orderedBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  orderedBy?: string;
   notes?: string;
   items: CreatePurchaseOrderItemInput[];
 }
@@ -32,7 +34,8 @@ export interface RecordGoodsReceiptInput {
   unitCost: number;
   mrp?: number;
   receivedQuantity: number;
-  recordedBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  recordedBy?: string;
 }
 
 export interface StockBalanceView {
@@ -51,14 +54,23 @@ export class InventoryProcurementService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly purchaseOrderNumberGenerator: PurchaseOrderNumberGeneratorService,
     private readonly inventoryCatalogService: InventoryCatalogService,
+    private readonly tenantContext: TenantContextService,
   ) {}
+
+  /**
+   * Actor fields (`orderedBy`, `recordedBy`) are never trusted from the caller: the authenticated
+   * principal (TenantContextService.accountId, set by TenantContextMiddleware from the verified
+   * JWT) wins; the passed value is only a fallback for non-HTTP callers (service specs) that run
+   * without a tenant context. These fields are audit-trail integrity markers, so spoofing them
+   * would be an audit-trail integrity breach.
+   */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
 
   async createPurchaseOrder(
     input: CreatePurchaseOrderInput,
   ): Promise<PurchaseOrder & { items: PurchaseOrderItem[] }> {
-    if (!input.orderedBy?.trim()) {
-      throw new BadRequestException('orderedBy is required');
-    }
     if (!input.items || input.items.length === 0) {
       throw new BadRequestException('A purchase order must include at least one item');
     }
@@ -92,7 +104,7 @@ export class InventoryProcurementService {
         purchaseOrderRepository.create({
           vendorId: input.vendorId,
           purchaseOrderNumber,
-          orderedBy: input.orderedBy,
+          orderedBy: this.resolveActor(input.orderedBy),
           notes: input.notes ?? null,
           status: 'Ordered',
         }),
@@ -161,9 +173,6 @@ export class InventoryProcurementService {
     purchaseOrderItemId: string,
     input: RecordGoodsReceiptInput,
   ): Promise<PurchaseOrderItem> {
-    if (!input.recordedBy?.trim()) {
-      throw new BadRequestException('recordedBy is required');
-    }
     const receivedQuantity = Number(input.receivedQuantity);
     if (
       typeof input.receivedQuantity !== 'number' ||
@@ -228,7 +237,7 @@ export class InventoryProcurementService {
           transactionType: 'GoodsReceipt',
           referenceId: poItem.id,
           quantity: String(receivedQuantity),
-          recordedBy: input.recordedBy,
+          recordedBy: this.resolveActor(input.recordedBy),
         }),
       );
 

@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Not, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { LabRequisition } from './entities/lab-requisition.entity.js';
@@ -21,7 +22,8 @@ export interface EnterResultInput {
   componentId: string;
   value: string;
   isAbnormal?: boolean;
-  enteredBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  enteredBy?: string;
 }
 
 const NON_TERMINAL_STATUSES = ['Pending', 'SampleCollected', 'ResultsEntered'];
@@ -33,7 +35,19 @@ export class LabWorkflowService {
     private readonly requisitionNumberGenerator: LabRequisitionNumberGeneratorService,
     private readonly labCatalogService: LabCatalogService,
     private readonly ordersService: OrdersService,
+    private readonly tenantContext: TenantContextService,
   ) {}
+
+  /**
+   * Actor fields (`sampleCollectedBy`, `enteredBy`, `verifiedBy`) are never trusted from the
+   * caller: the authenticated principal (TenantContextService.accountId, set by
+   * TenantContextMiddleware from the verified JWT) wins; the passed value is only a fallback for
+   * non-HTTP callers (service specs) that run without a tenant context. `verifiedBy` is a
+   * clinical sign-off, so spoofing it would be an audit-trail integrity breach.
+   */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
 
   async createRequisition(input: CreateRequisitionInput): Promise<LabRequisition> {
     await this.labCatalogService.getTest(input.testId); // throws NotFoundException if missing
@@ -109,7 +123,7 @@ export class LabWorkflowService {
     });
   }
 
-  async collectSample(id: string, collectedBy: string): Promise<LabRequisition> {
+  async collectSample(id: string, collectedBy?: string): Promise<LabRequisition> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(LabRequisition);
       const requisition = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
@@ -123,7 +137,7 @@ export class LabWorkflowService {
       }
 
       requisition.status = 'SampleCollected';
-      requisition.sampleCollectedBy = collectedBy;
+      requisition.sampleCollectedBy = this.resolveActor(collectedBy);
       requisition.sampleCollectedAt = new Date();
       return repository.save(requisition);
     });
@@ -168,7 +182,13 @@ export class LabWorkflowService {
         DO UPDATE SET value = $3, "isAbnormal" = $4, "enteredBy" = $5, "enteredAt" = now()
         RETURNING *
         `,
-        [requisitionId, input.componentId, input.value, input.isAbnormal ?? false, input.enteredBy],
+        [
+          requisitionId,
+          input.componentId,
+          input.value,
+          input.isAbnormal ?? false,
+          this.resolveActor(input.enteredBy),
+        ],
       );
 
       if (requisition.status !== 'ResultsEntered') {
@@ -186,7 +206,7 @@ export class LabWorkflowService {
     });
   }
 
-  async verify(id: string, verifiedBy: string): Promise<LabRequisition> {
+  async verify(id: string, verifiedBy?: string): Promise<LabRequisition> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(LabRequisition);
       const requisition = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
@@ -213,7 +233,7 @@ export class LabWorkflowService {
         throw new ConflictException(`Requisition ${id} still has components without entered results`);
       }
       requisition.status = 'Verified';
-      requisition.verifiedBy = verifiedBy;
+      requisition.verifiedBy = this.resolveActor(verifiedBy);
       requisition.verifiedAt = new Date();
       const savedRequisition = await repository.save(requisition);
 
@@ -221,7 +241,7 @@ export class LabWorkflowService {
       // mutating the OrderItem repository directly. Billing charge-capture is not wired to
       // this event yet — see pending-tasks.md.
       await this.ordersService.completeItemInTransaction(manager, savedRequisition.orderItemId, {
-        completedBy: verifiedBy,
+        completedBy: requisition.verifiedBy,
       });
 
       return savedRequisition;

@@ -27,6 +27,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
       new LabRequisitionNumberGeneratorService(ctx.tenantConnection),
       catalogService,
       ordersService,
+      ctx.tenantContext,
     );
     patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection));
   });
@@ -103,5 +104,81 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
     expect(result.data).toHaveLength(1);
     expect(result.data[0].orderItemId).toBe(orderItemA.id);
     expect(result.meta.total).toBe(1);
+  });
+
+  describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {
+    // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
+    // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
+    // service must record THIS account, ignoring the spoofed value passed to it.
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+
+    function withActor<T>(work: () => Promise<T>): Promise<T> {
+      return ctx.tenantContext.run(
+        { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'actor-test' },
+        work,
+      );
+    }
+
+    let requisitionSeq = 0;
+    async function makeRequisition() {
+      requisitionSeq += 1;
+      const test = await makeTest(`actor-derivation-${requisitionSeq}`);
+      const orderItem = await makeOrderItem(`44500001${String(requisitionSeq).padStart(2, '0')}`);
+      const requisition = await ctx.inTenant(() =>
+        labWorkflowService.createRequisition({
+          orderItemId: orderItem.id,
+          testId: test.id,
+          specimenType: 'Blood',
+        }),
+      );
+      return { test, orderItem, requisition };
+    }
+
+    it('collectSample records the authenticated account as sampleCollectedBy, not the body value', async () => {
+      const { requisition } = await makeRequisition();
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const collected = await withActor(() => labWorkflowService.collectSample(requisition.id, spoofed));
+      expect(collected.sampleCollectedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('enterResult records the authenticated account as enteredBy on the result row', async () => {
+      const { test, requisition } = await makeRequisition();
+      await withActor(() => labWorkflowService.collectSample(requisition.id, 'ignored'));
+      const component = await ctx.inTenant(() => catalogService.listComponentsByTest(test.id));
+
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const result = await withActor(() =>
+        labWorkflowService.enterResult(requisition.id, {
+          componentId: component[0].id,
+          value: '12.5',
+          enteredBy: spoofed,
+        }),
+      );
+      expect(result.enteredBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('verify records the authenticated account as verifiedBy and as the order item completedBy', async () => {
+      const { test, orderItem, requisition } = await makeRequisition();
+      await withActor(() => labWorkflowService.collectSample(requisition.id, 'ignored'));
+      const component = await ctx.inTenant(() => catalogService.listComponentsByTest(test.id));
+      await withActor(() =>
+        labWorkflowService.enterResult(requisition.id, {
+          componentId: component[0].id,
+          value: '12.5',
+          enteredBy: 'ignored',
+        }),
+      );
+
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const verified = await withActor(() => labWorkflowService.verify(requisition.id, spoofed));
+      expect(verified.verifiedBy).toBe(AUTHENTICATED_ACCOUNT);
+
+      const completedItem = await ctx.inTenant(async () => {
+        const order = await ordersService.findOne(orderItem.orderId);
+        return order.items.find((i) => i.id === orderItem.id)!;
+      });
+      expect(completedItem.completedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Not, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { InventoryCatalogService } from '../inventory/inventory-catalog.service.js';
@@ -17,7 +18,8 @@ export interface CreateDispensingInput {
 }
 
 export interface DispenseDrugInput {
-  dispensedBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  dispensedBy?: string;
 }
 
 @Injectable()
@@ -28,7 +30,19 @@ export class PharmacyDispensingService {
     private readonly inventoryCatalogService: InventoryCatalogService,
     private readonly ordersService: OrdersService,
     private readonly fefoStockDecrement: FefoStockDecrementService,
+    private readonly tenantContext: TenantContextService,
   ) {}
+
+  /**
+   * Actor fields (`dispensedBy`) are never trusted from the caller: the authenticated principal
+   * (TenantContextService.accountId, set by TenantContextMiddleware from the verified JWT) wins;
+   * the passed value is only a fallback for non-HTTP callers (service specs) that run without a
+   * tenant context. Dispensing is a clinical sign-off, so spoofing it would be an audit-trail
+   * integrity breach.
+   */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
 
   async createDispensing(input: CreateDispensingInput): Promise<PharmacyDispensing> {
     const quantity = Number(input.quantity);
@@ -141,7 +155,8 @@ export class PharmacyDispensingService {
   }
 
   async dispenseDrug(id: string, input: DispenseDrugInput): Promise<PharmacyDispensing> {
-    if (!input.dispensedBy?.trim()) {
+    const dispensedBy = this.resolveActor(input.dispensedBy);
+    if (!dispensedBy?.trim()) {
       throw new BadRequestException('dispensedBy is required');
     }
 
@@ -177,11 +192,11 @@ export class PharmacyDispensingService {
         quantity,
         transactionType: 'PharmacyDispense',
         referenceId: dispensing.id,
-        recordedBy: input.dispensedBy,
+        recordedBy: dispensedBy,
       });
 
       dispensing.status = 'Dispensed';
-      dispensing.dispensedBy = input.dispensedBy;
+      dispensing.dispensedBy = dispensedBy;
       dispensing.dispensedAt = new Date();
       const savedDispensing = await dispensingRepository.save(dispensing);
 
@@ -189,7 +204,7 @@ export class PharmacyDispensingService {
       // mutating the OrderItem repository directly. Billing charge-capture is not wired to
       // this event yet — see pending-tasks.md.
       await this.ordersService.completeItemInTransaction(manager, orderItem.id, {
-        completedBy: input.dispensedBy,
+        completedBy: dispensedBy,
       });
 
       return savedDispensing;

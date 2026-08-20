@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Not, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { RadiologyRequisition } from './entities/radiology-requisition.entity.js';
@@ -18,7 +19,8 @@ export interface EnterReportInput {
   reportText: string;
   indication?: string;
   performerId?: string;
-  reportEnteredBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  reportEnteredBy?: string;
 }
 
 const NON_TERMINAL_STATUSES = ['Pending', 'Scanned', 'ReportEntered'];
@@ -30,7 +32,19 @@ export class RadiologyWorkflowService {
     private readonly requisitionNumberGenerator: RadiologyRequisitionNumberGeneratorService,
     private readonly radiologyCatalogService: RadiologyCatalogService,
     private readonly ordersService: OrdersService,
+    private readonly tenantContext: TenantContextService,
   ) {}
+
+  /**
+   * Actor fields (`scannedBy`, `reportEnteredBy`, `verifiedBy`) are never trusted from the
+   * caller: the authenticated principal (TenantContextService.accountId, set by
+   * TenantContextMiddleware from the verified JWT) wins; the passed value is only a fallback for
+   * non-HTTP callers (service specs) that run without a tenant context. `verifiedBy` is a
+   * clinical sign-off, so spoofing it would be an audit-trail integrity breach.
+   */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
 
   async createRequisition(input: CreateRequisitionInput): Promise<RadiologyRequisition> {
     await this.radiologyCatalogService.getItem(input.imagingItemId); // throws NotFoundException if missing
@@ -121,10 +135,7 @@ export class RadiologyWorkflowService {
     });
   }
 
-  async markScanned(id: string, scannedBy: string): Promise<RadiologyRequisition> {
-    if (!scannedBy?.trim()) {
-      throw new BadRequestException('scannedBy is required');
-    }
+  async markScanned(id: string, scannedBy?: string): Promise<RadiologyRequisition> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(RadiologyRequisition);
       const requisition = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
@@ -138,7 +149,7 @@ export class RadiologyWorkflowService {
       }
 
       requisition.status = 'Scanned';
-      requisition.scannedBy = scannedBy;
+      requisition.scannedBy = this.resolveActor(scannedBy);
       requisition.scannedAt = new Date();
       return repository.save(requisition);
     });
@@ -147,9 +158,6 @@ export class RadiologyWorkflowService {
   async enterReport(id: string, input: EnterReportInput): Promise<RadiologyRequisition> {
     if (!input.reportText?.trim()) {
       throw new BadRequestException('reportText is required');
-    }
-    if (!input.reportEnteredBy?.trim()) {
-      throw new BadRequestException('reportEnteredBy is required');
     }
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(RadiologyRequisition);
@@ -170,17 +178,14 @@ export class RadiologyWorkflowService {
       requisition.reportText = input.reportText;
       requisition.indication = input.indication ?? null;
       requisition.performerId = input.performerId ?? null;
-      requisition.reportEnteredBy = input.reportEnteredBy;
+      requisition.reportEnteredBy = this.resolveActor(input.reportEnteredBy);
       requisition.reportEnteredAt = new Date();
       requisition.status = 'ReportEntered';
       return repository.save(requisition);
     });
   }
 
-  async verify(id: string, verifiedBy: string): Promise<RadiologyRequisition> {
-    if (!verifiedBy?.trim()) {
-      throw new BadRequestException('verifiedBy is required');
-    }
+  async verify(id: string, verifiedBy?: string): Promise<RadiologyRequisition> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(RadiologyRequisition);
       const requisition = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
@@ -194,7 +199,7 @@ export class RadiologyWorkflowService {
       }
 
       requisition.status = 'Verified';
-      requisition.verifiedBy = verifiedBy;
+      requisition.verifiedBy = this.resolveActor(verifiedBy);
       requisition.verifiedAt = new Date();
       const savedRequisition = await repository.save(requisition);
 
@@ -202,7 +207,7 @@ export class RadiologyWorkflowService {
       // mutating the OrderItem repository directly. Billing charge-capture is not wired to
       // this event yet — see pending-tasks.md.
       await this.ordersService.completeItemInTransaction(manager, savedRequisition.orderItemId, {
-        completedBy: verifiedBy,
+        completedBy: requisition.verifiedBy,
       });
 
       return savedRequisition;

@@ -6,6 +6,7 @@ import { AppointmentsService } from '../appointments/appointments.service.js';
 import { TriageService } from '../clinical/triage/triage.service.js';
 import { AdmissionsService } from './admissions.service.js';
 import { Admission } from './entities/admission.entity.js';
+import { BedTransfer } from './entities/bed-transfer.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -29,8 +30,8 @@ describe('AdmissionsService (integration)', () => {
     patientsService = new PatientsService(ctx.tenantConnection, patientSequence);
     masterDataService = new MasterDataService(ctx.tenantConnection);
     appointmentsService = new AppointmentsService(ctx.tenantConnection);
-    triageService = new TriageService(ctx.tenantConnection);
-    admissionsService = new AdmissionsService(ctx.tenantConnection);
+    triageService = new TriageService(ctx.tenantConnection, ctx.tenantContext);
+    admissionsService = new AdmissionsService(ctx.tenantConnection, ctx.tenantContext);
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
@@ -383,5 +384,101 @@ describe('AdmissionsService (integration)', () => {
     await expect(
       ctx2.inTenant(() => admissionsService.findOne(admission.id)),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {
+    // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
+    // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
+    // service must record THIS account, ignoring the spoofed value passed to it.
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+
+    function withActor<T>(work: () => Promise<T>): Promise<T> {
+      return ctx.tenantContext.run(
+        { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'actor-test' },
+        work,
+      );
+    }
+
+    let actorSeq = 0;
+    async function makeAdmission() {
+      actorSeq += 1;
+      const patient = await makePatient(ctx, `3340000${String(actorSeq).padStart(3, '0')}`);
+      const bed = await makeBed(ctx, `ACT${actorSeq}`);
+      const admission = await ctx.inTenant(() =>
+        admissionsService.admit({
+          patientId: patient.id,
+          admissionSource: 'Direct',
+          admittingDoctorId: DOCTOR_ID,
+          bedId: bed.id,
+        }),
+      );
+      return { patient, bed, admission };
+    }
+
+    it('transfer records the authenticated account as transferredBy on the bed transfer, not the body value', async () => {
+      const { admission } = await makeAdmission();
+      const bedB = await makeBed(ctx, `ACTB${actorSeq}`);
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      await withActor(() =>
+        admissionsService.transfer(admission.id, { toBedId: bedB.id, transferredBy: spoofed }),
+      );
+
+      const transfer = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema(async (manager) =>
+          manager.getRepository(BedTransfer).findOne({
+            where: { admissionId: admission.id, toBedId: bedB.id },
+          }),
+        ),
+      );
+      expect(transfer).not.toBeNull();
+      expect(transfer!.transferredBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('discharge records the authenticated account as dischargedBy, not the body value', async () => {
+      const { admission } = await makeAdmission();
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const discharged = await withActor(() =>
+        admissionsService.discharge(admission.id, { dischargedBy: spoofed }),
+      );
+      expect(discharged.dischargedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('createDischargeSummary records the authenticated account as preparedBy, not the body value', async () => {
+      const { patient, admission } = await makeAdmission();
+      await withActor(() => admissionsService.discharge(admission.id, {}));
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const summary = await withActor(() =>
+        admissionsService.createDischargeSummary({
+          admissionId: admission.id,
+          patientId: patient.id,
+          primaryDiagnosis: 'Acute febrile illness',
+          preparedBy: spoofed,
+        }),
+      );
+      expect(summary.preparedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('reviewDischargeSummary records the authenticated account as reviewedBy, not the body value', async () => {
+      const { patient, admission } = await makeAdmission();
+      await withActor(() => admissionsService.discharge(admission.id, {}));
+      const summary = await withActor(() =>
+        admissionsService.createDischargeSummary({
+          admissionId: admission.id,
+          patientId: patient.id,
+          primaryDiagnosis: 'Acute febrile illness',
+          preparedBy: 'ignored',
+        }),
+      );
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const reviewed = await withActor(() =>
+        admissionsService.reviewDischargeSummary(summary.id, spoofed),
+      );
+      expect(reviewed.reviewedBy).toBe(AUTHENTICATED_ACCOUNT);
+      expect(reviewed.reviewedAt).not.toBeNull();
+    });
   });
 });

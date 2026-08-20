@@ -31,6 +31,7 @@ export interface BlockedRole {
 export interface ProvisionTenantInput {
   hospitalId: string;
   hospitalName: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
   createdBy?: string;
   roleIds?: string[];
   departmentCatalogIds?: string[];
@@ -44,6 +45,17 @@ export class TenantsService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly tenantContext: TenantContextService,
   ) {}
+
+  /**
+   * Actor fields (`createdBy`) are never trusted from the caller: the authenticated principal
+   * (TenantContextService.accountId, set by TenantContextMiddleware from the verified JWT)
+   * wins; the passed value is only a fallback for non-HTTP callers (service specs) that run
+   * without a tenant context. `createdBy` records who provisioned the tenant, so spoofing it
+   * would be an audit-trail integrity breach.
+   */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
 
   async provisionTenant(input: ProvisionTenantInput): Promise<Tenant> {
     if (!SAFE_HOSPITAL_ID.test(input.hospitalId)) {
@@ -81,7 +93,7 @@ export class TenantsService {
         status: 'active',
         activatedAt: new Date(),
         suspendedAt: null,
-        createdBy: input.createdBy ?? null,
+        createdBy: this.resolveActor(input.createdBy),
         roles,
       }),
     );

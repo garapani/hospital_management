@@ -6,7 +6,7 @@ export class CreatePurchaseOrderItemDto {
 
 export class CreatePurchaseOrderDto {
   vendorId!: string;
-  orderedBy!: string;
+  orderedBy?: string;
   notes?: string;
   items!: CreatePurchaseOrderItemDto[];
 }

@@ -22,8 +22,8 @@ describe('InvoicesService (integration)', () => {
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
     patientsService = new PatientsService(ctx.tenantConnection, patientSequence);
-    invoicesService = new InvoicesService(ctx.tenantConnection);
-    depositsService = new DepositsService(ctx.tenantConnection);
+    invoicesService = new InvoicesService(ctx.tenantConnection, ctx.tenantContext);
+    depositsService = new DepositsService(ctx.tenantConnection, ctx.tenantContext);
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
@@ -529,6 +529,67 @@ describe('InvoicesService (integration)', () => {
         invoicesService.createReturn('00000000-0000-0000-0000-000000000000', { amount: 100, reason: 'x', returnedBy: STAFF_ID }),
       ),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {
+    // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
+    // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
+    // service must record THIS account, ignoring the spoofed value passed to it.
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+
+    function withActor<T>(work: () => Promise<T>): Promise<T> {
+      return ctx.tenantContext.run(
+        { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'actor-test' },
+        work,
+      );
+    }
+
+    const SPOOFED_ACTOR = '00000000-0000-0000-0000-0000000000ff';
+    let actorSeq = 0;
+    async function makeInvoice() {
+      actorSeq += 1;
+      // Unique per-test phone number (patients duplicate check throws on reuse); 51 is
+      // reserved by the create test above.
+      const patient = await makePatient(ctx, `5550000${51 + actorSeq}`);
+      return ctx.inTenant(() =>
+        invoicesService.create({
+          patientId: patient.id,
+          createdBy: STAFF_ID,
+          items: [{ description: 'Item A', unitPrice: 1000 }],
+        }),
+      );
+    }
+
+    it('create records the authenticated account as createdBy, not the body value', async () => {
+      const patient = await makePatient(ctx, '5550000051');
+      const invoice = await withActor(() =>
+        invoicesService.create({
+          patientId: patient.id,
+          createdBy: SPOOFED_ACTOR,
+          items: [{ description: 'Consultation Fee', unitPrice: 500 }],
+        }),
+      );
+      expect(invoice.createdBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('recordPayment records the authenticated account as receivedBy, not the body value', async () => {
+      const invoice = await makeInvoice();
+      const payment = await withActor(() =>
+        invoicesService.recordPayment(invoice.id, { amount: 400, paymentMode: 'Cash', receivedBy: SPOOFED_ACTOR }),
+      );
+      expect(payment.receivedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('createReturn records the authenticated account as returnedBy, not the body value', async () => {
+      const invoice = await makeInvoice();
+      await ctx.inTenant(() =>
+        invoicesService.recordPayment(invoice.id, { amount: 1000, paymentMode: 'Cash', receivedBy: STAFF_ID }),
+      );
+      const returnRecord = await withActor(() =>
+        invoicesService.createReturn(invoice.id, { amount: 500, reason: 'Medicine returned to pharmacy', returnedBy: SPOOFED_ACTOR }),
+      );
+      expect(returnRecord.returnedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
   });
 });
 

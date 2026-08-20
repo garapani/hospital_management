@@ -20,7 +20,7 @@ describe('OrdersService (integration)', () => {
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
     patientsService = new PatientsService(ctx.tenantConnection, patientSequence);
-    ordersService = new OrdersService(ctx.tenantConnection);
+    ordersService = new OrdersService(ctx.tenantConnection, ctx.tenantContext);
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
@@ -252,5 +252,86 @@ describe('OrdersService (integration)', () => {
     await expect(
       tenantB.inTenant(() => ordersService.findOne(order.id)),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {
+    // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
+    // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
+    // service must record THIS account, ignoring the spoofed value passed to it.
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+
+    function withActor<T>(work: () => Promise<T>): Promise<T> {
+      return ctx.tenantContext.run(
+        { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'actor-test' },
+        work,
+      );
+    }
+
+    let actorSeq = 0;
+    async function makeActorPatient() {
+      actorSeq += 1;
+      return makePatient(ctx, `44400002${String(actorSeq).padStart(2, '0')}`);
+    }
+
+    it('create records the authenticated account as orderedBy, not the body value', async () => {
+      const patient = await makeActorPatient();
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const order = await withActor(() =>
+        ordersService.create({
+          patientId: patient.id,
+          orderedBy: spoofed,
+          items: [{ itemType: 'Lab', itemDescription: 'CBC' }],
+        }),
+      );
+      expect(order.orderedBy).toBe(AUTHENTICATED_ACCOUNT);
+
+      const persisted = await ctx.inTenant(() => ordersService.findOne(order.id));
+      expect(persisted.orderedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('completeItem records the authenticated account as completedBy, not the body value', async () => {
+      const patient = await makeActorPatient();
+      const order = await ctx.inTenant(() =>
+        ordersService.create({
+          patientId: patient.id,
+          orderedBy: DOCTOR_ID,
+          items: [{ itemType: 'Lab', itemDescription: 'CBC' }],
+        }),
+      );
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const completed = await withActor(() =>
+        ordersService.completeItem(order.id, order.items[0].id, { completedBy: spoofed }),
+      );
+      expect(completed.completedBy).toBe(AUTHENTICATED_ACCOUNT);
+
+      const persisted = await ctx.inTenant(() => ordersService.findOne(order.id));
+      expect(persisted.items[0].completedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('completeItemInTransaction records the authenticated account as completedBy, not the body value', async () => {
+      const patient = await makeActorPatient();
+      const order = await ctx.inTenant(() =>
+        ordersService.create({
+          patientId: patient.id,
+          orderedBy: DOCTOR_ID,
+          items: [{ itemType: 'Lab', itemDescription: 'CBC' }],
+        }),
+      );
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const completed = await withActor(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          ordersService.completeItemInTransaction(manager, order.items[0].id, {
+            completedBy: spoofed,
+          }),
+        ),
+      );
+      expect(completed?.completedBy).toBe(AUTHENTICATED_ACCOUNT);
+
+      const persisted = await ctx.inTenant(() => ordersService.findOne(order.id));
+      expect(persisted.items[0].completedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
   });
 });

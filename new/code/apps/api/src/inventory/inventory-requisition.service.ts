@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { MasterDataService } from '../master-data/master-data.service.js';
 import { StockRequisition } from './entities/stock-requisition.entity.js';
 import { StockRequisitionItem } from './entities/stock-requisition-item.entity.js';
@@ -16,7 +17,8 @@ export interface CreateRequisitionItemInput {
 
 export interface CreateRequisitionInput {
   departmentId: string;
-  requestedBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  requestedBy?: string;
   notes?: string;
   items: CreateRequisitionItemInput[];
 }
@@ -25,7 +27,8 @@ const NON_TERMINAL_REQUISITION_STATUSES = ['Pending', 'PartiallyFulfilled'];
 
 export interface FulfillRequisitionItemInput {
   quantity: number;
-  fulfilledBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  fulfilledBy?: string;
 }
 
 @Injectable()
@@ -36,12 +39,25 @@ export class InventoryRequisitionService {
     private readonly inventoryCatalogService: InventoryCatalogService,
     private readonly masterDataService: MasterDataService,
     private readonly fefoStockDecrement: FefoStockDecrementService,
+    private readonly tenantContext: TenantContextService,
   ) {}
+
+  /**
+   * Actor fields (`requestedBy`, `fulfilledBy`) are never trusted from the caller: the
+   * authenticated principal (TenantContextService.accountId, set by TenantContextMiddleware from
+   * the verified JWT) wins; the passed value is only a fallback for non-HTTP callers (service
+   * specs) that run without a tenant context. These fields are audit-trail integrity markers, so
+   * spoofing them would be an audit-trail integrity breach.
+   */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
 
   async createRequisition(
     input: CreateRequisitionInput,
   ): Promise<StockRequisition & { items: StockRequisitionItem[] }> {
-    if (!input.requestedBy?.trim()) {
+    const requestedBy = this.resolveActor(input.requestedBy);
+    if (!requestedBy?.trim()) {
       throw new BadRequestException('requestedBy is required');
     }
     if (!input.items || input.items.length === 0) {
@@ -75,7 +91,7 @@ export class InventoryRequisitionService {
       const requisition = await requisitionRepository.save(
         requisitionRepository.create({
           departmentId: input.departmentId,
-          requestedBy: input.requestedBy,
+          requestedBy,
           requisitionNumber,
           notes: input.notes ?? null,
           status: 'Pending',
@@ -144,7 +160,8 @@ export class InventoryRequisitionService {
     stockRequisitionItemId: string,
     input: FulfillRequisitionItemInput,
   ): Promise<StockRequisitionItem> {
-    if (!input.fulfilledBy?.trim()) {
+    const fulfilledBy = this.resolveActor(input.fulfilledBy);
+    if (!fulfilledBy?.trim()) {
       throw new BadRequestException('fulfilledBy is required');
     }
     const quantity = Number(input.quantity);
@@ -189,7 +206,7 @@ export class InventoryRequisitionService {
         quantity,
         transactionType: 'Dispatch',
         referenceId: reqItem.id,
-        recordedBy: input.fulfilledBy,
+        recordedBy: fulfilledBy,
       });
 
       reqItem.fulfilledQuantity = String(newFulfilledQuantity);

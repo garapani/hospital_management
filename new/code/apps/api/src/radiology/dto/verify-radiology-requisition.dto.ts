@@ -1,3 +1,3 @@
 export class VerifyRadiologyRequisitionDto {
-  verifiedBy!: string;
+  verifiedBy?: string;
 }

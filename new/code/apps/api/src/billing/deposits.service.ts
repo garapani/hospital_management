@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { Deposit } from './entities/deposit.entity.js';
 import { Patient } from '../patients/entities/patient.entity.js';
 import { roundMoney } from './money.util.js';
@@ -8,18 +9,34 @@ import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pa
 export interface CreateDepositInput {
   patientId: string;
   amount: number;
-  receivedBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  receivedBy?: string;
   notes?: string;
 }
 
 export interface RefundDepositInput {
   amount: number;
-  refundedBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  refundedBy?: string;
 }
 
 @Injectable()
 export class DepositsService {
-  constructor(private readonly tenantConnection: TenantConnectionService) {}
+  constructor(
+    private readonly tenantConnection: TenantConnectionService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
+
+  /**
+   * Actor fields (`receivedBy`, `refundedBy`) are never trusted from the caller: the authenticated
+   * principal (TenantContextService.accountId, set by TenantContextMiddleware from the verified
+   * JWT) wins; the passed value is only a fallback for non-HTTP callers (service specs) that run
+   * without a tenant context. These fields are money-movement audit markers, so spoofing them
+   * would be an audit-trail integrity breach.
+   */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
 
   async create(input: CreateDepositInput): Promise<Deposit> {
     if (input.amount <= 0) {
@@ -36,7 +53,7 @@ export class DepositsService {
           patientId: input.patientId,
           amount: input.amount,
           balance: input.amount,
-          receivedBy: input.receivedBy,
+          receivedBy: this.resolveActor(input.receivedBy),
           notes: input.notes ?? null,
         }),
       );
@@ -70,7 +87,7 @@ export class DepositsService {
         throw new BadRequestException(`Refund amount ${input.amount} exceeds deposit balance ${deposit.balance}`);
       }
       deposit.balance = roundMoney(deposit.balance - input.amount);
-      deposit.refundedBy = input.refundedBy;
+      deposit.refundedBy = this.resolveActor(input.refundedBy);
       deposit.refundedAt = new Date();
       return repository.save(deposit);
     });

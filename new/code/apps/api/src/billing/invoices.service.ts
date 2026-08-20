@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { Invoice } from './entities/invoice.entity.js';
 import { InvoiceItem } from './entities/invoice-item.entity.js';
 import { Payment } from './entities/payment.entity.js';
@@ -22,7 +23,8 @@ export interface CreateInvoiceItemInput {
 
 export interface CreateInvoiceInput {
   patientId: string;
-  createdBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  createdBy?: string;
   sourceAppointmentId?: string;
   sourceAdmissionId?: string;
   notes?: string;
@@ -33,13 +35,15 @@ export interface RecordPaymentInput {
   amount: number;
   paymentMode: string;
   sourceDepositId?: string;
-  receivedBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  receivedBy?: string;
 }
 
 export interface CreateReturnInput {
   amount: number;
   reason: string;
-  returnedBy: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  returnedBy?: string;
 }
 
 export function getFinancialYearStart(date: Date): number {
@@ -60,7 +64,21 @@ export function formatFinancialYear(startYear: number): string {
 
 @Injectable()
 export class InvoicesService {
-  constructor(private readonly tenantConnection: TenantConnectionService) {}
+  constructor(
+    private readonly tenantConnection: TenantConnectionService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
+
+  /**
+   * Actor fields (`createdBy`, `receivedBy`, `returnedBy`) are never trusted from the caller: the
+   * authenticated principal (TenantContextService.accountId, set by TenantContextMiddleware from
+   * the verified JWT) wins; the passed value is only a fallback for non-HTTP callers (service
+   * specs) that run without a tenant context. These are billing sign-off fields, so spoofing them
+   * would be an audit-trail integrity breach.
+   */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
 
   private static readonly PAYMENT_MODES = ['Cash', 'Card', 'UPI', 'Cheque', 'Deposit'] as const;
 
@@ -165,7 +183,7 @@ export class InvoicesService {
           paidAmount: 0,
           status: totalAmount === 0 ? 'Paid' : 'Unpaid',
           notes: input.notes ?? null,
-          createdBy: input.createdBy,
+          createdBy: this.resolveActor(input.createdBy),
         }),
       );
 
@@ -283,7 +301,7 @@ export class InvoicesService {
           amount: input.amount,
           paymentMode: input.paymentMode,
           sourceDepositId: input.paymentMode === 'Deposit' ? (input.sourceDepositId as string) : null,
-          receivedBy: input.receivedBy,
+          receivedBy: this.resolveActor(input.receivedBy),
         }),
       );
 
@@ -321,7 +339,7 @@ export class InvoicesService {
           invoiceId,
           amount: input.amount,
           reason: input.reason,
-          returnedBy: input.returnedBy,
+          returnedBy: this.resolveActor(input.returnedBy),
         }),
       );
 

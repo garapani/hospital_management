@@ -1,3 +1,3 @@
 export class VerifyRequisitionDto {
-  verifiedBy!: string;
+  verifiedBy?: string;
 }

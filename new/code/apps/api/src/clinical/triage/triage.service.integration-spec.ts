@@ -20,7 +20,7 @@ describe('TriageService (integration)', () => {
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
     patientsService = new PatientsService(ctx.tenantConnection, patientSequence);
-    triageService = new TriageService(ctx.tenantConnection);
+    triageService = new TriageService(ctx.tenantConnection, ctx.tenantContext);
   });
 
   afterAll(async () => {
@@ -154,6 +154,42 @@ describe('TriageService (integration)', () => {
 
     await tenantB.inTenant(async () => {
       await expect(triageService.findOne(sharedEntryId)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {
+    // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
+    // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
+    // service must record THIS account, ignoring the spoofed value passed to it.
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+
+    function withActor<T>(work: () => Promise<T>): Promise<T> {
+      return ctx.tenantContext.run(
+        { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'actor-test' },
+        work,
+      );
+    }
+
+    it('create records the authenticated account as triagedBy, never the body value', async () => {
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const entry = await withActor(() =>
+        triageService.create({ chiefComplaint: 'Chest pain', triagedBy: spoofed }),
+      );
+      expect(entry.triagedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('update records the authenticated account as triagedBy, never the spoofed value', async () => {
+      const entry = await ctx.inTenant(() => triageService.create({ chiefComplaint: 'Fever' }));
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+
+      const updated = await withActor(() =>
+        triageService.update(entry.id, { status: 'Triaged', triagedBy: spoofed }),
+      );
+      expect(updated.triagedBy).toBe(AUTHENTICATED_ACCOUNT);
+
+      const persisted = await ctx.inTenant(() => triageService.findOne(entry.id));
+      expect(persisted.triagedBy).toBe(AUTHENTICATED_ACCOUNT);
     });
   });
 });

@@ -4,5 +4,5 @@ export class RecordGoodsReceiptDto {
   unitCost!: number;
   mrp?: number;
   receivedQuantity!: number;
-  recordedBy!: string;
+  recordedBy?: string;
 }
