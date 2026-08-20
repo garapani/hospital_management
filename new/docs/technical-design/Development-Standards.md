@@ -1078,3 +1078,49 @@ Two environment gotchas discovered along the way, both worth remembering:
   `Super Admin → patients.*` rows were cleaned in this pass). If catalog reconciliation is ever
   wanted (prune mappings absent from the seed), it needs an explicit migration or a seed-mode flag —
   do not make the seed delete rows by default, since production may carry hand-added grants.
+
+## 25. Actor fields derive from the authenticated principal, never the request body (2026-08-20)
+
+Every domain "actor" field — `enteredBy`, `verifiedBy`, `sampleCollectedBy`, `scannedBy`,
+`reportEnteredBy`, `createdBy`, `receivedBy`, `returnedBy`, `refundedBy`, `dispensedBy`,
+`fulfilledBy`, `recordedBy`, `requestedBy`, `orderedBy`, `completedBy`, `transferredBy`,
+`dischargedBy`, `preparedBy`, `reviewedBy`, `triagedBy`, tenant-provisioning `createdBy` — is a
+**record of who performed the action**, so it must come from the authenticated principal, not from
+the caller. The pattern, applied uniformly across all 10 modules:
+
+- The service injects `TenantContextService` (last constructor param) and keeps one private helper:
+
+  ```ts
+  /** Actor fields are never trusted from the caller: the authenticated principal
+   * (TenantContextService.accountId, set by TenantContextMiddleware from the verified JWT) wins;
+   * the passed value is only a fallback for non-HTTP callers (service specs). */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
+  ```
+
+- Every actor assignment goes through `resolveActor(...)`. If the resolved actor is also forwarded
+  to another service (e.g. `OrdersService.completeItemInTransaction({ completedBy })`), forward the
+  **resolved** value, not the raw input.
+- Actor method parameters and input-interface fields are optional (`actorField?: string`); the DTO
+  fields are optional-but-ignored (deprecation comment), so existing clients keep working and new
+  ones can simply omit them. The entity column stays NOT NULL (with DB CHECK constraints where they
+  already exist), so a non-HTTP caller with neither a context nor a fallback fails at write time —
+  which is correct: the actor is mandatory, just not client-suppliable.
+- **Exception:** triage's `broughtBy` (who accompanied the patient — a companion/relative, not the
+  logged-in user) is a legitimately client-supplied field; never touch it.
+- Test pattern (see any module's `*.service.integration-spec.ts`, e.g. lab): run the call inside
+  `ctx.tenantContext.run({ tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId }, () => ...)`
+  while passing a spoofed actor uuid, and assert the persisted entity records
+  `AUTHENTICATED_ACCOUNT`. `ctx.inTenant()` sets no accountId, so pre-existing specs that pass
+  `STAFF_ID`-style constants keep working on the fallback path.
+
+Where the auth context is absent (`OrdersService`'s optional `tenantContext` — kept optional so
+other modules' specs that construct it manually still typecheck), the `?.` fallback keeps the
+documented behavior.
+
+**Defect found by this pass:** the `DischargeSummary` entity had routes and a service but was never
+registered in `data-source.ts`'s entities list and no migration created `discharge_summaries` —
+every endpoint threw `EntityMetadataNotFoundError`. Lesson: "routes mapped" is not "feature works";
+a new entity needs (a) registration in `data-source.ts`, (b) a tenant migration, (c) an integration
+test that actually writes to the table. This pass added all three (migration `0030`).

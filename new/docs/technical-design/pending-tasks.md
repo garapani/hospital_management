@@ -59,13 +59,16 @@ scope, not merely lower priority.
       department-capacity checks. Verified live against the running API.
 - [x] **Admissions: discharge-summary artifact.** Create/list/get/transfer/discharge exist as a
       status-machine action; PRD names discharge summaries explicitly (old system:
-      `DischargeSummaryController`). **Resolved (2026-08-20):** a distinct `DischargeSummary`
-      entity plus `POST /admissions/discharge-summaries`,
-      `GET /admissions/discharge-summaries` (filterable by patient),
-      `GET /admissions/discharge-summaries/by-admission/:admissionId`,
-      `GET /admissions/discharge-summaries/:id`, `PATCH .../:id`, and
-      `PATCH .../:id/review` (a review/sign-off flow) all exist and are wired; creation is gated
-      on the admission being discharged. Verified live against the running API.
+      `DischargeSummaryController`). **Resolved (2026-08-20):** the routes and a `DischargeSummary`
+      entity existed, but the entity was never registered in `data-source.ts` and no migration
+      created the table — every endpoint threw `EntityMetadataNotFoundError` (the initial
+      "verified live" check only confirmed the routes mapped; corrected 2026-08-20). Now fully
+      wired: entity registered + migration `0030` adds `discharge_summaries`; endpoints
+      `POST /admissions/discharge-summaries`, `GET /admissions/discharge-summaries` (filterable by
+      patient), `GET /admissions/discharge-summaries/by-admission/:admissionId`,
+      `GET /admissions/discharge-summaries/:id`, `PATCH .../:id`, and `PATCH .../:id/review`
+      (a review/sign-off flow); creation gated on the admission being discharged; covered by
+      integration tests including the preparedBy/reviewedBy actor derivation.
 
 ## Phase 0 — Housekeeping
 
@@ -256,16 +259,23 @@ Follow the PRD's own phase ordering as-is:
   logic is proven correct (passes under Jest), so this is a standalone-script tooling fix
   (decorator-safe runner or a build step), not a logic fix. Should land before any real deployment —
   bundle with Phase 3 ops-readiness work.
-- **New gap, not yet its own item, codebase-wide**: every domain module's "actor" DTO fields
-  (`enteredBy`, `verifiedBy`, `sampleCollectedBy` in Lab, Radiology's `scannedBy`/`reportEnteredBy`/
-  `verifiedBy`, Billing's `createdBy`/`receivedBy`/`returnedBy`, and the pre-existing
-  `orderedBy`/`dischargedBy`/`transferredBy` elsewhere) are client-supplied in the request body
-  rather than derived from the authenticated principal (`request.authContext`), so any caller
-  holding the right permission can attribute an action to a different, arbitrary user ID. Most
-  severe for Lab's `verifiedBy` (a clinical sign-off) and Billing's `returnedBy` (a refund
-  authorization — flagged during the 2026-08-09 Return/credit-note security review), but this is a
-  pattern across the whole codebase, not module-specific — worth its own future item to derive
-  these fields from `authContext` instead of trusting the body, across every domain.
+- [x] **Resolved (2026-08-20):** the codebase-wide "actor fields are client-supplied" gap — every
+  domain module's actor fields (`enteredBy`, `verifiedBy`, `sampleCollectedBy`, `scannedBy`,
+  `reportEnteredBy`, `createdBy`, `receivedBy`, `returnedBy`, `refundedBy`, `dispensedBy`,
+  `fulfilledBy`, `recordedBy`, `requestedBy`, `orderedBy`, `completedBy`, `transferredBy`,
+  `dischargedBy`, `preparedBy`, `reviewedBy`, `triagedBy`, tenant `createdBy`) are now derived
+  from the authenticated principal: each service resolves the actor via
+  `TenantContextService.getAccountId()` (set by `TenantContextMiddleware` from the verified JWT)
+  with the caller-supplied value only as a fallback for non-HTTP callers, and the DTO fields are
+  optional-but-ignored. **Deliberate exception:** triage's `broughtBy` (who accompanied the
+  patient — a companion, not the logged-in user) stays client-suppliable. 26 new integration
+  tests pin the override across all 10 modules. See `Development-Standards.md` §25. Along the way
+  this pass **found and fixed a real defect**: the `DischargeSummary` entity was never registered
+  in `data-source.ts` and no migration created `discharge_summaries`, so every discharge-summary
+  endpoint threw `EntityMetadataNotFoundError` — the earlier "verified live" check-off was wrong
+  (it only confirmed the routes mapped). Fixed with entity registration + migration `0030`
+  (`CreateDischargeSummaryTable0030`); `admissions.service.integration-spec.ts` now covers
+  preparedBy/reviewedBy too.
 - [x] **Resolved (2026-08-20):** `InvoicesService.recordPayment`/`.cancel` missing locks — both
   methods already take `pessimistic_write` on their initial invoice lookup in HEAD (added in
   `c416f0a`, 2026-08-14, the same commit that introduced the billing adapters); the review that

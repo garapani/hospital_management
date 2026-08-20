@@ -276,6 +276,19 @@ contract, and four leftover `Super Admin → patients.*` rows were deleted from 
 DBs). Verified: full api suite green (`355 passed, 1 skipped — the deferred DB-level isolation proof
 test`), typecheck green across all 7 Nx projects.
 
+### High: Domain "actor" fields were client-supplied, so any permissioned caller could attribute an action to an arbitrary user
+
+**Resolved (2026-08-20):** every domain actor field now derives from the authenticated principal
+(`TenantContextService.getAccountId()`, set by `TenantContextMiddleware` from the verified JWT) with
+the caller-supplied value only as a fallback for non-HTTP callers; DTO fields are optional-but-ignored.
+Triage's `broughtBy` deliberately stays client-suppliable (companion, not the logged-in user). 26 new
+integration tests pin the override across Lab, Radiology, Pharmacy, Inventory (procurement +
+requisition), Billing (invoices + deposits), Orders, Admissions, Triage, and Tenants. See
+`Development-Standards.md` §25 and `pending-tasks.md`. **Also found and fixed while auditing the
+surface:** the `DischargeSummary` entity was never registered in the DataSource and had no migration,
+so every discharge-summary endpoint threw `EntityMetadataNotFoundError` — added registration +
+migration `0030` + integration coverage.
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
