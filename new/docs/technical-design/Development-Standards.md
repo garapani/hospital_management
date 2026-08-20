@@ -1190,3 +1190,26 @@ the reporting constraint documents — a Postgres error inside the business tran
 it, surfacing the failure loudly rather than silently losing revenue. Known follow-ups: no re-run
 endpoint for a failed capture, and the open-invoice find-or-create is not row-locked (a concurrent
 first-capture race could create two invoices).
+
+## 28. Catalog update/soft-delete (2026-08-20)
+
+The Lab, Radiology, and Inventory catalogs were create+list-only; the named gap is closed with the
+master-data soft-delete pattern (`isActive`, migration `0032` added the column to all eight catalog
+tables: `lab_tests`, `lab_test_categories`, `radiology_imaging_items`, `radiology_imaging_types`,
+`inventory_items`, `inventory_item_categories`, `inventory_item_sub_categories`,
+`inventory_vendors`):
+
+- **Update** `PATCH <catalog>/.../:id` applies only the provided mutable fields (price/salePrice
+  keep the existing non-negative `Number.isFinite` guard); deactivate/reactivate mirror
+  `master-data.service.ts` exactly (second deactivate → `ConflictException '... is already
+  deactivated'`; unknown id → `NotFoundException`).
+- **Lists and `get` keep returning deactivated rows** — exactly like departments/wards/beds. The
+  soft-delete's teeth are in the workflow guards: `createRequisition` (Lab + Radiology) and
+  `createDispensing` (Pharmacy) reject an inactive test/imaging item/inventory item with a
+  `ConflictException`, so deactivated entries can't be used for NEW work while every historical
+  record keeps its reference intact. Existing requisitions are unaffected (they resolve the
+  catalog row directly).
+- This is the "delete" convention for the whole codebase: **never hard-delete a catalog row that
+  existing records reference** — deactivate instead. A future item could surface a
+  `?includeInactive=` flag if a screen needs to see or restore deactivated entries (today the
+  reactivate endpoint covers restoration by id).

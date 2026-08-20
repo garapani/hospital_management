@@ -182,8 +182,7 @@ Follow the PRD's own phase ordering as-is:
   - [x] Lab/LIS core pipeline (test catalog, requisition/sample tracking, result entry,
         single-level verification) — done. **Not done:** report/PDF export, machine/instrument
         (LIS) integration, external lab send-out, government disease-reporting mapping,
-        multi-level verification, catalog update/delete (create+list only shipped; see
-        `Development-Standards.md` §14), result amendment history/audit trail (corrections
+        multi-level verification, result amendment history/audit trail (corrections
         currently overwrite in place with no version row — acceptable for now since only
         pre-verification edits are allowed, but named explicitly rather than left silent) — each a
         distinct future item. ~~`OrderItem.status` never advancing when its lab requisition is
@@ -194,8 +193,8 @@ Follow the PRD's own phase ordering as-is:
         entry, single-level verification) — done. **Not done:** image attachment
         (`@hospital/object-storage` integration), film type/quantity billing tracking, DICOM
         integration (confirmed a wholly separate old-system domain — its own models, own
-        controller), report template HTML rendering/PDF export, catalog update/delete (create+list
-        only, same scope cut as Lab), result amendment history/audit trail — each a distinct
+        controller), report template HTML rendering/PDF export, result amendment history/audit
+        trail — each a distinct
         future item. ~~`OrderItem.status` never advancing on verification~~ **closed 2026-08-20:**
         Radiology verification also routes through `OrdersService.completeItemInTransaction` (same
         fix as Lab's). Request-body validation for the required workflow
@@ -207,8 +206,7 @@ Follow the PRD's own phase ordering as-is:
         purchase order create/read/cancel, goods receipt, stock balance query) — done. **Not
         done:** RFQ/Quotation, two-phase unconfirmed stock staging, store/location dimension,
         vendor accounting fields (TDS/ledger/credit period), donations/returns/write-offs,
-        multi-store/currency/fiscal-year masters, formal PO approval workflow, catalog
-        update/delete (create+list only shipped; see `Development-Standards.md` §16) — each a
+        multi-store/currency/fiscal-year masters, formal PO approval workflow — each a
         distinct future item.
   - [x] Inventory Item B — requisition/dispatch pipeline (department-based stock requisition
         create/read/cancel, FEFO-ordered locked fulfillment against `stock_balances`, requisition
