@@ -5,4 +5,5 @@ export class CreateInventoryItemDto {
   unitOfMeasure!: string;
   reorderLevel?: number;
   minimumStock?: number;
+  salePrice?: number;
 }

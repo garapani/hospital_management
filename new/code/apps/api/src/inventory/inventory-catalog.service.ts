@@ -24,6 +24,8 @@ export interface CreateItemInput {
   unitOfMeasure: string;
   reorderLevel?: number;
   minimumStock?: number;
+  /** Selling price in INR (e.g. a drug's retail price); null = not priced yet. */
+  salePrice?: number;
 }
 
 export interface CreateVendorInput {
@@ -116,8 +118,24 @@ export class InventoryCatalogService {
         unitOfMeasure: input.unitOfMeasure,
         reorderLevel: String(reorderLevel),
         minimumStock: String(minimumStock),
+        salePrice: input.salePrice ?? null,
       };
       return repository.save(repository.create(itemData));
+    });
+  }
+
+  async updateItemSalePrice(id: string, salePrice: number): Promise<InventoryItem> {
+    if (!Number.isFinite(salePrice) || salePrice < 0) {
+      throw new BadRequestException('Sale price must be a non-negative number');
+    }
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(InventoryItem);
+      const item = await repository.findOne({ where: { id } });
+      if (!item) {
+        throw new NotFoundException(`Inventory item ${id} not found`);
+      }
+      item.salePrice = salePrice;
+      return repository.save(item);
     });
   }
 

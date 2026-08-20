@@ -28,6 +28,7 @@ import { CreateTenantRolesTable0027 } from './0027-create-tenant-roles-table.js'
 import { CreateNotificationsTable0028 } from './0028-create-notifications-table.js';
 import { CreateDepartmentCatalogTable0029 } from './0029-create-department-catalog-table.js';
 import { CreateDischargeSummaryTable0030 } from './0030-create-discharge-summary-table.js';
+import { AddCatalogPrices0031 } from './0031-add-catalog-prices.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -70,4 +71,5 @@ export const TENANT_MIGRATIONS = [
   AddDepartmentMaxDailyAppointments0026,
   CreateNotificationsTable0028,
   CreateDischargeSummaryTable0030,
+  AddCatalogPrices0031,
 ];

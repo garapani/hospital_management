@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { EntityManager } from 'typeorm';
+import { EntityManager, In } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { Invoice } from './entities/invoice.entity.js';
@@ -196,8 +196,143 @@ export class InvoicesService {
     });
   }
 
-  async findOne(id: string): Promise<Invoice & { items: InvoiceItem[]; payments: Payment[]; returns: Return[] }> {
-    return this.tenantConnection.runInTenantSchema(async (manager) => {
+  /**
+   * Automatic charge capture: called by ChargeCaptureSubscriber when an OrderItem transitions to
+   * 'Completed' (the single choke point every clinical completion flows through — Lab verify,
+   * Radiology verify, Pharmacy dispense). Resolves the catalog price for the item's type, then
+   * appends a line to the patient's open invoice, creating one if none exists. Runs on the
+   * caller's EntityManager so the charge commits with the completing workflow's transaction.
+   *
+   * Best-effort by design: the caller (a TypeORM subscriber inside the business transaction) never
+   * rethrows, so a pricing problem cannot roll back a lab verification. Unpriced items are skipped
+   * (captured: false, reason 'unpriced') until the catalog price is set. Idempotent: an item that
+   * already has an invoice line (sourceOrderItemId) is never charged twice.
+   */
+  async captureChargeForOrderItem(
+    manager: EntityManager,
+    orderItem: { id: string; orderId: string; itemType: string; itemDescription: string; completedBy?: string },
+  ): Promise<{ captured: boolean; reason?: string }> {
+    const alreadyCharged = await manager.query(
+      `SELECT 1 FROM invoice_items WHERE "sourceOrderItemId" = $1 LIMIT 1`,
+      [orderItem.id],
+    );
+    if (alreadyCharged.length > 0) {
+      return { captured: false, reason: 'already-charged' };
+    }
+
+    const orderRows = await manager.query(`SELECT "patientId" FROM orders WHERE id = $1`, [
+      orderItem.orderId,
+    ]);
+    if (orderRows.length === 0) {
+      return { captured: false, reason: 'order-not-found' };
+    }
+    const patientId = orderRows[0].patientId as string;
+
+    let price: number | null = null;
+    let description = orderItem.itemDescription;
+    if (orderItem.itemType === 'Lab') {
+      const rows = await manager.query(
+        `SELECT t.price, t.name FROM lab_requisitions r JOIN lab_tests t ON t.id = r."testId"
+         WHERE r."orderItemId" = $1 AND r.status != 'Cancelled' ORDER BY r."createdAt" DESC LIMIT 1`,
+        [orderItem.id],
+      );
+      if (rows.length > 0) {
+        price = rows[0].price === null ? null : Number(rows[0].price);
+        description = rows[0].name;
+      }
+    } else if (orderItem.itemType === 'Radiology') {
+      const rows = await manager.query(
+        `SELECT i.price, i.name FROM radiology_requisitions rr JOIN radiology_imaging_items i ON i.id = rr."imagingItemId"
+         WHERE rr."orderItemId" = $1 AND rr.status != 'Cancelled' ORDER BY rr."createdAt" DESC LIMIT 1`,
+        [orderItem.id],
+      );
+      if (rows.length > 0) {
+        price = rows[0].price === null ? null : Number(rows[0].price);
+        description = rows[0].name;
+      }
+    } else if (orderItem.itemType === 'Pharmacy') {
+      const rows = await manager.query(
+        `SELECT i."salePrice", i.name FROM pharmacy_dispensings pd JOIN inventory_items i ON i.id = pd."inventoryItemId"
+         WHERE pd."orderItemId" = $1 AND pd.status != 'Cancelled' ORDER BY pd."createdAt" DESC LIMIT 1`,
+        [orderItem.id],
+      );
+      if (rows.length > 0) {
+        price = rows[0].salePrice === null ? null : Number(rows[0].salePrice);
+        description = rows[0].name;
+      }
+    } else {
+      return { captured: false, reason: `unsupported itemType ${orderItem.itemType}` };
+    }
+
+    if (price === null) {
+      return { captured: false, reason: 'unpriced' };
+    }
+
+    const invoiceRepository = manager.getRepository(Invoice);
+    const openInvoice = await invoiceRepository.findOne({
+      where: { patientId, status: In(['Unpaid', 'PartiallyPaid']) },
+      order: { createdAt: 'DESC' },
+    });
+    const invoice = openInvoice ?? (await this.createCaptureInvoice(manager, patientId, orderItem.completedBy));
+
+    const unitPrice = roundMoney(price);
+    await manager.getRepository(InvoiceItem).save(
+      manager.getRepository(InvoiceItem).create({
+        invoiceId: invoice.id,
+        sourceOrderItemId: orderItem.id,
+        description,
+        quantity: 1,
+        unitPrice,
+        discountAmount: 0,
+        taxPercent: 0,
+        cgstAmount: 0,
+        sgstAmount: 0,
+        totalAmount: unitPrice,
+      }),
+    );
+
+    invoice.subtotal = roundMoney(invoice.subtotal + unitPrice);
+    invoice.totalAmount = roundMoney(invoice.subtotal - invoice.discountAmount + invoice.taxAmount);
+    invoice.status =
+      invoice.paidAmount >= invoice.totalAmount
+        ? 'Paid'
+        : invoice.paidAmount > 0
+          ? 'PartiallyPaid'
+          : 'Unpaid';
+    await invoiceRepository.save(invoice);
+
+    return { captured: true };
+  }
+
+  private async createCaptureInvoice(
+    manager: EntityManager,
+    patientId: string,
+    completedBy?: string,
+  ): Promise<Invoice> {
+    const { invoiceNumber, financialYear } = await this.generateInvoiceNumber(manager);
+    // createdBy must never be null: it is a NOT NULL uuid column, and a failed INSERT inside the
+    // completing workflow's transaction would roll the whole thing back. The authenticated
+    // principal wins; the completing actor (order item completedBy) is the fallback for
+    // non-HTTP callers that set one.
+    const createdBy = this.tenantContext.getAccountId() ?? completedBy ?? ('' as string);
+    return manager.getRepository(Invoice).save(
+      manager.getRepository(Invoice).create({
+        patientId,
+        invoiceNumber,
+        financialYear,
+        subtotal: 0,
+        discountAmount: 0,
+        taxableAmount: 0,
+        taxAmount: 0,
+        totalAmount: 0,
+        paidAmount: 0,
+        status: 'Unpaid',
+        createdBy,
+      }),
+    );
+  }
+
+  async findOne(id: string): Promise<Invoice & { items: InvoiceItem[]; payments: Payment[]; returns: Return[] }> {    return this.tenantConnection.runInTenantSchema(async (manager) => {
       const invoice = await manager.getRepository(Invoice).findOne({ where: { id } });
       if (!invoice) {
         throw new NotFoundException(`Invoice ${id} not found`);

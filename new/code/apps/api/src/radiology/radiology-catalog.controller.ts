@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { RadiologyCatalogService } from './radiology-catalog.service.js';
 import { CreateRadiologyImagingTypeDto } from './dto/create-radiology-imaging-type.dto.js';
 import { CreateRadiologyImagingItemDto } from './dto/create-radiology-imaging-item.dto.js';
+import { UpdatePriceDto } from './dto/update-price.dto.js';
 
 @Controller('radiology')
 @UseGuards(PermissionGuard)
@@ -37,5 +38,11 @@ export class RadiologyCatalogController {
   @RequirePermission('radiology.read')
   async getItem(@Param('id') id: string) {
     return this.radiologyCatalogService.getItem(id);
+  }
+
+  @Patch('items/:id/price')
+  @RequirePermission('radiology.catalog.manage')
+  async updateItemPrice(@Param('id') id: string, @Body() dto: UpdatePriceDto) {
+    return this.radiologyCatalogService.updateItemPrice(id, dto.price);
   }
 }

@@ -3,4 +3,5 @@ export class CreateRadiologyImagingItemDto {
   name!: string;
   procedureCode?: string;
   displaySequence?: number;
+  price?: number;
 }

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { LabTestCategory } from './entities/lab-test-category.entity.js';
 import { LabTest } from './entities/lab-test.entity.js';
@@ -14,6 +14,8 @@ export interface CreateLabTestInput {
   name: string;
   code: string;
   specimenType: string;
+  /** Selling price in INR; null = not priced yet. */
+  price?: number;
 }
 
 export interface CreateLabTestComponentInput {
@@ -63,8 +65,24 @@ export class LabCatalogService {
           name: input.name,
           code: input.code,
           specimenType: input.specimenType,
+          price: input.price ?? null,
         }),
       );
+    });
+  }
+
+  async updateTestPrice(id: string, price: number): Promise<LabTest> {
+    if (!Number.isFinite(price) || price < 0) {
+      throw new BadRequestException('Price must be a non-negative number');
+    }
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(LabTest);
+      const test = await repository.findOne({ where: { id } });
+      if (!test) {
+        throw new NotFoundException(`Lab test ${id} not found`);
+      }
+      test.price = price;
+      return repository.save(test);
     });
   }
 

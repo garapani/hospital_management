@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { RadiologyImagingType } from './entities/radiology-imaging-type.entity.js';
 import { RadiologyImagingItem } from './entities/radiology-imaging-item.entity.js';
@@ -14,6 +14,8 @@ export interface CreateImagingItemInput {
   name: string;
   procedureCode?: string;
   displaySequence?: number;
+  /** Selling price in INR; null = not priced yet. */
+  price?: number;
 }
 
 @Injectable()
@@ -55,8 +57,24 @@ export class RadiologyCatalogService {
           name: input.name,
           procedureCode: input.procedureCode ?? null,
           displaySequence: input.displaySequence ?? 0,
+          price: input.price ?? null,
         }),
       );
+    });
+  }
+
+  async updateItemPrice(id: string, price: number): Promise<RadiologyImagingItem> {
+    if (!Number.isFinite(price) || price < 0) {
+      throw new BadRequestException('Price must be a non-negative number');
+    }
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(RadiologyImagingItem);
+      const item = await repository.findOne({ where: { id } });
+      if (!item) {
+        throw new NotFoundException(`Radiology imaging item ${id} not found`);
+      }
+      item.price = price;
+      return repository.save(item);
     });
   }
 

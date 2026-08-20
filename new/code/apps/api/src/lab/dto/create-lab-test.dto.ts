@@ -3,4 +3,5 @@ export class CreateLabTestDto {
   name!: string;
   code!: string;
   specimenType!: string;
+  price?: number;
 }

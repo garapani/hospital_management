@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { InventoryCatalogService } from './inventory-catalog.service.js';
 import { CreateInventoryItemCategoryDto } from './dto/create-inventory-item-category.dto.js';
 import { CreateInventoryItemSubCategoryDto } from './dto/create-inventory-item-sub-category.dto.js';
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto.js';
 import { CreateInventoryVendorDto } from './dto/create-inventory-vendor.dto.js';
+import { UpdatePriceDto } from './dto/update-price.dto.js';
 
 @Controller('inventory')
 @UseGuards(PermissionGuard)
@@ -51,6 +52,12 @@ export class InventoryCatalogController {
   @RequirePermission('inventory.read')
   async getItem(@Param('id') id: string) {
     return this.inventoryCatalogService.getItem(id);
+  }
+
+  @Patch('items/:id/price')
+  @RequirePermission('inventory.catalog.manage')
+  async updateItemSalePrice(@Param('id') id: string, @Body() dto: UpdatePriceDto) {
+    return this.inventoryCatalogService.updateItemSalePrice(id, dto.price);
   }
 
   @Post('vendors')
