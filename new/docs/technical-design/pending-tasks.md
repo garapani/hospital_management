@@ -240,6 +240,13 @@ Follow the PRD's own phase ordering as-is:
         logging, sales returns, write-offs (a `Dispensed` record is terminal, no reversal path),
         and provisional IPD consumption billing — each a distinct future item if ever needed.
   - DICOM, Ward Supply — not started
+- **Frontend feature pages (2026-08-20, separate repo `frontend/`):** the tenant console's missing
+  pages are now built and routed — Lab/LIS (requisitions workflow + test catalog), Radiology
+  (requisitions workflow + imaging catalog), Pharmacy (dispensing + dispense), Inventory (items,
+  purchase orders, stock requisitions with fulfillment), Admissions/ADT (transfer/discharge +
+  discharge summaries), Orders (place + detail), and Reporting (dashboard + events). 249 frontend
+  tests pass; production build succeeds (commit `b89ad01` in the frontend repo). Not yet built:
+  a notifications page, vitals/encounters pages, and patient-portal.
 - Phase 3: Insurance/Claims, Accounting, Verification, Fixed Asset
 - Phase 4: Clinical/EMR long tail, Nursing, Emergency, OT, Maternity, CSSD
 - Phase 5: Employee, Payroll, Fraction and Incentive
