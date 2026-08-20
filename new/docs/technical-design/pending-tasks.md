@@ -122,9 +122,13 @@ scope, not merely lower priority.
 6. [x] **Observability stack** (new-features.md #10) — **structured logging only**, done: JSON
    logs via `nestjs-pino`, tagged with `tenantId`/`accountId`/`correlationId` automatically via a
    pino `mixin` reading `TenantContextService`, redaction backstop for known-sensitive keys. The
-   rest of this item — Prometheus metrics, OpenTelemetry tracing, Grafana/Loki dashboards and
-   alert rules — is **not done** and needs its own future item before load testing (item 9) or
-   touching auth/isolation in staging, since those still depend on metrics/tracing, not just logs.
+   **Prometheus metrics shipped 2026-08-20** (`@hospital/observability` MetricsService +
+   `GET /metrics`, unauthenticated-by-design for scrapers, aggregate counters only): default
+   process metrics + an HTTP histogram/counter labeled method/route/status/tenant, wired via an
+   in-process middleware; `deploy/prometheus.yml` + a `prometheus` service in
+   `docker-compose.prod.yml`; 4 tests. **Still not done:** OpenTelemetry tracing, Grafana/Loki
+   dashboards and alert rules — these are what item 9 (load testing) and staging auth/isolation
+   work should wait on.
 7. [x] **Connection pooling/tenant limits** (new-features.md #9) — **global pool max + statement
    timeout only**, done: `DB_POOL_MAX` (default 20), `DB_STATEMENT_TIMEOUT_MS` (default 30000ms) on
    the main `DataSource`. Per-tenant caps (needs PgBouncer) and tenant-tagged metrics/alerts (needs the
@@ -146,8 +150,10 @@ scope, not merely lower priority.
     (filterable/paginated list), `GET /reporting/dashboard/event-counts` and
     `GET /reporting/dashboard/revenue` (daily aggregations), all gated by a new `reporting.read`
     permission wired to `Super Admin`/`Hospital Admin`/`Auditor/Compliance` (the latter's first-ever
-    permission grant). **Not done:** export endpoints (CSV/PDF for government/operational reports)
-    — deferred, open product-scoping question on formats/audience.
+    permission grant). **CSV export shipped 2026-08-20** (RFC 4180 serializer +
+    `GET /reporting/events/export.csv` whole-set capped at 10000 rows + `GET /reporting/dashboard/revenue/export.csv`,
+    both reporting.read-gated with attachment headers; 5 tests). **Not done:** PDF export (deferred —
+    CSV is the government/operational-reporting format of choice for Excel/Tally workflows).
 
 ## Phase 5 — New platform capabilities
 

@@ -1372,3 +1372,31 @@ permissions + `TenantTestContext` spec):
 These three complete PRD Phases 2–6's CRUD-style module list except Document & Print (which maps to
 the reporting-export/object-storage infrastructure, not a CRUD module) and DICOM (the PACS-facing
 domain that still needs its own scoping conversation).
+
+## 36. Reporting CSV export and Prometheus metrics (2026-08-20)
+
+Two infra completions that close named gaps and unblock ops work:
+
+**Reporting CSV export** — `reporting-csv.util.ts` is a pure RFC 4180 serializer
+(`escapeCsvField` quotes fields containing commas/quotes/newlines and doubles embedded quotes;
+`toCsv` emits a header + CRLF-terminated rows). `GET /reporting/events/export.csv` exports the
+whole archive matching the filters (capped at 10000 rows — an export is a bulk operation, not a
+page), and `GET /reporting/dashboard/revenue/export.csv` exports the daily aggregates. Both use
+Nest `@Header` decorators for content-type/disposition (no `@Res`, keeping the controllers
+framework-agnostic). Note: `jsonb` payloads come back with sorted keys, so CSV tests must assert on
+escaped fragments, not exact JSON strings.
+
+**Prometheus metrics** — `@hospital/observability` now ships `MetricsService` (a prom-client
+`Registry` with `collectDefaultMetrics` plus `http_request_duration_seconds` and
+`http_requests_total` labeled method/route/status/tenant) and an `ObservabilityMetricsModule` with a
+`MetricsController` serving `GET /metrics`. The `/metrics` route is deliberately excluded from
+`AuthContextMiddleware` (scrapers can't carry JWTs; it exposes only aggregate counters — restrict at
+the proxy if a deployment needs it). The HTTP timing middleware is a factory function
+(`metricsMiddleware(metricsService)`) applied in `AppModule.configure` so it can inject the service
+— the middleware reads `req.authContext.hospitalId` (set by AuthContextMiddleware, which runs
+first) for the tenant label and `req.route.path` (set by Express) for the route label.
+`docker-compose.prod.yml` gained a `prometheus` service scraping `/api/metrics` via
+`deploy/prometheus.yml`.
+
+**Still missing for full observability (tracked):** OpenTelemetry tracing, Grafana/Loki dashboards
+and alert rules — load testing (Phase 3 item 9) should wait on those.
