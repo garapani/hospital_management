@@ -17,7 +17,29 @@ export interface PackageDefinition {
   name: string;
   description: string;
   modules: string[];
+  /**
+   * Catalog roles enabled for a tenant of this package at provisioning time (and added on a
+   * package change). 'Super Admin' is deliberately never included — it is a cross-tenant ops
+   * role for the platform tenant, not a customer role. Roles not named here can still be
+   * switched on manually via the platform console's per-tenant role toggles; the package only
+   * decides the sensible defaults.
+   */
+  defaultRoleNames: string[];
 }
+
+const BASIC_ROLES = [
+  'Hospital Admin',
+  'Receptionist / Front Desk',
+  'Doctor',
+  'Nurse',
+  'Lab Technician',
+  'Radiology Technician',
+  'Pharmacist',
+  'Inventory/Store Manager',
+  'Billing/Accounts Staff',
+  'HR/Payroll Admin',
+  'Auditor/Compliance',
+];
 
 const BASIC_MODULES = [
   'patients',
@@ -67,6 +89,7 @@ export const PACKAGE_CATALOG: PackageDefinition[] = [
     description:
       'Small hospitals: registration, visits, billing, lab, radiology, pharmacy, inventory, employees, payroll and core reporting.',
     modules: BASIC_MODULES,
+    defaultRoleNames: BASIC_ROLES,
   },
   {
     code: 'standard',
@@ -74,6 +97,7 @@ export const PACKAGE_CATALOG: PackageDefinition[] = [
     description:
       'Medium hospitals: Basic plus ward supply, nursing, OT, maternity, CSSD, vaccination, fixed assets, helpdesk, marketing, SSU and doctor fraction.',
     modules: STANDARD_MODULES,
+    defaultRoleNames: [...BASIC_ROLES, 'Helpdesk Agent'],
   },
   {
     code: 'enterprise',
@@ -81,6 +105,7 @@ export const PACKAGE_CATALOG: PackageDefinition[] = [
     description:
       'Large hospitals: Standard plus insurance & claims, accounting, and the full Document & Print scope.',
     modules: ENTERPRISE_MODULES,
+    defaultRoleNames: [...BASIC_ROLES, 'Helpdesk Agent', 'Patient'],
   },
 ];
 

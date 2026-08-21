@@ -229,6 +229,44 @@ describe('SaaS packages (integration)', () => {
     });
   });
 
+  describe('package-driven default roles', () => {
+    it('provisions the package role set and adds the new package roles on upgrade', async () => {
+      const hospitalId = 'test_pkg_roles';
+      await tenantsService.provisionTenant({
+        hospitalId,
+        hospitalName: 'Roles Hospital',
+        packageCode: 'basic',
+        createdBy: 'packages-spec',
+      });
+
+      const enabledNames = async () => {
+        const rows: { name: string }[] = await ctx.dataSource.query(
+          `SELECT r.name FROM tenant_roles tr JOIN roles r ON r.id = tr."roleId"
+           WHERE tr."tenantId" = $1 ORDER BY r.name`,
+          [hospitalId],
+        );
+        return rows.map((row) => row.name);
+      };
+
+      const basicRoles = await enabledNames();
+      expect(basicRoles).toContain('Hospital Admin');
+      expect(basicRoles).toContain('Lab Technician');
+      expect(basicRoles).toContain('Billing/Accounts Staff');
+      // Standard/Enterprise-only roles are not enabled by Basic, and the cross-tenant
+      // Super Admin role is never auto-enabled for a customer tenant.
+      expect(basicRoles).not.toContain('Helpdesk Agent');
+      expect(basicRoles).not.toContain('Patient');
+      expect(basicRoles).not.toContain('Super Admin');
+
+      await tenantsService.setTenantPackage(hospitalId, 'standard');
+      const standardRoles = await enabledNames();
+      expect(standardRoles).toContain('Helpdesk Agent');
+      expect(standardRoles).not.toContain('Patient');
+
+      await dropProvisionedTenant(hospitalId);
+    });
+  });
+
   describe('end-to-end login (JWT permission list follows the package)', () => {
     it('a Basic tenant never receives Enterprise permissions, and an upgrade grants them at next login', async () => {
       const hospitalId = 'test_pkg_login';

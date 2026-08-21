@@ -10,12 +10,19 @@ export class PersistingAuditEventPublisher implements AuditEventPublisher {
 
   constructor(private readonly tenantConnection: TenantConnectionService) {}
 
-  async publish(event: AuditEvent, manager?: EntityManager): Promise<void> {
+  /**
+   * Always writes on a dedicated connection inside a real tenant-schema transaction. The caller's
+   * EntityManager is deliberately NOT used: for saves of global (public-schema) entities like
+   * `tenants`/`roles`/`packages`, that transaction's search_path is `public`, so an unqualified
+   * `audit_records` insert used to land silently in a stale public copy of the table and, since
+   * the public-schema cleanup, throws "relation does not exist" — which POISONS the caller's
+   * transaction (a Postgres error aborts it even when the JS exception is caught). Best-effort by
+   * design: a failure here must never roll back the business write, and an audit row referencing a
+   * change that later rolls back (the orphan tradeoff) is the same accepted cost the reporting
+   * publisher documents.
+   */
+  async publish(event: AuditEvent, _manager?: EntityManager): Promise<void> {
     try {
-      if (manager) {
-        await manager.getRepository(AuditRecord).save(this.buildRecord(manager, event));
-        return;
-      }
       await this.tenantConnection.runInTenantSchema((m) =>
         m.getRepository(AuditRecord).save(this.buildRecord(m, event)),
       );

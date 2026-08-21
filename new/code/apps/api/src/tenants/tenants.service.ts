@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource, Not } from 'typeorm';
+import { DataSource, In, Not } from 'typeorm';
 import { TenantContextService } from '@hospital/tenant-context';
 import { Tenant } from './entities/tenant.entity.js';
 import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
@@ -8,6 +8,7 @@ import { DepartmentCatalog } from '../master-data/entities/department-catalog.en
 import { Department } from '../master-data/entities/department.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { PackagesService } from '../packages/packages.service.js';
+import { PACKAGE_CATALOG } from '../packages/package-catalog.js';
 import { PLATFORM_TENANT_ID } from './platform-tenant.js';
 
 const SAFE_HOSPITAL_ID = /^[a-z0-9_]+$/;
@@ -96,6 +97,11 @@ export class TenantsService {
         .createQueryBuilder('role')
         .where('role.id IN (:...ids)', { ids: input.roleIds })
         .getMany();
+    } else {
+      // Package-driven defaults: when the platform console doesn't hand-pick roles, enable the
+      // catalog roles the package names (never Super Admin — cross-tenant ops role). Individual
+      // roles stay switchable later via the per-tenant role toggles.
+      roles = await this.resolvePackageDefaultRoles(packageCode);
     }
 
     const tenant = await repository.save(
@@ -107,9 +113,20 @@ export class TenantsService {
         activatedAt: new Date(),
         suspendedAt: null,
         createdBy: this.resolveActor(input.createdBy),
-        roles,
       }),
     );
+
+    // Persist the enabled roles explicitly — the ManyToMany cascade on save() silently no-ops
+    // for these detached Role rows (tenant_roles stayed empty), so this raw insert is the same
+    // path setTenantRoles() already uses and cannot be skipped.
+    if (roles.length > 0) {
+      await this.dataSource.query(
+        `INSERT INTO tenant_roles ("tenantId", "roleId")
+         SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
+        [input.hospitalId, roles.map((role) => role.id)],
+      );
+    }
+    tenant.roles = roles;
 
     // Seed local departments
     if (input.departmentCatalogIds && input.departmentCatalogIds.length > 0) {
@@ -269,7 +286,10 @@ export class TenantsService {
    * Switches a tenant's SaaS package (upgrade or downgrade). Resolution-time gating means no
    * permission rows need touching: the new package takes effect at the next login/refresh, so
    * in-flight JWTs keep their old permission list until expiry (the same staleness window role
-   * changes already have). The tenant's data is never touched.
+   * changes already have). The tenant's data is never touched. The new package's default roles
+   * are added to the tenant's enabled set (never removed — switching a role off stays an
+   * explicit platform-console action, so downgrades don't silently strip access someone still
+   * holds).
    */
   async setTenantPackage(hospitalId: string, packageCode: string): Promise<Tenant> {
     if (hospitalId === PLATFORM_TENANT_ID) {
@@ -289,6 +309,7 @@ export class TenantsService {
     if (tenant.packageCode !== packageCode) {
       tenant.packageCode = packageCode;
       await repository.save(tenant);
+      await this.addPackageDefaultRoles(hospitalId, packageCode);
     }
     return tenant;
   }
@@ -344,5 +365,29 @@ export class TenantsService {
     tenant.status = 'active';
     tenant.activatedAt = new Date();
     return repository.save(tenant);
+  }
+
+  /** The catalog Role rows named by a package's default role set. */
+  private async resolvePackageDefaultRoles(packageCode: string): Promise<Role[]> {
+    const pkg = PACKAGE_CATALOG.find((p) => p.code === packageCode);
+    if (!pkg || pkg.defaultRoleNames.length === 0) {
+      return [];
+    }
+    return this.dataSource.getRepository(Role).find({
+      where: { name: In(pkg.defaultRoleNames) },
+    });
+  }
+
+  /** Enables a package's default roles for an existing tenant (add-only, idempotent). */
+  private async addPackageDefaultRoles(hospitalId: string, packageCode: string): Promise<void> {
+    const roles = await this.resolvePackageDefaultRoles(packageCode);
+    if (roles.length === 0) {
+      return;
+    }
+    await this.dataSource.query(
+      `INSERT INTO tenant_roles ("tenantId", "roleId")
+       SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
+      [hospitalId, roles.map((role) => role.id)],
+    );
   }
 }

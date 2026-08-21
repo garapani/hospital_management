@@ -324,4 +324,33 @@ describe('MVP end-to-end workflow (integration)', () => {
     // --- Reporting: events were archived -----------------------------------------------------------
     expectOk(await http.get('/reporting/dashboard/event-counts?from=2026-08-01&to=2026-12-31'));
   }, 120_000);
+
+  it('provisions a tenant end-to-end without the audit subscriber aborting the save', async () => {
+    // A real platform-scoped token: the audit subscriber fires on the `tenants` INSERT, and its
+    // write must never poison the save transaction (regression: it used to write into
+    // public.audit_records and, after the public-schema cleanup, threw and rolled back the whole
+    // provisioning, which then failed the tenant_roles FK).
+    const platformToken = await signTestToken({
+      sub: staffId,
+      hospitalId: ctx.tenantId,
+      permissions: [...BASIC_PERMISSIONS, 'system-admin.tenants.manage'],
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/tenants')
+      .set('Authorization', `Bearer ${platformToken}`)
+      .send({ hospitalId: 'test_mvp_tenant', hospitalName: 'MVP Tenant', packageCode: 'basic' });
+    expect(response.status).toBe(201);
+    expect(response.body.packageCode).toBe('basic');
+
+    const fetched = await request(app.getHttpServer())
+      .get('/tenants/test_mvp_tenant')
+      .set('Authorization', `Bearer ${platformToken}`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.body.hospitalName).toBe('MVP Tenant');
+
+    await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_test_mvp_tenant" CASCADE`);
+    await ctx.dataSource.query(`DROP ROLE IF EXISTS "tenant_test_mvp_tenant"`);
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, ['test_mvp_tenant']);
+  });
 });
