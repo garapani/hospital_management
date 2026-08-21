@@ -71,7 +71,8 @@ and dev server restarted on the new module — live-verified end to end (subscri
 was done; pick up from §2 (Pending tasks) next.
 
 ### 1.1 Platform subscription/billing — frontend "Billing" panel on tenant detail
-**Status:** backend complete + tested, **uncommitted**. Frontend panel **not started**.
+**Status: done (2026-08-21), committed `3011297`.** Left below as a record of the original
+task write-up.
 
 **Context:** the platform now has SaaS billing (option 2). Platform sells packages
 (basic ₹4,999/mo or ₹54,000/yr; standard ₹9,999/₹108,000; enterprise ₹19,999/₹216,000 —
@@ -121,8 +122,7 @@ cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="platform
 ```
 
 ### 1.2 Commit the uncommitted backend billing module
-**Status:** work is complete and green (service spec 8/8, permission-gating spec 2/2,
-migration 0051 applied to dev DB), but **nothing is committed**.
+**Status: done, committed `942c041`.**
 
 **Context:** `git status` in `new/code` shows modified `app.module.ts`, `data-source.ts`,
 `database/migrations/index.ts`, `packages/package-catalog.ts` (prices) and untracked
@@ -140,9 +140,7 @@ git commit -m "feat(platform-billing): subscriptions + invoices (subscribe/cance
 **Verify:** `git status` clean of those files; `git log --oneline -1` shows the commit.
 
 ### 1.3 Commit the uncommitted frontend global-catalog work
-**Status:** `frontend/` has modified `global-catalog/global-catalog-list.{ts,html,spec.ts}`
-and `master-data/master-data-api.service.ts` — the global catalog edit + deactivate/
-reactivate UI. Spec passes (5/5) — run `bash-193` result already confirmed. **Not committed.**
+**Status: done, committed `57cc2cc`** (frontend repo). Spec confirmed green (5/5) before commit.
 
 **What to do:** commit from inside the frontend repo:
 ```bash

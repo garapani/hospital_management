@@ -1731,6 +1731,16 @@ platform tenant exempt): suspended/archived → login 403 `{tenantInactive, reas
 shows the message via the serverError path), refresh → `invalidToken`. Rule: any tenant-status
 change must be enforced at the auth boundary, not just stored on the row.
 
+**Follow-up fix (2026-08-21, found by the §48 code-review pass):** `suspendTenant` and the older
+`reactivateTenant` (both pre-dating archive/restore, still routed at `/suspend`/`/reactivate`
+alongside the newer `/archive`/`/restore`) never accounted for the `archived` state added above —
+`suspendTenant` had no guard against an already-archived tenant (would silently flip
+`archived → suspended` while leaving `archivedAt` stale), and `reactivateTenant` doesn't clear
+`archivedAt` the way `restoreTenant` does. Both now reject an archived tenant with 400, directing
+the caller to `restore` first — keeping "archived" a single well-defined state machine reachable
+only via `archive`/`restore`, rather than two endpoint pairs racing to mutate overlapping status
+values. Regression test added to `tenants.controller.integration-spec.ts`.
+
 ## 48. Platform subscription/billing: the SaaS vendor's own billing for hospital tenants (2026-08-21)
 
 **Pattern: platform billing is a public-schema module, structurally identical to `packages` and
@@ -1753,10 +1763,9 @@ subscription or a cycle change) picks up a new list price.
 
 **Manual invoice issue, not scheduled billing.** There is no cron/scheduled job — a platform
 operator calls `POST .../invoices` to issue an invoice for the subscription's *current* period
-on demand. **One open invoice per period** is enforced defensively at the service layer (a
-`findOne` check before insert, not a DB constraint — unlike the charge-capture module's
-`invoice_items` unique partial index, §27) since invoice issuance is a human-triggered, low-volume
-action, not a concurrent hot path.
+on demand. **One open invoice per period** is enforced at the service layer (a `findOne` check
+before insert) inside the same per-tenant advisory-locked transaction as `subscribe`/`cancel` —
+see the post-review hardening note below.
 
 **Mark-paid advances the period — this *is* the renewal mechanism.**
 `markInvoicePaid` is transactional: flips the invoice to `paid` and, if the subscription is still
@@ -1776,3 +1785,24 @@ layout: a subscription card (package, cycle, price, current period, Subscribe/Up
 plus an invoices list (Issue Invoice, Mark Paid per open row) — `subscribe()` doubles as both
 "start a subscription" and "change the billing cycle" since the backend already treats them as the
 same operation (see above), so the frontend never needs a separate update-cycle endpoint.
+
+**Post-review hardening (2026-08-21, high-effort `/code-review` per this money-touching item's
+risk gate):** the first cut of `subscribe`/`cancel`/`issueInvoice` each did an independent
+find-then-write with no lock, so two concurrent calls for the same tenant could both pass a
+pre-write check and both act — a double-issued invoice hitting the unique index as an unhandled
+500 instead of the intended 409, or (worse) two simultaneously-`active` subscription rows for a
+never-before-subscribed tenant. Fixed by wrapping all three in one transaction with a per-tenant
+`pg_advisory_xact_lock(hashtext('platform_billing:<tenantId>'))` — same transaction-scoped,
+schema-free pattern as billing's charge-capture lock (§27) — so the three operations now fully
+serialize per tenant. `markInvoicePaid` got the equivalent invoice-scoped lock (keyed by
+`invoiceId`, since it doesn't contend with the tenant-scoped ops) to close a second race: two
+concurrent mark-paid calls on the same invoice could both observe `status: 'open'` and both
+process it. Also fixed a genuine logic bug independent of concurrency:  `markInvoicePaid`
+advanced the period using the *subscription's current* `billingCycle`, but `subscribe()` can
+change that cycle in place after an invoice is issued and before it's paid — so a monthly-priced,
+monthly-issued invoice paid after a cycle switch to annual would grant a 365-day period. Fixed by
+deriving the granted period length from the **paid invoice's own** `periodStart`/`periodEnd`
+instead of re-deriving it from `CYCLE_MS[subscription.billingCycle]` — the period granted now
+always matches what was actually invoiced and paid for, regardless of what the cycle became
+afterward. 3 new regression tests exercise all three fixes directly (concurrent issue → one 409,
+concurrent mark-paid → idempotent, cycle-switch-between-issue-and-pay → correct period length).
