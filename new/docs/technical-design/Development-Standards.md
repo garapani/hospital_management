@@ -1730,3 +1730,49 @@ the registry row (`TenantsService.getTenantStatus`, fail-open for schema-only te
 platform tenant exempt): suspended/archived → login 403 `{tenantInactive, reason}` (frontend
 shows the message via the serverError path), refresh → `invalidToken`. Rule: any tenant-status
 change must be enforced at the auth boundary, not just stored on the row.
+
+## 48. Platform subscription/billing: the SaaS vendor's own billing for hospital tenants (2026-08-21)
+
+**Pattern: platform billing is a public-schema module, structurally identical to `packages` and
+`tenants`, not a tenant-scoped domain module.** `subscriptions`/`subscription_invoices` (migration
+`0051`) live in `public`, gated by the same `system-admin.tenants.manage` permission as tenant
+management, and are never reachable from a hospital tenant's own JWT — `PlatformBillingController`
+lives at `platform/billing/*`, mirroring `platform-tenant.ts`'s reserved `__platform` exemption
+from package filtering. This is the platform selling packages to hospitals, not a hospital billing
+its own patients (that's the existing tenant-scoped `billing` module) — two unrelated domains that
+happen to share the word "billing."
+
+**Price source of truth lives in the package catalog, not the subscription row.**
+`PACKAGE_CATALOG` (`packages/package-catalog.ts`) gained `priceMonthly`/`priceAnnual` per edition
+(₹4,999/54,000 Basic, ₹9,999/108,000 Standard, ₹19,999/216,000 Enterprise — placeholder figures
+agreed with the product owner). `SubscriptionBillingService.subscribe()` resolves the price from
+the tenant's *current* `packageCode` at subscribe/renew time and **denormalizes it onto the
+subscription row** (`pricePerCycle`) — so a later catalog price change never retroactively
+reprices an existing subscription's already-quoted rate; only the next `subscribe()` call (a new
+subscription or a cycle change) picks up a new list price.
+
+**Manual invoice issue, not scheduled billing.** There is no cron/scheduled job — a platform
+operator calls `POST .../invoices` to issue an invoice for the subscription's *current* period
+on demand. **One open invoice per period** is enforced defensively at the service layer (a
+`findOne` check before insert, not a DB constraint — unlike the charge-capture module's
+`invoice_items` unique partial index, §27) since invoice issuance is a human-triggered, low-volume
+action, not a concurrent hot path.
+
+**Mark-paid advances the period — this *is* the renewal mechanism.**
+`markInvoicePaid` is transactional: flips the invoice to `paid` and, if the subscription is still
+`active`, moves `currentPeriodStart`/`currentPeriodEnd` forward by one cycle from the *paid
+invoice's* `periodEnd` (not from `now`) — so a late payment doesn't shrink the next period. There
+is no separate "renew" endpoint; issuing the next invoice against the new period is how billing
+continues. A canceled subscription's period does **not** advance on a stray mark-paid (matches
+`packages`/tenant-role patterns: cancellation prevents new business, existing invoices settle
+normally).
+
+**Frontend: a dedicated `SubscriptionsApiService`, not folded into `TenantsApiService`.** Same
+per-domain-service convention as `InvoicesApiService` (see this file's screen-building
+conventions) — billing has its own HTTP shape (subscription + invoice list, distinct action verbs)
+and is conceptually a different resource than tenant CRUD even though both live on the tenant
+detail screen. The Billing panel (`tenant-detail.html`) follows the existing Package/Roles panel
+layout: a subscription card (package, cycle, price, current period, Subscribe/Update-cycle/Cancel)
+plus an invoices list (Issue Invoice, Mark Paid per open row) — `subscribe()` doubles as both
+"start a subscription" and "change the billing cycle" since the backend already treats them as the
+same operation (see above), so the frontend never needs a separate update-cycle endpoint.

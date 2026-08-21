@@ -63,6 +63,13 @@ Demo tenant is seeded (patients, a ₹752 invoice, employees, payslips).
 
 ## 1. In-flight — finish first (highest priority)
 
+**Status (2026-08-21): all four items below are done and committed.** Backend billing module
+committed (`942c041`), frontend global-catalog work committed (`57cc2cc`), Billing panel built +
+committed (`3011297`), docs updated (`Development-Standards.md` §48, `pending-tasks.md` Phase 5)
+and dev server restarted on the new module — live-verified end to end (subscribe → issue invoice
+→ duplicate 409 → mark paid, period advanced → cancel). Left in place below as a record of what
+was done; pick up from §2 (Pending tasks) next.
+
 ### 1.1 Platform subscription/billing — frontend "Billing" panel on tenant detail
 **Status:** backend complete + tested, **uncommitted**. Frontend panel **not started**.
 

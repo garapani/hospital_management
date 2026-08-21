@@ -290,6 +290,19 @@ scope, not merely lower priority.
     transaction with `search_path=public` — which poisoned tenant creation once the legacy
     `public.audit_records` was cleaned up (now always written on a dedicated connection into the
     operator's schema). See `Development-Standards.md` §40.
+- [x] **Platform subscription/billing (option 2)** (2026-08-21) — the platform's own SaaS billing
+      for hospital tenants: `platform-billing` module (public schema, migration `0051`,
+      `system-admin.tenants.manage`-gated) manages per-tenant `subscriptions` (package, billing
+      cycle, denormalized price-per-cycle, current period) and `subscription_invoices` (manual
+      issue against the current period, one open invoice per period, mark-paid advances the
+      period — the renewal mechanism). Prices live on `PACKAGE_CATALOG` (`priceMonthly`/
+      `priceAnnual` per edition). Frontend: a Billing panel on the platform console's tenant
+      detail page (subscription card + invoices table, Subscribe/Update-cycle/Cancel/Issue
+      Invoice/Mark Paid), backed by a dedicated `SubscriptionsApiService`. Live-verified end to
+      end against the demo tenant (subscribe → issue ₹4,999 invoice → duplicate 409 → mark paid,
+      period advanced → cancel). See `Development-Standards.md` §48. **Not done:** a self-serve
+      upgrade/payment path (product chose platform-admin-only, manual invoicing — same ruling as
+      package changes), and seeding a demo subscription in `seed-demo-data.ts`.
 
 ## Phase 6 — Product module backlog
 
