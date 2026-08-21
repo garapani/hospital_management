@@ -214,6 +214,17 @@ scope, not merely lower priority.
     integration tests incl. end-to-end login JWT assertions. See `Development-Standards.md` §38.
     **Not done:** the platform console's package picker in the tenant-creation form (frontend repo)
     and a self-serve upgrade path (backend is ready; product chose platform-admin-only changes).
+    **Package-driven provisioning closed (2026-08-21):** packages now name `defaultRoleNames`
+    (Basic = 11 operational roles, Standard + Helpdesk Agent, Enterprise + Patient; Super Admin
+    never auto-enabled); provisioning auto-enables them (no role picker) and package changes
+    add-only reconcile the new package's roles. The provision form only asks hospital name/id +
+    package, and surfaces backend errors instead of failing silently (the reported "didn't create,
+    no error" was the modal swallowing the failure). Two real bugs found and fixed on the way: the
+    `Tenant.roles` ManyToMany cascade silently no-oped (tenant_roles stayed empty; now inserted
+    explicitly), and the audit subscriber wrote global-entity audit rows through the caller's
+    transaction with `search_path=public` — which poisoned tenant creation once the legacy
+    `public.audit_records` was cleaned up (now always written on a dedicated connection into the
+    operator's schema). See `Development-Standards.md` §40.
 
 ## Phase 6 — Product module backlog
 

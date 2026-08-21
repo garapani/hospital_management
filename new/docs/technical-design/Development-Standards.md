@@ -1524,3 +1524,36 @@ or CHECK-constrained actor column exists (orders.orderedBy, lab enterResult ente
 markScanned/verify — `CHK_radiology_requisitions_scanned_complete`/`_verified_complete` — and
 payroll processedBy); `resolveActor` still prefers the authenticated principal when a tenant
 context with an accountId is active.
+
+## 40. Package-driven provisioning, audit isolation, silent-failure fix (2026-08-21)
+
+Three fixes from the platform-console provisioning flow:
+
+**Package-driven roles, not pickers.** Provisioning a tenant no longer asks for roles or
+departments. Each package names `defaultRoleNames` (`package-catalog.ts`): Basic enables the 11
+operational catalog roles, Standard adds Helpdesk Agent, Enterprise adds Patient — Super Admin is
+never auto-enabled (it is a cross-tenant ops role). `TenantsService.provisionTenant` enables them
+for the tenant, and `setTenantPackage` add-only reconciles the new package's roles on
+upgrade/downgrade (switching a role off stays an explicit platform-console action). **Gotcha
+fixed along the way:** the `Tenant.roles` `@ManyToMany` cascade on `repository.save()` silently
+no-ops for detached Role rows — `tenant_roles` stayed empty even though the response echoed the
+roles. The join rows are now inserted explicitly (raw `INSERT ... ON CONFLICT DO NOTHING`, the
+same path `setTenantRoles` uses). This was live-verified: a Basic tenant ends up with exactly the
+11 default roles, none of them Super Admin.
+
+**Audit writes must never use the caller's EntityManager.** The audit subscriber always passed
+`event.manager` to the publisher, so an audit record for a save of a GLOBAL (public-schema)
+entity — `tenants`, `roles`, `packages` — was written inside that transaction with
+`search_path = public`. Before the public-schema cleanup it landed silently in the stale
+`public.audit_records`; after the cleanup the insert threw "relation does not exist", and a
+Postgres error aborts the enclosing transaction even when the JS exception is caught — tenant
+provisioning 500'd and the tenant_roles insert then failed its FK. `PersistingAuditEventPublisher`
+now always writes on its own connection via `runInTenantSchema` (the passed manager is ignored),
+so a tenant-creation audit row lands in the operator's schema and a failure can never roll back
+the business write (the orphan-on-rollback tradeoff the reporting publisher already documents).
+The end-to-end spec boots the real AppModule and provisions a tenant to pin this.
+
+**Platform console errors are visible now.** The tenant-list provision handler swallowed errors
+("In a real app we might show a toast here") — that is why a failed creation showed nothing. The
+modal now renders the backend message via `p-message`, and the form only asks for hospital
+name/id + package, with a note that roles follow the package.
