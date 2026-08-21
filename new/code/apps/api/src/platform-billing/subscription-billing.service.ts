@@ -8,6 +8,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { Subscription, BillingCycle } from './entities/subscription.entity.js';
 import { SubscriptionInvoice } from './entities/subscription-invoice.entity.js';
 import { PACKAGE_CATALOG } from '../packages/package-catalog.js';
+import { PackagesService } from '../packages/packages.service.js';
 import { PLATFORM_TENANT_ID } from '../tenants/platform-tenant.js';
 
 const CYCLE_MS: Record<BillingCycle, number> = {
@@ -17,7 +18,10 @@ const CYCLE_MS: Record<BillingCycle, number> = {
 
 @Injectable()
 export class SubscriptionBillingService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly packagesService: PackagesService,
+  ) {}
 
   private get repository() {
     return this.dataSource.getRepository(Subscription);
@@ -35,20 +39,20 @@ export class SubscriptionBillingService {
     return billingCycle === 'annual' ? pkg.priceAnnual : pkg.priceMonthly;
   }
 
+  /** Resolves the tenant's current package code via the shared `PackagesService` lookup, rather
+   *  than a second hand-rolled query against `tenants` — one source of truth for "how do you read
+   *  a tenant's package code" so the two never drift. */
   private async tenantRow(hospitalId: string): Promise<{ packageCode: string }> {
     if (hospitalId === PLATFORM_TENANT_ID) {
       throw new BadRequestException(
         `${PLATFORM_TENANT_ID} is the platform tenant and cannot be billed`,
       );
     }
-    const rows: { packageCode: string }[] = await this.dataSource.query(
-      `SELECT "packageCode" FROM tenants WHERE "hospitalId" = $1`,
-      [hospitalId],
-    );
-    if (rows.length === 0) {
+    const packageCode = await this.packagesService.getTenantPackageCode(hospitalId);
+    if (packageCode === null) {
       throw new NotFoundException(`Tenant ${hospitalId} not found`);
     }
-    return rows[0];
+    return { packageCode };
   }
 
   async getSubscription(tenantId: string): Promise<Subscription | null> {
@@ -90,26 +94,21 @@ export class SubscriptionBillingService {
         where: { tenantId, status: 'active' },
         order: { createdAt: 'DESC' },
       });
-      if (existing) {
-        // Renewal/plan change: keep the current period, update the terms.
-        existing.packageCode = packageCode;
-        existing.billingCycle = billingCycle;
-        existing.pricePerCycle = pricePerCycle;
-        existing.status = 'active';
-        return manager.getRepository(Subscription).save(existing);
-      }
-
-      return manager.getRepository(Subscription).save(
+      // Renewal/plan change reuses the existing row and keeps its current period; a first-time
+      // subscribe creates a fresh one — either way the terms (package/cycle/price/status) are the
+      // same shape, set once here rather than twice.
+      const target =
+        existing ??
         manager.getRepository(Subscription).create({
           tenantId,
-          packageCode,
-          billingCycle,
-          pricePerCycle,
-          status: 'active',
           currentPeriodStart: new Date(now),
           currentPeriodEnd: new Date(now + CYCLE_MS[billingCycle]),
-        }),
-      );
+        });
+      target.packageCode = packageCode;
+      target.billingCycle = billingCycle;
+      target.pricePerCycle = pricePerCycle;
+      target.status = 'active';
+      return manager.getRepository(Subscription).save(target);
     });
   }
 

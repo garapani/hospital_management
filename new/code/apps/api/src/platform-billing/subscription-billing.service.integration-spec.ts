@@ -1,5 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { SubscriptionBillingService } from './subscription-billing.service.js';
+import { PackagesService } from '../packages/packages.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -29,7 +30,7 @@ describe('SubscriptionBillingService (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'billing_svc' });
-    service = new SubscriptionBillingService(ctx.dataSource);
+    service = new SubscriptionBillingService(ctx.dataSource, new PackagesService(ctx.dataSource));
     await cleanup();
   });
 

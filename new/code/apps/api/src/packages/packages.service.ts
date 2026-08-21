@@ -49,15 +49,22 @@ export class PackagesService {
    * the platform tenant (Super Admin is cross-tenant ops, not a hospital), and fails open on an
    * unknown package code — codes are validated at provision/change time, so an unknown row means
    * a legacy/edge case where hiding access would be worse than showing it.
+   *
+   * `knownPackageCode` lets a caller that already fetched the tenant row (e.g. `AuthService`,
+   * which also needs the row for its tenant-status gate) pass the package code straight through
+   * instead of this method re-querying `tenants` for it — omit it (the default) to have this
+   * method look it up itself, same as before.
    */
   async filterPermissions(
     hospitalId: string | undefined,
     permissions: string[],
+    knownPackageCode?: string | null,
   ): Promise<string[]> {
     if (!hospitalId || hospitalId === PLATFORM_TENANT_ID) {
       return permissions;
     }
-    const packageCode = await this.getTenantPackageCode(hospitalId);
+    const packageCode =
+      knownPackageCode === undefined ? await this.getTenantPackageCode(hospitalId) : knownPackageCode;
     const pkg = packageCode ? await this.getPackage(packageCode) : null;
     if (!pkg) {
       return permissions;

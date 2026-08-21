@@ -389,17 +389,25 @@ export class TenantsService {
     return this.dataSource.getRepository(Tenant).findOne({ where: { hospitalId } });
   }
 
-  async suspendTenant(hospitalId: string): Promise<Tenant> {
+  /** Loads a tenant for a state-changing lifecycle operation (suspend/reactivate/archive/
+   *  restore/purge), rejecting the reserved platform tenant and a missing row with one shared
+   *  guard — these 5 call sites previously repeated this check independently. `verb` names the
+   *  attempted action in the platform-tenant rejection message (e.g. 'suspended', 'purged'). */
+  private async loadMutableTenant(hospitalId: string, verb: string): Promise<Tenant> {
     if (hospitalId === PLATFORM_TENANT_ID) {
       throw new BadRequestException(
-        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be suspended`,
+        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be ${verb}`,
       );
     }
-    const repository = this.dataSource.getRepository(Tenant);
-    const tenant = await repository.findOne({ where: { hospitalId } });
+    const tenant = await this.dataSource.getRepository(Tenant).findOne({ where: { hospitalId } });
     if (!tenant) {
       throw new NotFoundException(`Tenant ${hospitalId} not found`);
     }
+    return tenant;
+  }
+
+  async suspendTenant(hospitalId: string): Promise<Tenant> {
+    const tenant = await this.loadMutableTenant(hospitalId, 'suspended');
     // Archived is a distinct state machine (see archiveTenant/restoreTenant) — suspending an
     // archived tenant in place would flip status to 'suspended' while leaving archivedAt stale,
     // since only restoreTenant knows to clear it. Restore first, then suspend if still needed.
@@ -413,20 +421,11 @@ export class TenantsService {
     }
     tenant.status = 'suspended';
     tenant.suspendedAt = new Date();
-    return repository.save(tenant);
+    return this.dataSource.getRepository(Tenant).save(tenant);
   }
 
   async reactivateTenant(hospitalId: string): Promise<Tenant> {
-    if (hospitalId === PLATFORM_TENANT_ID) {
-      throw new BadRequestException(
-        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be reactivated`,
-      );
-    }
-    const repository = this.dataSource.getRepository(Tenant);
-    const tenant = await repository.findOne({ where: { hospitalId } });
-    if (!tenant) {
-      throw new NotFoundException(`Tenant ${hospitalId} not found`);
-    }
+    const tenant = await this.loadMutableTenant(hospitalId, 'reactivated');
     // Archived tenants go through restoreTenant instead, which clears archivedAt correctly —
     // reactivateTenant only sets activatedAt, so allowing it here would leave archivedAt stale
     // on an otherwise-active tenant.
@@ -440,7 +439,7 @@ export class TenantsService {
     }
     tenant.status = 'active';
     tenant.activatedAt = new Date();
-    return repository.save(tenant);
+    return this.dataSource.getRepository(Tenant).save(tenant);
   }
 
   /** The catalog Role rows named by a package's default role set (cross-tenant roles excluded). */
@@ -478,17 +477,6 @@ export class TenantsService {
     );
   }
 
-  /** The tenant's registry status, or null when no registry row exists (test tenants). Used by
-   *  auth to block login for suspended/archived hospitals. */
-  async getTenantStatus(
-    hospitalId: string,
-  ): Promise<'active' | 'suspended' | 'archived' | null> {
-    const row: { status: string }[] = await this.dataSource.query(
-      `SELECT status FROM tenants WHERE "hospitalId" = $1`,
-      [hospitalId],
-    );
-    return (row[0]?.status as 'active' | 'suspended' | 'archived') ?? null;
-  }
 
   /**
    * Soft-delete: marks the tenant archived. The schema and all data are kept, login is blocked
@@ -496,43 +484,25 @@ export class TenantsService {
    * path for churned hospitals; hard purge is a separate, explicit, destructive step.
    */
   async archiveTenant(hospitalId: string): Promise<Tenant> {
-    if (hospitalId === PLATFORM_TENANT_ID) {
-      throw new BadRequestException(
-        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be archived`,
-      );
-    }
-    const repository = this.dataSource.getRepository(Tenant);
-    const tenant = await repository.findOne({ where: { hospitalId } });
-    if (!tenant) {
-      throw new NotFoundException(`Tenant ${hospitalId} not found`);
-    }
+    const tenant = await this.loadMutableTenant(hospitalId, 'archived');
     if (tenant.status === 'archived') {
       return tenant;
     }
     tenant.status = 'archived';
     tenant.archivedAt = new Date();
-    return repository.save(tenant);
+    return this.dataSource.getRepository(Tenant).save(tenant);
   }
 
   /** Reverses an archive: back to active, cleared archive timestamp. */
   async restoreTenant(hospitalId: string): Promise<Tenant> {
-    if (hospitalId === PLATFORM_TENANT_ID) {
-      throw new BadRequestException(
-        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be restored`,
-      );
-    }
-    const repository = this.dataSource.getRepository(Tenant);
-    const tenant = await repository.findOne({ where: { hospitalId } });
-    if (!tenant) {
-      throw new NotFoundException(`Tenant ${hospitalId} not found`);
-    }
+    const tenant = await this.loadMutableTenant(hospitalId, 'restored');
     if (tenant.status === 'active') {
       return tenant;
     }
     tenant.status = 'active';
     tenant.archivedAt = null;
     tenant.suspendedAt = null;
-    return repository.save(tenant);
+    return this.dataSource.getRepository(Tenant).save(tenant);
   }
 
   /**
@@ -542,28 +512,27 @@ export class TenantsService {
    * the drop, so the purge itself stays recorded.
    */
   async purgeTenant(hospitalId: string, confirmHospitalId: string): Promise<{ purged: string }> {
-    if (hospitalId === PLATFORM_TENANT_ID) {
-      throw new BadRequestException(
-        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be purged`,
-      );
-    }
     if (confirmHospitalId !== hospitalId) {
       throw new BadRequestException('Purge requires confirming the hospitalId exactly');
     }
-    const repository = this.dataSource.getRepository(Tenant);
-    const tenant = await repository.findOne({ where: { hospitalId } });
-    if (!tenant) {
-      throw new NotFoundException(`Tenant ${hospitalId} not found`);
-    }
+    const tenant = await this.loadMutableTenant(hospitalId, 'purged');
     if (tenant.status !== 'archived') {
       throw new BadRequestException(
         `Tenant ${hospitalId} must be archived before it can be purged`,
       );
     }
+    // Defense in depth: SAFE_HOSPITAL_ID is enforced at provisionTenant (the only insert path
+    // for this row), but the DROP SCHEMA/ROLE statements below interpolate hospitalId directly —
+    // re-checking it immediately before that raw DDL means a future insert path that bypassed
+    // the original validation (a seed script, a manual fix) still can't reach this as an
+    // injection surface.
+    if (!SAFE_HOSPITAL_ID.test(hospitalId)) {
+      throw new BadRequestException(`Tenant ${hospitalId} has an invalid hospitalId; refusing to purge`);
+    }
 
     // Loaded-entity remove() (not repository.delete()) so the audit subscriber records the
     // destructive purge as a 'delete' event in the platform trail. tenant_roles cascades.
-    await repository.remove(tenant);
+    await this.dataSource.getRepository(Tenant).remove(tenant);
     await this.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${hospitalId}" CASCADE`);
     await this.dataSource.query(`DROP ROLE IF EXISTS "tenant_${hospitalId}"`);
     return { purged: hospitalId };

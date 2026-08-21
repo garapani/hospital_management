@@ -77,13 +77,13 @@ export class AuthService {
     // A suspended or archived hospital cannot log in at all — credentials are verified first so
     // the tenant state is not leaked to a wrong-password attempt. Registry-gated (test tenants
     // without a registry row fail open, like the role-membership checks). The platform tenant is
-    // always active.
+    // always active (getTenant special-cases it, returning null). One fetch serves both this gate
+    // and the package lookup below — filterPermissions takes the already-fetched packageCode
+    // instead of re-querying `tenants` for it.
     const hospitalId = this.tenantContext.getTenantId();
-    if (hospitalId) {
-      const tenantStatus = await this.tenantsService.getTenantStatus(hospitalId);
-      if (tenantStatus === 'suspended' || tenantStatus === 'archived') {
-        return { tenantInactive: true, reason: tenantStatus };
-      }
+    const tenant = hospitalId ? await this.tenantsService.getTenant(hospitalId) : null;
+    if (hospitalId && (tenant?.status === 'suspended' || tenant?.status === 'archived')) {
+      return { tenantInactive: true, reason: tenant.status };
     }
 
     // A freshly created account with an initial/generated password has no full access until it
@@ -98,6 +98,7 @@ export class AuthService {
     const permissions = await this.packagesService.filterPermissions(
       hospitalId,
       await this.accountsService.getPermissionNamesForRoles(roleIds),
+      tenant?.packageCode ?? null,
     );
     const payload = this.buildAccessPayload(account.id, roleNames, permissions, hospitalId);
 
@@ -167,15 +168,17 @@ export class AuthService {
     }
 
     // Same tenant-status gate as login: a suspended/archived hospital cannot refresh either,
-    // otherwise an existing session would keep working after suspension.
-    const tenantStatus = await this.tenantsService.getTenantStatus(payload.hospitalId);
-    if (tenantStatus === 'suspended' || tenantStatus === 'archived') {
+    // otherwise an existing session would keep working after suspension. One fetch serves both
+    // this gate and the package lookup below, same as login.
+    const tenant = await this.tenantsService.getTenant(payload.hospitalId);
+    if (tenant?.status === 'suspended' || tenant?.status === 'archived') {
       return { invalidToken: true };
     }
 
     const permissions = await this.packagesService.filterPermissions(
       payload.hospitalId,
       await this.accountsService.getPermissionNamesForRoles(found.roleIds),
+      tenant?.packageCode ?? null,
     );
     const accessPayload = this.buildAccessPayload(
       found.account.id,
