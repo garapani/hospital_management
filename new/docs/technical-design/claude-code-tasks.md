@@ -266,6 +266,53 @@ existing modules it touches (auth/PII, audit trail, lab reporting).
 **Verify:** document exists; no code changes.
 **Test:** n/a.
 
+### 2.12 Per-tenant branding (white-label look)
+**Context:** the product is sold to hospitals as a SaaS, but every tenant console looks
+identical: "Vaidya" (the product brand — teal `#006D77` on `#F0FDFD`, see PRD §1 and
+`new/docs/branding/vaidya-*.png`) is **hardcoded** in the frontend:
+`apps/staff-console/src/app/shell/shell-chrome.html` (brand mark), `login/login.html`
+(3 spots), `change-password/change-password.html`, and `app.config.ts`'s
+`VaidyaTealPreset`. Tenant identity (`tenant.hospitalName`) already exists in the tenants
+registry and is shown in the platform console's admin-dashboard, but the tenant console
+never displays it. Per-tenant branding (hospital display name, logo, primary color) makes
+each customer's console feel like their own product.
+
+**Design decisions (agree with the human before building):**
+- Branding is **platform-admin-configured** (Super Admin sets it per tenant — consistent
+  with the "platform-admin-only changes" ruling on packages; hospital admins don't
+  self-edit it) and **tenant-scoped**: hospital A must never read or modify hospital B's
+  branding.
+- Store it platform-side (public schema, like packages/subscriptions): a `tenant_branding`
+  table (tenantId PK, displayName, primaryColor, logoObjectKey) + migration `0052`; or
+  columns on `tenants`. Logos go to MinIO via `@hospital/object-storage` under
+  `branding/<tenantId>/<filename>` (mirror the Lab/Radiology PDF-mirror pattern).
+- Default/fallback = current Vaidya brand when a tenant has no branding configured.
+- Login page + tenant console shell both render it (display name, logo, primary color
+  applied as CSS variables / dynamic PrimeNG preset); platform console keeps Vaidya.
+
+**What to do:**
+- Backend: `TenantBranding` entity + migration `0052`; platform-admin endpoints
+  `GET/PUT /platform/tenants/:hospitalId/branding` (+ logo upload) gated by
+  `system-admin.tenants.manage`; tenant-facing read (e.g. `GET /tenants/me/branding`
+  resolved from the JWT tenant, or bundle branding into the login/refresh response);
+  integration spec covering permission gating, cross-tenant isolation, and fallback.
+- Frontend: a branding service + store in the tenant console; `shell-chrome`, `login`,
+  `change-password` consume it; swap the hardcoded brand mark for displayName/logo and
+  drive the primary color through the existing theme setup in `app.config.ts`
+  (`--p-*` CSS variable overrides so it works with PrimeNG); platform console unchanged.
+- Docs: `Development-Standards.md` §49; PRD §9.4 mention; check off in `pending-tasks.md`.
+
+**Verify:** live — two tenants with different branding show different names/logos/colors
+on login + console; unconfigured tenant falls back to Vaidya; demoadmin (non-Super-Admin)
+gets 403 on the platform branding endpoints; hospital A cannot fetch B's branding; logo
+upload persists in MinIO.
+**Test:**
+```bash
+cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="branding"
+cd frontend && CI=true pnpm exec nx run staff-console:test -- --testPathPatterns="shell-chrome|login"
+cd frontend && CI=true pnpm exec nx run staff-console:build
+```
+
 ---
 
 ## 3. Cleanups
