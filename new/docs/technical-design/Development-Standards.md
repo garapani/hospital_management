@@ -1806,3 +1806,36 @@ instead of re-deriving it from `CYCLE_MS[subscription.billingCycle]` — the per
 always matches what was actually invoiced and paid for, regardless of what the cycle became
 afterward. 3 new regression tests exercise all three fixes directly (concurrent issue → one 409,
 concurrent mark-paid → idempotent, cycle-switch-between-issue-and-pay → correct period length).
+
+## 49. Reporting PDF export, and the shared `@hospital/pdf` document-builder pattern (2026-08-22)
+
+`GET /reporting/events/export.pdf` closes the last gap in item 10's reporting APIs (CSV shipped
+2026-08-20; PDF was deferred as lower-priority, not unwanted). Same filter shape and 10000-row cap
+as `export.csv`, `reporting.read`-gated, `application/pdf` via `StreamableFile` +
+`Content-Disposition: attachment`.
+
+**Reused, not reinvented: the Lab/Radiology PDF pattern.** `reporting-events-pdf-document.ts`
+follows `lab-report-document.ts`/`radiology-report-document.ts` exactly — a pure function
+(`(data) => PdfDocumentDefinition`, zero pdfmake dependency, unit-tested without rendering) that
+`ReportingQueryService` feeds into the shared `PdfService.render()`. Same brand/style vocabulary
+(VAIDYA teal `#006D77` header, `tableHeader` fill `#E8F5F5`) so every PDF this codebase produces
+reads as one system, not three independently-styled exports. `PdfModule` wired into
+`ReportingModule` the same way `lab.module.ts`/`radiology.module.ts` already do it.
+
+**One deliberate difference from Lab/Radiology: landscape orientation + small fonts (7–8pt).**
+Lab/Radiology reports are one record with a handful of table rows — portrait fits comfortably.
+Reporting's export is a wide, many-row table (occurredAt/eventType/entityId/correlationId/payload,
+up to 10000 rows) — landscape plus compact fonts keeps every column legible instead of forcing an
+unreadable wrap. Establishes the convention for any future wide-table PDF export in this codebase:
+match Lab/Radiology's brand/style tokens, but let orientation and font size follow the data shape.
+
+**Test rigor stayed at the CSV sibling's level, not Lab/Radiology's.** The CSV export
+(`reporting-csv.integration-spec.ts`) is tested at the service level only (`exportEventsCsv`
+called directly against a real tenant schema) — no HTTP-level Nest app boot, unlike
+`lab-report-pdf.integration-spec.ts`'s full `supertest`-driven flow. The new
+`reporting-pdf.integration-spec.ts` matches that established lighter-weight pattern rather than
+introducing a heavier one for a single sibling endpoint: magic-byte assertion (`%PDF-`), filter
+application, and tenant isolation, all via direct service calls. `reporting-events-pdf-document.spec.ts`
+covers the pure builder's structure (brand/title, header + per-row table body, the
+filters-summary line appearing only when a filter is active) the same way
+`lab-report-document.spec.ts` covers Lab's.

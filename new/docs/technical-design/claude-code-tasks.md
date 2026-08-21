@@ -207,6 +207,8 @@ the human for the name).
 **Test:** n/a (doc-only).
 
 ### 2.5 Reporting PDF export (Phase 4 item 10)
+**Status: done (2026-08-22).** See `Development-Standards.md` §49.
+
 **Context:** CSV export shipped (RFC 4180, `reporting.read`-gated); PDF explicitly deferred.
 The `@hospital/pdf` lib exists (pdfmake) — Lab/Radiology already render verified-report PDFs.
 **What to do:** add `GET /reporting/events/export.pdf` (same filter shape as CSV) reusing

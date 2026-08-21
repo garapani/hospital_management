@@ -233,8 +233,12 @@ scope, not merely lower priority.
     permission wired to `Super Admin`/`Hospital Admin`/`Auditor/Compliance` (the latter's first-ever
     permission grant). **CSV export shipped 2026-08-20** (RFC 4180 serializer +
     `GET /reporting/events/export.csv` whole-set capped at 10000 rows + `GET /reporting/dashboard/revenue/export.csv`,
-    both reporting.read-gated with attachment headers; 5 tests). **Not done:** PDF export (deferred —
-    CSV is the government/operational-reporting format of choice for Excel/Tally workflows).
+    both reporting.read-gated with attachment headers; 5 tests). **PDF export shipped
+    2026-08-22:** `GET /reporting/events/export.pdf` (same filter shape as the CSV sibling,
+    10000-row cap, `reporting.read`-gated, `application/pdf` attachment) reuses the shared
+    `@hospital/pdf` lib — a landscape events table via a pure, unit-tested document builder
+    (`reporting-events-pdf-document.ts`), matching the Lab/Radiology report builders' brand/style
+    vocabulary. 6 new tests (3 pure builder + 3 export). See `Development-Standards.md` §49.
 
 ## Phase 5 — New platform capabilities
 
