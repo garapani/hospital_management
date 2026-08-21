@@ -1,3 +1,4 @@
+import { PdfService } from '@hospital/pdf';
 import { toCsv, escapeCsvField } from './reporting-csv.util.js';
 import { ReportingQueryService } from './reporting-query.service.js';
 import { ReportingEvent } from './entities/reporting-event.entity.js';
@@ -13,7 +14,7 @@ describe('reporting CSV export', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'reporting_csv' });
-    reportingQueryService = new ReportingQueryService(ctx.tenantConnection);
+    reportingQueryService = new ReportingQueryService(ctx.tenantConnection, new PdfService());
   });
 
   afterAll(() => teardownTenantTestContext(ctx));

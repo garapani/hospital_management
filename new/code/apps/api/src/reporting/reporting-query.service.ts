@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { PdfService } from '@hospital/pdf';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { ReportingEvent } from './entities/reporting-event.entity.js';
 import { toCsv } from './reporting-csv.util.js';
+import { buildReportingEventsPdfDocument } from './reporting-events-pdf-document.js';
 
 export interface ListEventsParams {
   eventType?: string;
@@ -31,7 +33,10 @@ const REVENUE_EVENT_TYPES = ['PaymentRecorded', 'DepositReceived'];
 
 @Injectable()
 export class ReportingQueryService {
-  constructor(private readonly tenantConnection: TenantConnectionService) {}
+  constructor(
+    private readonly tenantConnection: TenantConnectionService,
+    private readonly pdfService: PdfService,
+  ) {}
 
   async listEvents(params: ListEventsParams): Promise<{ items: ReportingEvent[]; total: number }> {
     const page = params.page ?? 1;
@@ -130,5 +135,26 @@ export class ReportingQueryService {
   async exportRevenueCsv(params: DateRangeParams): Promise<string> {
     const rows = await this.getRevenue(params);
     return toCsv(rows.map((r) => ({ date: r.date, totalAmount: r.totalAmount })), ['date', 'totalAmount']);
+  }
+
+  /** Whole-set PDF export (same 10000-row cap as the CSV sibling) of the events archive matching
+   *  the filters, via the shared `@hospital/pdf` lib. */
+  async exportEventsPdf(params: ListEventsParams): Promise<Buffer> {
+    const { items } = await this.listEvents({ ...params, page: 1, limit: 10000 });
+    return this.pdfService.render(
+      buildReportingEventsPdfDocument({
+        rows: items.map((e) => ({
+          id: e.id,
+          occurredAt: e.occurredAt.toISOString(),
+          eventType: e.eventType,
+          entityId: e.entityId,
+          correlationId: e.correlationId ?? '',
+          payload: JSON.stringify(e.payload),
+        })),
+        eventType: params.eventType,
+        from: params.from,
+        to: params.to,
+      }),
+    );
   }
 }

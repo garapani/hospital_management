@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { ReportingQueryService } from './reporting-query.service.js';
 
@@ -57,5 +57,18 @@ export class ReportingController {
   @RequirePermission(REQUIRED_PERMISSION)
   async exportRevenue(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reportingQueryService.exportRevenueCsv({ from, to });
+  }
+
+  @Get('events/export.pdf')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Content-Disposition', 'attachment; filename="reporting-events.pdf"')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async exportEventsPdf(
+    @Query('eventType') eventType?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): Promise<StreamableFile> {
+    const buffer = await this.reportingQueryService.exportEventsPdf({ eventType, from, to });
+    return new StreamableFile(buffer);
   }
 }
