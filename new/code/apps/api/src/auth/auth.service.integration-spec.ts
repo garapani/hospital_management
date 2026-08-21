@@ -1,6 +1,8 @@
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service.js';
 import { PackagesService } from '../packages/packages.service.js';
+import { TenantsService } from '../tenants/tenants.service.js';
+import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -14,11 +16,20 @@ describe('AuthService (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'auth_service', seedRbac: true });
+    const packagesService = new PackagesService(ctx.dataSource);
     authService = new AuthService(
       ctx.accountsService,
       jwtService,
       ctx.tenantContext,
-      new PackagesService(ctx.dataSource),
+      packagesService,
+      new TenantsService(
+        ctx.dataSource,
+        new TenantProvisioningService(ctx.dataSource),
+        ctx.tenantConnection,
+        ctx.tenantContext,
+        packagesService,
+        ctx.accountsService,
+      ),
     );
 
     await ctx.inTenant(() =>
@@ -262,5 +273,66 @@ describe('AuthService (integration)', () => {
 
     const refreshResult = await authService.refresh({ refreshToken: loginResult.refreshToken });
     expect(refreshResult).toEqual({ invalidToken: true });
+  });
+
+  describe('tenant-status login gate (suspended / archived hospitals)', () => {
+    beforeAll(async () => {
+      // Fresh account (dr.carol is locked by an earlier test) plus a registry row so the status
+      // gate actually fires (it is fail-open without one).
+      await ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: 'status.user',
+          email: 'status@example.com',
+          displayName: 'Status User',
+          password: 'status-password-123',
+          roleName: 'Nurse',
+        }),
+      );
+      await ctx.dataSource.query(
+        `INSERT INTO tenants ("hospitalId", "hospitalName", "status", "packageCode", "createdBy", "activatedAt")
+         VALUES ($1, 'Status Gate Hospital', 'suspended', 'basic', 'auth-spec', NOW())`,
+        [ctx.tenantId],
+      );
+    });
+
+    afterAll(async () => {
+      await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, [ctx.tenantId]);
+    });
+
+    it('blocks login for a suspended tenant', async () => {
+      const result = await ctx.inTenant(() =>
+        authService.login({ username: 'status.user', password: 'status-password-123' }),
+      );
+      expect(result).toEqual({ tenantInactive: true, reason: 'suspended' });
+    });
+
+    it('blocks login for an archived tenant', async () => {
+      await ctx.dataSource.query(`UPDATE tenants SET status = 'archived' WHERE "hospitalId" = $1`, [
+        ctx.tenantId,
+      ]);
+      const result = await ctx.inTenant(() =>
+        authService.login({ username: 'status.user', password: 'status-password-123' }),
+      );
+      expect(result).toEqual({ tenantInactive: true, reason: 'archived' });
+    });
+
+    it('allows login once the tenant is active again, and refresh is also blocked while inactive', async () => {
+      await ctx.dataSource.query(`UPDATE tenants SET status = 'active' WHERE "hospitalId" = $1`, [
+        ctx.tenantId,
+      ]);
+      const loginResult = await ctx.inTenant(() =>
+        authService.login({ username: 'status.user', password: 'status-password-123' }),
+      );
+      if (!('refreshToken' in loginResult)) {
+        throw new Error('expected a successful login for an active tenant');
+      }
+
+      // Suspend again: an existing refresh token must not keep the session alive.
+      await ctx.dataSource.query(`UPDATE tenants SET status = 'suspended' WHERE "hospitalId" = $1`, [
+        ctx.tenantId,
+      ]);
+      const refreshResult = await authService.refresh({ refreshToken: loginResult.refreshToken });
+      expect(refreshResult).toEqual({ invalidToken: true });
+    });
   });
 });

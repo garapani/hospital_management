@@ -15,6 +15,7 @@ import { TenantsService } from './tenants.service.js';
 import { ProvisionTenantDto } from './dto/provision-tenant.dto.js';
 import { SetTenantRolesDto } from './dto/set-tenant-roles.dto.js';
 import { SetTenantPackageDto } from './dto/set-tenant-package.dto.js';
+import { PurgeTenantDto } from './dto/purge-tenant.dto.js';
 
 const REQUIRED_PERMISSION = 'system-admin.tenants.manage';
 
@@ -80,5 +81,27 @@ export class TenantsController {
   @RequirePermission(REQUIRED_PERMISSION)
   async reactivate(@Param('hospitalId') hospitalId: string) {
     return this.tenantsService.reactivateTenant(hospitalId);
+  }
+
+  /** Soft-delete: keeps schema + data, blocks login, reversible. */
+  @Patch(':hospitalId/archive')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async archive(@Param('hospitalId') hospitalId: string) {
+    return this.tenantsService.archiveTenant(hospitalId);
+  }
+
+  @Patch(':hospitalId/restore')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async restore(@Param('hospitalId') hospitalId: string) {
+    return this.tenantsService.restoreTenant(hospitalId);
+  }
+
+  /** Irreversible: drops the tenant schema + role + registry row. Archived tenants only, and the
+   *  hospitalId must be confirmed explicitly (typed confirmation in the console). PATCH like the
+   *  other tenant actions (the frontend API client has no DELETE-with-body). */
+  @Patch(':hospitalId/purge')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async purge(@Param('hospitalId') hospitalId: string, @Body() body: PurgeTenantDto) {
+    return this.tenantsService.purgeTenant(hospitalId, body.confirmHospitalId);
   }
 }

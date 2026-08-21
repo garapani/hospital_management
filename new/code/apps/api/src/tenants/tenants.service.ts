@@ -461,4 +461,95 @@ export class TenantsService {
       [hospitalId, assignable.map((role) => role.id)],
     );
   }
+
+  /** The tenant's registry status, or null when no registry row exists (test tenants). Used by
+   *  auth to block login for suspended/archived hospitals. */
+  async getTenantStatus(
+    hospitalId: string,
+  ): Promise<'active' | 'suspended' | 'archived' | null> {
+    const row: { status: string }[] = await this.dataSource.query(
+      `SELECT status FROM tenants WHERE "hospitalId" = $1`,
+      [hospitalId],
+    );
+    return (row[0]?.status as 'active' | 'suspended' | 'archived') ?? null;
+  }
+
+  /**
+   * Soft-delete: marks the tenant archived. The schema and all data are kept, login is blocked
+   * (same tenant-status gate as suspend), and restore is always possible. This is the deletion
+   * path for churned hospitals; hard purge is a separate, explicit, destructive step.
+   */
+  async archiveTenant(hospitalId: string): Promise<Tenant> {
+    if (hospitalId === PLATFORM_TENANT_ID) {
+      throw new BadRequestException(
+        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be archived`,
+      );
+    }
+    const repository = this.dataSource.getRepository(Tenant);
+    const tenant = await repository.findOne({ where: { hospitalId } });
+    if (!tenant) {
+      throw new NotFoundException(`Tenant ${hospitalId} not found`);
+    }
+    if (tenant.status === 'archived') {
+      return tenant;
+    }
+    tenant.status = 'archived';
+    tenant.archivedAt = new Date();
+    return repository.save(tenant);
+  }
+
+  /** Reverses an archive: back to active, cleared archive timestamp. */
+  async restoreTenant(hospitalId: string): Promise<Tenant> {
+    if (hospitalId === PLATFORM_TENANT_ID) {
+      throw new BadRequestException(
+        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be restored`,
+      );
+    }
+    const repository = this.dataSource.getRepository(Tenant);
+    const tenant = await repository.findOne({ where: { hospitalId } });
+    if (!tenant) {
+      throw new NotFoundException(`Tenant ${hospitalId} not found`);
+    }
+    if (tenant.status === 'active') {
+      return tenant;
+    }
+    tenant.status = 'active';
+    tenant.archivedAt = null;
+    tenant.suspendedAt = null;
+    return repository.save(tenant);
+  }
+
+  /**
+   * Hard purge — irreversible. Drops the tenant schema + role and the registry row (tenant_roles
+   * cascades). Guarded: only an ARCHIVED tenant can be purged, and the caller must confirm the
+   * hospitalId explicitly. The platform audit trail (tenant___platform.audit_records) survives
+   * the drop, so the purge itself stays recorded.
+   */
+  async purgeTenant(hospitalId: string, confirmHospitalId: string): Promise<{ purged: string }> {
+    if (hospitalId === PLATFORM_TENANT_ID) {
+      throw new BadRequestException(
+        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be purged`,
+      );
+    }
+    if (confirmHospitalId !== hospitalId) {
+      throw new BadRequestException('Purge requires confirming the hospitalId exactly');
+    }
+    const repository = this.dataSource.getRepository(Tenant);
+    const tenant = await repository.findOne({ where: { hospitalId } });
+    if (!tenant) {
+      throw new NotFoundException(`Tenant ${hospitalId} not found`);
+    }
+    if (tenant.status !== 'archived') {
+      throw new BadRequestException(
+        `Tenant ${hospitalId} must be archived before it can be purged`,
+      );
+    }
+
+    // Loaded-entity remove() (not repository.delete()) so the audit subscriber records the
+    // destructive purge as a 'delete' event in the platform trail. tenant_roles cascades.
+    await repository.remove(tenant);
+    await this.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${hospitalId}" CASCADE`);
+    await this.dataSource.query(`DROP ROLE IF EXISTS "tenant_${hospitalId}"`);
+    return { purged: hospitalId };
+  }
 }

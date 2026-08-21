@@ -292,7 +292,7 @@ describe('SaaS packages (integration)', () => {
       );
 
       const jwtService = new JwtService({ secret: resolveJwtSecret() });
-      const authService = new AuthService(ctx.accountsService, jwtService, ctx.tenantContext, packagesService);
+      const authService = new AuthService(ctx.accountsService, jwtService, ctx.tenantContext, packagesService, tenantsService);
 
       const loginBasic = await ctx.tenantContext.run({ tenantId: hospitalId, correlationId: 'pkg-login' }, () =>
         authService.login({ username: 'pkg.admin', password: 'pkg-password-123' }),

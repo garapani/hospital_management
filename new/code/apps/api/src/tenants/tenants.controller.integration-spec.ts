@@ -365,4 +365,81 @@ describe('TenantsController (integration)', () => {
       expect(after.find((role) => role.id === doctor.id)?.enabled).toBe(true);
     });
   });
+
+  describe('archive / restore / purge', () => {
+    const hospitalId = 'test_tenant_ctrl_archive';
+
+    it('archives and restores a tenant (soft-delete, reversible)', async () => {
+      await request(app.getHttpServer())
+        .post('/tenants')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ hospitalId, hospitalName: 'Archive Hospital' });
+
+      const archived = await request(app.getHttpServer())
+        .patch(`/tenants/${hospitalId}/archive`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(archived.status).toBe(200);
+      expect(archived.body.status).toBe('archived');
+      expect(archived.body.archivedAt).toBeDefined();
+
+      const restored = await request(app.getHttpServer())
+        .patch(`/tenants/${hospitalId}/restore`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(restored.status).toBe(200);
+      expect(restored.body.status).toBe('active');
+      expect(restored.body.archivedAt).toBeNull();
+    });
+
+    it('refuses to archive the reserved platform tenant with 400', async () => {
+      const response = await request(app.getHttpServer())
+        .patch(`/tenants/${PLATFORM_TENANT_ID}/archive`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(response.status).toBe(400);
+    });
+
+    it('purges only an archived tenant, and only with an exact hospitalId confirmation', async () => {
+      const purgeId = 'test_tenant_ctrl_purge';
+      await request(app.getHttpServer())
+        .post('/tenants')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ hospitalId: purgeId, hospitalName: 'Purge Hospital' });
+
+      // Active tenant: purge refused.
+      const activePurge = await request(app.getHttpServer())
+        .patch(`/tenants/${purgeId}/purge`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ confirmHospitalId: purgeId });
+      expect(activePurge.status).toBe(400);
+
+      await request(app.getHttpServer())
+        .patch(`/tenants/${purgeId}/archive`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      // Wrong confirmation: refused.
+      const wrongConfirm = await request(app.getHttpServer())
+        .patch(`/tenants/${purgeId}/purge`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ confirmHospitalId: 'not-the-id' });
+      expect(wrongConfirm.status).toBe(400);
+
+      // Correct confirmation: schema + role + registry row all gone.
+      const purged = await request(app.getHttpServer())
+        .patch(`/tenants/${purgeId}/purge`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ confirmHospitalId: purgeId });
+      expect(purged.status).toBe(200);
+      expect(purged.body).toEqual({ purged: purgeId });
+
+      const rows: { hospitalId: string }[] = await ctx.dataSource.query(
+        `SELECT "hospitalId" FROM tenants WHERE "hospitalId" = $1`,
+        [purgeId],
+      );
+      expect(rows).toHaveLength(0);
+      const schemas: { nspname: string }[] = await ctx.dataSource.query(
+        `SELECT nspname FROM pg_namespace WHERE nspname = $1`,
+        [`tenant_${purgeId}`],
+      );
+      expect(schemas).toHaveLength(0);
+    });
+  });
 });

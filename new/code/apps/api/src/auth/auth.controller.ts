@@ -29,6 +29,14 @@ export class AuthController {
       };
     }
 
+    if ('tenantInactive' in result) {
+      res.status(HttpStatus.FORBIDDEN);
+      return {
+        message: `This hospital is ${result.reason} and cannot log in`,
+        tenantInactive: true,
+      };
+    }
+
     if ('locked' in result) {
       res.status(HttpStatus.LOCKED);
       return { message: 'Account locked', retryAfterSeconds: result.retryAfterSeconds };

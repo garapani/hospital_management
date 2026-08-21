@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { TenantContextService } from '@hospital/tenant-context';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { PackagesService } from '../packages/packages.service.js';
+import { TenantsService } from '../tenants/tenants.service.js';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
@@ -19,7 +20,8 @@ export type LoginResult =
   | { accessToken: string; refreshToken: string }
   | { locked: true; retryAfterSeconds: number }
   | { invalidCredentials: true }
-  | { mustChangePassword: true };
+  | { mustChangePassword: true }
+  | { tenantInactive: true; reason: 'suspended' | 'archived' };
 
 export interface RefreshInput {
   refreshToken: string;
@@ -42,6 +44,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly tenantContext: TenantContextService,
     private readonly packagesService: PackagesService,
+    private readonly tenantsService: TenantsService,
   ) {}
 
   async login(input: LoginInput): Promise<LoginResult> {
@@ -71,6 +74,18 @@ export class AuthService {
 
     await this.accountsService.resetFailedLogins(account.id);
 
+    // A suspended or archived hospital cannot log in at all — credentials are verified first so
+    // the tenant state is not leaked to a wrong-password attempt. Registry-gated (test tenants
+    // without a registry row fail open, like the role-membership checks). The platform tenant is
+    // always active.
+    const hospitalId = this.tenantContext.getTenantId();
+    if (hospitalId) {
+      const tenantStatus = await this.tenantsService.getTenantStatus(hospitalId);
+      if (tenantStatus === 'suspended' || tenantStatus === 'archived') {
+        return { tenantInactive: true, reason: tenantStatus };
+      }
+    }
+
     // A freshly created account with an initial/generated password has no full access until it
     // replaces it — otherwise a known or generated-but-shared password would be a standing
     // backdoor. No tokens are issued; the client routes to the change-password flow.
@@ -78,7 +93,6 @@ export class AuthService {
       return { mustChangePassword: true };
     }
 
-    const hospitalId = this.tenantContext.getTenantId();
     // Package-scoped: only permissions whose modules are in the tenant's package reach the JWT,
     // so out-of-package features 403 and never render in the console.
     const permissions = await this.packagesService.filterPermissions(
@@ -149,6 +163,13 @@ export class AuthService {
     // An account that must change its password cannot refresh into full access — the refresh
     // token predates the change and would otherwise bypass the login-time gate.
     if (found.account.needsPasswordUpdate) {
+      return { invalidToken: true };
+    }
+
+    // Same tenant-status gate as login: a suspended/archived hospital cannot refresh either,
+    // otherwise an existing session would keep working after suspension.
+    const tenantStatus = await this.tenantsService.getTenantStatus(payload.hospitalId);
+    if (tenantStatus === 'suspended' || tenantStatus === 'archived') {
       return { invalidToken: true };
     }
 

@@ -10,7 +10,7 @@ export class Tenant {
   hospitalName!: string;
 
   @Column({ type: 'varchar', length: 20, default: 'active' })
-  status!: 'active' | 'suspended';
+  status!: 'active' | 'suspended' | 'archived';
 
   /** The SaaS package this tenant was provisioned under; gates which module permissions its
    *  JWTs carry (see PackagesService.filterPermissions). New tenants default to 'basic'; rows
@@ -26,6 +26,11 @@ export class Tenant {
 
   @Column({ type: 'timestamptz', nullable: true })
   suspendedAt!: Date | null;
+
+  /** When the tenant was archived (soft-delete). Archived tenants keep their schema and data,
+   *  cannot log in, and can be restored or hard-purged. */
+  @Column({ type: 'timestamptz', nullable: true })
+  archivedAt!: Date | null;
 
   @Column({ type: 'varchar', nullable: true })
   createdBy!: string | null;

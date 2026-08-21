@@ -119,6 +119,26 @@ describe('AuthController (integration)', () => {
     expect(refreshResponse.body.refreshToken).not.toBe(loginResponse.body.refreshToken);
   });
 
+  it('returns 403 with a tenantInactive message for a suspended hospital', async () => {
+    await ctx.dataSource.query(
+      `INSERT INTO tenants ("hospitalId", "hospitalName", "status", "packageCode", "createdBy", "activatedAt")
+       VALUES ($1, 'Suspended HTTP Hospital', 'suspended', 'basic', 'auth-controller-spec', NOW())`,
+      [ctx.tenantId],
+    );
+    try {
+      const response = await request(app.getHttpServer())
+        .post('/auth/login')
+        .set('x-tenant-id', ctx.tenantId)
+        .send({ username: 'dr.dave', password: 'correct-password-123' });
+
+      expect(response.status).toBe(403);
+      expect(response.body).toMatchObject({ tenantInactive: true });
+      expect(response.body.message).toContain('suspended');
+    } finally {
+      await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, [ctx.tenantId]);
+    }
+  });
+
   it('POST /auth/refresh returns 401 for an invalid refresh token', async () => {
     const response = await request(app.getHttpServer())
       .post('/auth/refresh')
