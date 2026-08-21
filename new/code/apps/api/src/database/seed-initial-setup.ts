@@ -110,7 +110,7 @@ async function enableAllCatalogRoles(
 ): Promise<void> {
   await dataSource.query(
     `INSERT INTO tenant_roles ("tenantId", "roleId")
-     SELECT $1, r.id FROM roles r ON CONFLICT DO NOTHING`,
+     SELECT $1, r.id FROM roles r WHERE r."isCrossTenant" = false ON CONFLICT DO NOTHING`,
     [tenantId],
   );
 }

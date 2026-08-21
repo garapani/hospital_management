@@ -234,8 +234,8 @@ describe('TenantsController (integration)', () => {
     });
 
     it('enables exactly the requested roles and disables the rest', async () => {
-      const all = (await getRoles()).body as { id: string; name: string }[];
-      const keep = all.slice(0, 2).map((role) => role.id);
+      const all = (await getRoles()).body as { id: string; name: string; isCrossTenant: boolean }[];
+      const keep = all.filter((role) => !role.isCrossTenant).slice(0, 2).map((role) => role.id);
 
       const response = await request(app.getHttpServer())
         .patch(`/tenants/${hospitalId}/roles`)
@@ -249,6 +249,21 @@ describe('TenantsController (integration)', () => {
       expect(enabled.sort()).toEqual([...keep].sort());
     });
 
+    it('rejects enabling a cross-tenant role (Super Admin) with 400', async () => {
+      const all = (await getRoles()).body as { id: string; name: string; isCrossTenant: boolean }[];
+      const superAdmin = all.find((role) => role.name === 'Super Admin');
+      expect(superAdmin).toBeDefined();
+      expect(superAdmin!.isCrossTenant).toBe(true);
+
+      const response = await request(app.getHttpServer())
+        .patch(`/tenants/${hospitalId}/roles`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ roleIds: [superAdmin!.id] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toMatch(/platform-only/);
+    });
+
     it('rejects an unknown roleId with 400', async () => {
       const response = await request(app.getHttpServer())
         .patch(`/tenants/${hospitalId}/roles`)
@@ -259,14 +274,15 @@ describe('TenantsController (integration)', () => {
     });
 
     it('refuses to disable a role that an account still holds, naming the holder', async () => {
-      const all = (await getRoles()).body as { id: string; name: string }[];
-      const doctor = all.find((role) => role.name === 'Doctor') ?? all[0];
+      const all = (await getRoles()).body as { id: string; name: string; isCrossTenant: boolean }[];
+      const assignable = all.filter((role) => !role.isCrossTenant);
+      const doctor = assignable.find((role) => role.name === 'Doctor') ?? assignable[0];
 
       // Enable everything, then give an account the role we are about to try to remove.
       await request(app.getHttpServer())
         .patch(`/tenants/${hospitalId}/roles`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ roleIds: all.map((role) => role.id) });
+        .send({ roleIds: assignable.map((role) => role.id) });
 
       const schema = `tenant_${hospitalId}`;
       const [account] = await ctx.dataSource.query(
@@ -284,7 +300,7 @@ describe('TenantsController (integration)', () => {
       const response = await request(app.getHttpServer())
         .patch(`/tenants/${hospitalId}/roles`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ roleIds: all.filter((role) => role.id !== doctor.id).map((role) => role.id) });
+        .send({ roleIds: assignable.filter((role) => role.id !== doctor.id).map((role) => role.id) });
 
       expect(response.status).toBe(409);
       expect(response.body.blocked).toEqual([

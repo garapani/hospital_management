@@ -113,6 +113,10 @@ describe('SaaS packages (integration)', () => {
       // Always-on infrastructure permissions survive in every package.
       expect(filtered).toContain('identity.accounts.manage');
       expect(filtered).toContain('master-data.manage');
+      // The platform-ops permission is NOT always-on: it only survives for the platform tenant,
+      // so a customer tenant (or a Super Admin role accidentally enabled there) can never get
+      // tenant-management powers.
+      expect(filtered).not.toContain('system-admin.tenants.manage');
       // Standard/Enterprise modules are hidden.
       expect(filtered).not.toContain('insurance.read');
       expect(filtered).not.toContain('accounting.manage');

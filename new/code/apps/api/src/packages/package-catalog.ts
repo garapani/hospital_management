@@ -146,13 +146,16 @@ export const MODULE_PERMISSION_PREFIXES: Record<string, string[]> = {
 };
 
 /**
- * Permission prefixes that stay granted in every package — user accounts, platform tenant
- * administration, and master data (departments/wards) are core infrastructure, not tiered
- * features.
+ * Permission prefixes that stay granted in every package — user accounts and master data
+ * (departments/wards) are core infrastructure, not tiered features. `system-admin` is
+ * deliberately NOT here: it is the platform-ops permission (`system-admin.tenants.manage`), which
+ * only the platform tenant should ever carry — `PackagesService.filterPermissions` already skips
+ * filtering for the platform tenant, so it survives there without being always-on for customers.
+ * (Without this, a Super Admin account accidentally enabled on a customer tenant would get
+ * tenant-management powers in its JWT.)
  */
 export const ALWAYS_ON_PERMISSION_PREFIXES = [
   'identity', // identity.accounts.manage
-  'system-admin', // system-admin.tenants.manage
   'master-data', // master-data.manage
   'users', // users.all.read (legacy essential permission)
   'system', // system.config.manage (legacy essential permission)

@@ -97,6 +97,7 @@ export class TenantsService {
         .createQueryBuilder('role')
         .where('role.id IN (:...ids)', { ids: input.roleIds })
         .getMany();
+      this.assertNoCrossTenantRoles(roles);
     } else {
       // Package-driven defaults: when the platform console doesn't hand-pick roles, enable the
       // catalog roles the package names (never Super Admin — cross-tenant ops role). Individual
@@ -214,6 +215,10 @@ export class TenantsService {
     if (unknown.length > 0) {
       throw new BadRequestException(`Unknown roleId(s): ${unknown.join(', ')}`);
     }
+
+    // Cross-tenant roles (Super Admin) are platform-only — a customer tenant must never hold
+    // them, or it could carry system-admin permissions (tenant management) in staff JWTs.
+    this.assertNoCrossTenantRoles(catalog.filter((role) => roleIds.includes(role.id)));
 
     const currentlyEnabled: { roleId: string }[] = await this.dataSource.query(
       `SELECT "roleId" FROM tenant_roles WHERE "tenantId" = $1`,
@@ -367,7 +372,7 @@ export class TenantsService {
     return repository.save(tenant);
   }
 
-  /** The catalog Role rows named by a package's default role set. */
+  /** The catalog Role rows named by a package's default role set (cross-tenant roles excluded). */
   private async resolvePackageDefaultRoles(packageCode: string): Promise<Role[]> {
     const pkg = PACKAGE_CATALOG.find((p) => p.code === packageCode);
     if (!pkg || pkg.defaultRoleNames.length === 0) {
@@ -378,16 +383,27 @@ export class TenantsService {
     });
   }
 
+  /** Rejects any cross-tenant role (Super Admin) from a customer tenant's role set. */
+  private assertNoCrossTenantRoles(roles: Role[]): void {
+    const crossTenant = roles.filter((role) => role.isCrossTenant);
+    if (crossTenant.length > 0) {
+      throw new BadRequestException(
+        `Role(s) ${crossTenant.map((r) => r.name).join(', ')} are platform-only and cannot be enabled for a hospital tenant`,
+      );
+    }
+  }
+
   /** Enables a package's default roles for an existing tenant (add-only, idempotent). */
   private async addPackageDefaultRoles(hospitalId: string, packageCode: string): Promise<void> {
     const roles = await this.resolvePackageDefaultRoles(packageCode);
-    if (roles.length === 0) {
+    const assignable = roles.filter((role) => !role.isCrossTenant);
+    if (assignable.length === 0) {
       return;
     }
     await this.dataSource.query(
       `INSERT INTO tenant_roles ("tenantId", "roleId")
        SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
-      [hospitalId, roles.map((role) => role.id)],
+      [hospitalId, assignable.map((role) => role.id)],
     );
   }
 }
