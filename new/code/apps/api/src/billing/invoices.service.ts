@@ -197,6 +197,39 @@ export class InvoicesService {
   }
 
   /**
+   * Manual re-run of charge capture for a single completed order item — the recovery path when
+   * the automatic subscriber skipped or failed (e.g. the catalog price was set after the item was
+   * completed). Runs captureChargeForOrderItem in its own transaction, so a re-run is safe to
+   * repeat; idempotency (already-charged) still applies.
+   */
+  async reRunChargeCapture(orderItemId: string): Promise<{ captured: boolean; reason?: string }> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const rows: { id: string; "orderId": string; itemType: string; itemDescription: string; status: string; "completedBy": string | null }[] =
+        await manager.query(
+          `SELECT id, "orderId", "itemType", "itemDescription", status, "completedBy"
+           FROM order_items WHERE id = $1`,
+          [orderItemId],
+        );
+      if (rows.length === 0) {
+        throw new NotFoundException(`Order item ${orderItemId} not found`);
+      }
+      const item = rows[0];
+      if (item.status !== 'Completed') {
+        throw new ConflictException(
+          `Order item ${orderItemId} is not Completed (status: ${item.status}); charge capture requires a completed item`,
+        );
+      }
+      return this.captureChargeForOrderItem(manager, {
+        id: item.id,
+        orderId: item.orderId,
+        itemType: item.itemType,
+        itemDescription: item.itemDescription,
+        completedBy: item.completedBy ?? undefined,
+      });
+    });
+  }
+
+  /**
    * Automatic charge capture: called by ChargeCaptureSubscriber when an OrderItem transitions to
    * 'Completed' (the single choke point every clinical completion flows through — Lab verify,
    * Radiology verify, Pharmacy dispense). Resolves the catalog price for the item's type, then
@@ -212,14 +245,6 @@ export class InvoicesService {
     manager: EntityManager,
     orderItem: { id: string; orderId: string; itemType: string; itemDescription: string; completedBy?: string },
   ): Promise<{ captured: boolean; reason?: string }> {
-    const alreadyCharged = await manager.query(
-      `SELECT 1 FROM invoice_items WHERE "sourceOrderItemId" = $1 LIMIT 1`,
-      [orderItem.id],
-    );
-    if (alreadyCharged.length > 0) {
-      return { captured: false, reason: 'already-charged' };
-    }
-
     const orderRows = await manager.query(`SELECT "patientId" FROM orders WHERE id = $1`, [
       orderItem.orderId,
     ]);
@@ -227,6 +252,23 @@ export class InvoicesService {
       return { captured: false, reason: 'order-not-found' };
     }
     const patientId = orderRows[0].patientId as string;
+
+    // Serialize captures per patient: the find-open-invoice-then-append step below is not
+    // otherwise race-safe — two order items of the same patient completing concurrently could
+    // both see "no open invoice" and each create one. The advisory lock is transaction-scoped
+    // (released on commit/rollback), so it only serializes concurrent captures of the same
+    // patient, never holds across unrelated work, and needs no schema change.
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `charge_capture:${patientId}`,
+    ]);
+
+    const alreadyCharged = await manager.query(
+      `SELECT 1 FROM invoice_items WHERE "sourceOrderItemId" = $1 LIMIT 1`,
+      [orderItem.id],
+    );
+    if (alreadyCharged.length > 0) {
+      return { captured: false, reason: 'already-charged' };
+    }
 
     let price: number | null = null;
     let description = orderItem.itemDescription;

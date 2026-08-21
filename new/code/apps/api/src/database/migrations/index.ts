@@ -45,6 +45,7 @@ import { CreateHelpdeskTables0044 } from './0044-create-helpdesk-tables.js';
 import { CreateMarketingTables0045 } from './0045-create-marketing-tables.js';
 import { CreateSsuTables0046 } from './0046-create-ssu-tables.js';
 import { CreateVaccinationTables0047 } from './0047-create-vaccination-tables.js';
+import { AddInvoiceItemChargeUnique0049 } from './0049-add-invoice-item-charge-unique.js';
 import { CreatePackagesTable0048 } from './0048-create-packages-table.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
@@ -106,4 +107,5 @@ export const TENANT_MIGRATIONS = [
   CreateMarketingTables0045,
   CreateSsuTables0046,
   CreateVaccinationTables0047,
+  AddInvoiceItemChargeUnique0049,
 ];

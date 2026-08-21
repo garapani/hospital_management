@@ -113,6 +113,13 @@
           "cwd": "apps/api"
         }
       },
+      "seed-demo-data": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-demo-data-runner.ts",
+          "cwd": "apps/api"
+        }
+      },
       "seed-all": {
         "executor": "nx:run-commands",
         "options": {
