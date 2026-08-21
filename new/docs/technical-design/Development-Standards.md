@@ -1624,3 +1624,15 @@ Bearer token, no refresh-on-401 — so a wrong current password can't trigger th
 redirect; the `LoginOutcome` union gained a `mustChangePassword` kind and the login screen routes
 to an unguarded `/change-password` route (outside both shells, prefilled with the username) that
 validates length/confirmation client-side before calling the endpoint.
+
+**Platform tenant is tenant-agnostic** (2026-08-21, follow-up): the platform console shares the
+same staff-account screens as hospitals, but its operators are not package-gated — `listRoles()`
+skips the `tenant_roles` join for the platform tenant, so `GET /accounts/roles` returns the whole
+catalog (all 14 roles, including the cross-tenant Super Admin), and `createStaffAccount` allows
+cross-tenant roles there (a platform admin can create further Super Admin operators). Hospital
+tenants are unchanged: Super Admin creation/assignment → 400. `assignRole` carries the same two
+guards as `createStaffAccount` (cross-tenant → 400; role must be enabled for registry tenants),
+so the picker-vs-API disagreement is closed on the assign path too. "The platform tenant" resolves
+through `resolvePlatformTenantId()` (`tenants/platform-tenant.ts`), which honors the test-only
+`PLATFORM_ADMIN_TENANT_ID` env override so specs exercise platform behavior against a throwaway
+tenant instead of the real `__platform` schema (same mechanism `seed-initial-setup` uses).

@@ -100,7 +100,12 @@ scope, not merely lower priority.
       toasts errors; login routes to a new unguarded `/change-password` screen (username prefilled,
       interceptor treats the endpoint like `/auth/login` so a wrong current password can't trigger
       the session-clear redirect). Live-verified end to end; full suites green (backend 614,
-      frontend 287). See `Development-Standards.md` §43.
+      frontend 287). See `Development-Standards.md` §43. **Follow-up (2026-08-21):** the platform
+      tenant is tenant-agnostic — `GET /accounts/roles` there returns the whole catalog including
+      Super Admin, and a platform admin can create/assign Super Admin operators (hospital tenants
+      still 400); `assignRole` gained the same cross-tenant + enabled-for-tenant guards as
+      `createStaffAccount`. Live-verified (platform picker 14 roles / creates Super Admin 201;
+      demo picker 13 roles, Super Admin 400). Backend suite 623 passed.
 
 ## Phase 0 — Housekeeping
 
