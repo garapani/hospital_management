@@ -7,7 +7,7 @@ import { AccountsService } from '../accounts/accounts.service.js';
 import { Tenant } from '../tenants/entities/tenant.entity.js';
 import { TenantConnectionService } from './tenant-connection.service.js';
 import { TenantProvisioningService } from './tenant-provisioning.service.js';
-import { PLATFORM_TENANT_ID } from '../tenants/platform-tenant.js';
+import { resolvePlatformTenantId } from '../tenants/platform-tenant.js';
 
 interface SeededAdminConfig {
   tenantId: string;
@@ -31,7 +31,7 @@ function getPlatformAdminConfig(): SeededAdminConfig {
     // the same database as local dev, so a test must never touch the real __platform schema.
     // Tenant reservation in TenantsService keys off the PLATFORM_TENANT_ID constant, never this
     // variable, so overriding it cannot un-reserve the real id.
-    tenantId: process.env['PLATFORM_ADMIN_TENANT_ID'] ?? PLATFORM_TENANT_ID,
+    tenantId: resolvePlatformTenantId(),
     hospitalName: 'Platform Administration',
     username: process.env['PLATFORM_ADMIN_USERNAME'] ?? 'superadmin',
     email: process.env['PLATFORM_ADMIN_EMAIL'] ?? 'superadmin@hospital.local',

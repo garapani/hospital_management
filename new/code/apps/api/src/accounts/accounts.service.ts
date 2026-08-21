@@ -15,6 +15,7 @@ import { Role } from '../rbac/entities/role.entity.js';
 import { Permission } from '../rbac/entities/permission.entity.js';
 import { RolePermission } from '../rbac/entities/role-permission.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { resolvePlatformTenantId } from '../tenants/platform-tenant.js';
 
 const BCRYPT_SALT_ROUNDS = 12;
 
@@ -74,9 +75,13 @@ export class AccountsService {
     // given roles the tenant's package/provisioning enabled — otherwise the role picker (which
     // lists enabled roles) and the API would disagree, and a crafted request could create a
     // Super Admin account. tenant_roles is the single source of truth for "enabled for tenant".
-    // The only exception is the platform tenant's own bootstrap (allowPlatformRole), which the
-    // HTTP layer can never set.
-    const platformBypass = role.isCrossTenant && input.allowPlatformRole === true;
+    // The two exceptions: the platform tenant's own operator accounts (roles there are
+    // tenant-agnostic — the whole catalog, including Super Admin), and the seed's internal
+    // allowPlatformRole escape hatch for test-scoped platform tenants, which the HTTP layer can
+    // never set.
+    const isPlatformTenant = this.tenantContext.getTenantId() === resolvePlatformTenantId();
+    const platformBypass =
+      role.isCrossTenant && (input.allowPlatformRole === true || isPlatformTenant);
     if (role.isCrossTenant && !platformBypass) {
       throw new BadRequestException(
         `Role ${role.name} is platform-only and cannot be assigned to a hospital tenant account`,
@@ -290,7 +295,10 @@ export class AccountsService {
       .addOrderBy('role.name', 'ASC');
 
     const tenantId = this.tenantContext.getTenantId();
-    if (tenantId) {
+    // Package-gated tenants only see roles their tenant_roles enabled. The platform tenant is
+    // not a package-gated hospital — its operators pick from the whole catalog (including the
+    // cross-tenant Super Admin), so the join is skipped there (tenant-agnostic role picker).
+    if (tenantId && tenantId !== resolvePlatformTenantId()) {
       query
         .innerJoin('tenant_roles', 'tr', 'tr."roleId" = role.id')
         .where('tr."tenantId" = :tenantId', { tenantId });
@@ -350,6 +358,34 @@ export class AccountsService {
     const role = await this.dataSource.getRepository(Role).findOne({ where: { name: roleName } });
     if (!role) {
       throw new NotFoundException(`Unknown role: ${roleName}`);
+    }
+
+    // Same guards as createStaffAccount: a hospital tenant can never gain a cross-tenant role
+    // or a role its package/provisioning didn't enable, even by hitting the API directly —
+    // otherwise the role picker and the API would disagree. The platform tenant is exempt (its
+    // operators are tenant-agnostic). Fail-open for schema-only test tenants (no registry row).
+    const tenantId = this.tenantContext.getTenantId();
+    const isPlatformTenant = tenantId === resolvePlatformTenantId();
+    if (role.isCrossTenant && !isPlatformTenant) {
+      throw new BadRequestException(
+        `Role ${role.name} is platform-only and cannot be assigned to a hospital tenant account`,
+      );
+    }
+    const registryRow: { hospitalId: string }[] = tenantId
+      ? await this.dataSource.query(`SELECT "hospitalId" FROM tenants WHERE "hospitalId" = $1`, [
+          tenantId,
+        ])
+      : [];
+    if (registryRow.length > 0 && !isPlatformTenant) {
+      const enabled: { roleId: string }[] = await this.dataSource.query(
+        `SELECT "roleId" FROM tenant_roles WHERE "tenantId" = $1 AND "roleId" = $2`,
+        [tenantId, role.id],
+      );
+      if (enabled.length === 0) {
+        throw new BadRequestException(
+          `Role ${role.name} is not enabled for this hospital. Enable it on the tenant page first.`,
+        );
+      }
     }
 
     return this.tenantConnection.runInTenantSchema(async (manager) => {

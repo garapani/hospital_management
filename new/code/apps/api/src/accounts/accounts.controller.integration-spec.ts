@@ -88,6 +88,60 @@ describe('AccountsController (integration)', () => {
     expect(response.body.passwordHash).toBeUndefined();
   });
 
+  it('rejects creating a Super Admin account in a hospital tenant with 400', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        username: 'ctrl.hospital.super',
+        email: 'ctrlhospitalsuper@example.com',
+        displayName: 'Ctrl Hospital Super',
+        roleName: 'Super Admin',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/platform-only/);
+  });
+
+  describe('platform tenant (tenant-agnostic role catalog)', () => {
+    beforeAll(() => {
+      // Redirect "the platform tenant" to the test tenant the admin token is scoped to, so the
+      // real __platform schema is never touched (same mechanism seed-initial-setup uses).
+      process.env['PLATFORM_ADMIN_TENANT_ID'] = ctx.tenantId;
+    });
+
+    afterAll(() => {
+      delete process.env['PLATFORM_ADMIN_TENANT_ID'];
+    });
+
+    it('GET /accounts/roles returns the full catalog, including Super Admin', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/accounts/roles')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(response.status).toBe(200);
+      const names = (response.body as { name: string }[]).map((r) => r.name);
+      expect(names).toContain('Super Admin');
+      expect(names).toContain('Hospital Admin');
+    });
+
+    it('creates a Super Admin operator account', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/accounts')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          username: 'ctrl.platform.super',
+          email: 'ctrlplatformsuper@example.com',
+          displayName: 'Ctrl Platform Super',
+          roleName: 'Super Admin',
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.username).toBe('ctrl.platform.super');
+      expect(response.body.passwordHash).toBeUndefined();
+    });
+  });
+
   it('lists accounts in the tenant', async () => {
     const response = await request(app.getHttpServer()).get('/accounts').set('Authorization', `Bearer ${adminToken}`);
     expect(response.status).toBe(200);

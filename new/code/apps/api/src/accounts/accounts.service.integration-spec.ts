@@ -264,4 +264,121 @@ describe('AccountsService (integration)', () => {
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
   });
+
+  describe('hospital tenants cannot gain cross-tenant roles or unenabled roles', () => {
+    it('rejects creating a Super Admin account (cross-tenant role)', async () => {
+      await expect(
+        ctx.inTenant(() =>
+          ctx.accountsService.createStaffAccount({
+            username: 'hospital.super',
+            email: 'hospitalsuper@example.com',
+            displayName: 'Hospital Super',
+            password: 'a-password',
+            roleName: 'Super Admin',
+          }),
+        ),
+      ).rejects.toThrow('platform-only');
+    });
+
+    it('rejects assigning the Super Admin role to an existing account', async () => {
+      const created = await ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: 'hospital.assignee',
+          email: 'hospitalassignee@example.com',
+          displayName: 'Hospital Assignee',
+          password: 'a-password',
+          roleName: 'Nurse',
+        }),
+      );
+
+      await expect(
+        ctx.inTenant(() => ctx.accountsService.assignRole(created.id, 'Super Admin')),
+      ).rejects.toThrow('platform-only');
+    });
+
+    it('rejects a role the registry tenant has not enabled (tenant_roles is authoritative)', async () => {
+      const registryTenant = 'test_acct_registry_only';
+      await ctx.dataSource.query(
+        `INSERT INTO tenants ("hospitalId", "hospitalName", "status", "packageCode", "createdBy", "activatedAt")
+         VALUES ($1, 'Registry Only', 'active', 'basic', 'accounts-spec', NOW())`,
+        [registryTenant],
+      );
+
+      try {
+        await expect(
+          ctx.tenantContext.run({ tenantId: registryTenant, correlationId: 'acct-registry' }, () =>
+            ctx.accountsService.createStaffAccount({
+              username: 'registry.staff',
+              email: 'registrystaff@example.com',
+              displayName: 'Registry Staff',
+              password: 'a-password',
+              roleName: 'Nurse',
+            }),
+          ),
+        ).rejects.toThrow('not enabled for this hospital');
+
+        await expect(
+          ctx.tenantContext.run({ tenantId: registryTenant, correlationId: 'acct-registry' }, () =>
+            ctx.accountsService.assignRole('00000000-0000-0000-0000-000000000000', 'Nurse'),
+          ),
+        ).rejects.toThrow('not enabled for this hospital');
+      } finally {
+        await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, [registryTenant]);
+      }
+    });
+  });
+
+  describe('platform-tenant operator accounts (tenant-agnostic roles)', () => {
+    beforeAll(() => {
+      // Redirect "the platform tenant" to this test-scoped tenant so the real __platform schema
+      // (and its live superadmin) is never touched — same mechanism seed-initial-setup uses.
+      process.env['PLATFORM_ADMIN_TENANT_ID'] = ctx.tenantId;
+    });
+
+    afterAll(() => {
+      delete process.env['PLATFORM_ADMIN_TENANT_ID'];
+    });
+
+    it('listRoles is tenant-agnostic: the whole catalog, including the cross-tenant Super Admin', async () => {
+      const roles = await ctx.inTenant(() => ctx.accountsService.listRoles());
+      const names = roles.map((r) => r.name);
+      expect(names).toContain('Super Admin');
+      expect(names).toContain('Hospital Admin');
+      expect(names).toContain('Patient');
+      expect(names.length).toBeGreaterThan(10);
+    });
+
+    it('creates a Super Admin operator account in the platform tenant', async () => {
+      const account = await ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: 'platform.op1',
+          email: 'op1@platform.local',
+          displayName: 'Platform Operator One',
+          password: 'op-password-123',
+          roleName: 'Super Admin',
+        }),
+      );
+      expect(account.username).toBe('platform.op1');
+
+      const found = await ctx.inTenant(() => ctx.accountsService.findByUsernameWithRoles('platform.op1'));
+      expect(found?.roleNames).toEqual(['Super Admin']);
+    });
+
+    it('assigns the Super Admin role to an existing platform account', async () => {
+      const created = await ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: 'platform.op2',
+          email: 'op2@platform.local',
+          displayName: 'Platform Operator Two',
+          password: 'op-password-456',
+          roleName: 'Hospital Admin',
+        }),
+      );
+
+      await ctx.inTenant(() => ctx.accountsService.assignRole(created.id, 'Super Admin'));
+
+      const found = await ctx.inTenant(() => ctx.accountsService.getAccountWithRoles(created.id));
+      expect(found?.roleNames.sort()).toEqual(['Hospital Admin', 'Super Admin']);
+    });
+  });
 });
