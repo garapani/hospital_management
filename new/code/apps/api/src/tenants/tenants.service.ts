@@ -400,6 +400,14 @@ export class TenantsService {
     if (!tenant) {
       throw new NotFoundException(`Tenant ${hospitalId} not found`);
     }
+    // Archived is a distinct state machine (see archiveTenant/restoreTenant) — suspending an
+    // archived tenant in place would flip status to 'suspended' while leaving archivedAt stale,
+    // since only restoreTenant knows to clear it. Restore first, then suspend if still needed.
+    if (tenant.status === 'archived') {
+      throw new BadRequestException(
+        `Tenant ${hospitalId} is archived; restore it before suspending`,
+      );
+    }
     if (tenant.status === 'suspended') {
       return tenant;
     }
@@ -418,6 +426,14 @@ export class TenantsService {
     const tenant = await repository.findOne({ where: { hospitalId } });
     if (!tenant) {
       throw new NotFoundException(`Tenant ${hospitalId} not found`);
+    }
+    // Archived tenants go through restoreTenant instead, which clears archivedAt correctly —
+    // reactivateTenant only sets activatedAt, so allowing it here would leave archivedAt stale
+    // on an otherwise-active tenant.
+    if (tenant.status === 'archived') {
+      throw new BadRequestException(
+        `Tenant ${hospitalId} is archived; use restore instead of reactivate`,
+      );
     }
     if (tenant.status === 'active') {
       return tenant;

@@ -26,8 +26,8 @@ export interface PackageDefinition {
    */
   defaultRoleNames: string[];
   /** List price in ₹ per billing cycle — the platform's SaaS pricing, used by the subscription
-   *  billing module. Placeholder values agreed with the product owner; the annual price is the
-   *  two-months-free bundle. */
+   *  billing module. Placeholder values agreed with the product owner; the annual price is a
+   *  discounted bundle (~10% off 12x the monthly price), not a fixed months-free promotion. */
   priceMonthly: number;
   priceAnnual: number;
 }

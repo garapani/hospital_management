@@ -397,6 +397,44 @@ describe('TenantsController (integration)', () => {
       expect(response.status).toBe(400);
     });
 
+    it('refuses to suspend or reactivate an archived tenant — archived tenants must be restored first', async () => {
+      const guardId = 'test_tenant_ctrl_archive_guard';
+      await request(app.getHttpServer())
+        .post('/tenants')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ hospitalId: guardId, hospitalName: 'Archive Guard Hospital' });
+      await request(app.getHttpServer())
+        .patch(`/tenants/${guardId}/archive`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      // Neither the older suspend nor reactivate routes may touch an archived tenant — both
+      // would leave a stale archivedAt since only restore knows to clear it.
+      const suspendAttempt = await request(app.getHttpServer())
+        .patch(`/tenants/${guardId}/suspend`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(suspendAttempt.status).toBe(400);
+
+      const reactivateAttempt = await request(app.getHttpServer())
+        .patch(`/tenants/${guardId}/reactivate`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(reactivateAttempt.status).toBe(400);
+
+      // The tenant is untouched — still archived, archivedAt intact.
+      const stillArchived = await request(app.getHttpServer())
+        .get(`/tenants/${guardId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(stillArchived.body.status).toBe('archived');
+      expect(stillArchived.body.archivedAt).toBeDefined();
+
+      // Restore is the correct path back to active, and clears archivedAt.
+      const restored = await request(app.getHttpServer())
+        .patch(`/tenants/${guardId}/restore`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(restored.status).toBe(200);
+      expect(restored.body.status).toBe('active');
+      expect(restored.body.archivedAt).toBeNull();
+    });
+
     it('purges only an archived tenant, and only with an exact hospitalId confirmation', async () => {
       const purgeId = 'test_tenant_ctrl_purge';
       await request(app.getHttpServer())

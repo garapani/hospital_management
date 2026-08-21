@@ -1,6 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { SubscriptionBillingService } from './subscription-billing.service.js';
-import { Subscription } from './entities/subscription.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -122,5 +121,56 @@ describe('SubscriptionBillingService (integration)', () => {
     await expect(
       service.markInvoicePaid('00000000-0000-0000-0000-000000000000'),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('concurrent issueInvoice calls for the same tenant/period: exactly one succeeds with a 409, not an unhandled DB error', async () => {
+    await provision(`${PREFIX}race_invoice`, 'basic');
+    await service.subscribe(`${PREFIX}race_invoice`, 'monthly');
+
+    const results = await Promise.allSettled([
+      service.issueInvoice(`${PREFIX}race_invoice`),
+      service.issueInvoice(`${PREFIX}race_invoice`),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(ConflictException);
+  });
+
+  it('marking paid advances the period by the invoice\'s own length, not a billing cycle changed afterward', async () => {
+    await provision(`${PREFIX}cycle_switch`, 'basic');
+    await service.subscribe(`${PREFIX}cycle_switch`, 'monthly');
+    const invoice = await service.issueInvoice(`${PREFIX}cycle_switch`);
+    const monthlyPeriodMs = invoice.periodEnd.getTime() - invoice.periodStart.getTime();
+
+    // Cycle changed to annual before the monthly invoice above is paid.
+    await service.subscribe(`${PREFIX}cycle_switch`, 'annual');
+
+    const paid = await service.markInvoicePaid(invoice.id);
+    const sub = await service.getSubscription(`${PREFIX}cycle_switch`);
+
+    // The granted period matches what was actually invoiced/paid (monthly), not the
+    // subscription's current (annual) cycle.
+    expect(sub!.currentPeriodEnd.getTime() - sub!.currentPeriodStart.getTime()).toBe(
+      monthlyPeriodMs,
+    );
+    expect(sub!.currentPeriodStart).toEqual(paid.periodEnd);
+  });
+
+  it('concurrent markInvoicePaid calls on the same invoice are idempotent (paid exactly once)', async () => {
+    await provision(`${PREFIX}race_paid`, 'basic');
+    await service.subscribe(`${PREFIX}race_paid`, 'monthly');
+    const invoice = await service.issueInvoice(`${PREFIX}race_paid`);
+
+    const [first, second] = await Promise.all([
+      service.markInvoicePaid(invoice.id),
+      service.markInvoicePaid(invoice.id),
+    ]);
+
+    expect(first.status).toBe('paid');
+    expect(second.status).toBe('paid');
+    expect(first.paidAt).toEqual(second.paidAt);
   });
 });
