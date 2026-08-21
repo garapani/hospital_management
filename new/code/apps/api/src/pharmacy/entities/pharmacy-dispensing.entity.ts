@@ -1,9 +1,16 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { OrderItem } from '../../orders/entities/order-item.entity.js';
 
 @Entity('pharmacy_dispensings')
 export class PharmacyDispensing {
   @PrimaryGeneratedColumn('uuid') id!: string;
   @Column({ type: 'uuid' }) orderItemId!: string;
+  // Declared relation for the list views that join the order item's description — the orderItemId
+  // column remains the source of truth and the pharmacy→orders edge already exists via the
+  // dispensing service's OrdersService dependency.
+  @ManyToOne(() => OrderItem, { nullable: false })
+  @JoinColumn({ name: 'orderItemId' })
+  orderItem!: OrderItem;
   @Column({ type: 'uuid' }) inventoryItemId!: string;
   @Column({ type: 'varchar', unique: true }) dispensingNumber!: string;
   @Column({ type: 'numeric' }) quantity!: string;

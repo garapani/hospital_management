@@ -6,6 +6,7 @@ import { AppModule } from '../app/app.module.js';
 import { TenantProvisioningService } from './tenant-provisioning.service.js';
 import { TenantConnectionService } from './tenant-connection.service.js';
 import { PatientsService } from '../patients/patients.service.js';
+import { AccountsService } from '../accounts/accounts.service.js';
 import { AppointmentsService } from '../appointments/appointments.service.js';
 import { VitalsService } from '../clinical/vitals/vitals.service.js';
 import { EncountersService } from '../clinical/encounters/encounters.service.js';
@@ -40,8 +41,25 @@ function demoId(): string {
  * The app is booted (not services hand-wired) precisely so the charge-capture and notification
  * subscribers are live; the seed would otherwise silently skip auto-billing.
  *
- * Idempotent: if the demo schema already has any patients, seeding is skipped.
+ * Idempotent: staff accounts are ensured on every run (skipped when the username already exists);
+ * the business data is only seeded when the demo schema has no patients yet.
  */
+
+/** Demo staff accounts: one per operational role so every Basic feature has a working login. */
+const DEMO_STAFF: Array<{ username: string; roleName: string; displayName: string }> = [
+  { username: 'demo.doctor', roleName: 'Doctor', displayName: 'Demo Doctor' },
+  { username: 'demo.lab', roleName: 'Lab Technician', displayName: 'Demo Lab Technician' },
+  { username: 'demo.radiology', roleName: 'Radiology Technician', displayName: 'Demo Radiology Technician' },
+  { username: 'demo.pharmacy', roleName: 'Pharmacist', displayName: 'Demo Pharmacist' },
+  { username: 'demo.inventory', roleName: 'Inventory/Store Manager', displayName: 'Demo Inventory Manager' },
+  { username: 'demo.billing', roleName: 'Billing/Accounts Staff', displayName: 'Demo Billing Staff' },
+  { username: 'demo.nurse', roleName: 'Nurse', displayName: 'Demo Nurse' },
+];
+
+export function demoStaffPassword(): string {
+  return process.env['DEMO_STAFF_PASSWORD'] ?? 'Demo@123!';
+}
+
 export async function seedDemoData(): Promise<void> {
   const tenantId = demoId();
   if (tenantId === PLATFORM_TENANT_ID) {
@@ -62,6 +80,25 @@ export async function seedDemoData(): Promise<void> {
     await tenantContext.run(
       { tenantId, correlationId: 'seed-demo-data' },
       async () => {
+        // Staff accounts are ensured on every run (idempotent per username) so the demo always
+        // has role-appropriate logins for every Basic feature, even after a data re-seed.
+        const accounts = app.get(AccountsService);
+        for (const staff of DEMO_STAFF) {
+          const existing = await accounts.findByUsernameWithRoles(staff.username);
+          if (existing) {
+            continue;
+          }
+          await accounts.createStaffAccount({
+            username: staff.username,
+            email: `${staff.username}@hospital.local`,
+            displayName: staff.displayName,
+            password: demoStaffPassword(),
+            roleName: staff.roleName,
+            needsPasswordUpdate: false,
+          });
+          logger.log(`✓ Created demo staff account: ${staff.username} (${staff.roleName})`);
+        }
+
         // Count must run inside the tenant schema — a bare repository count() queries the
         // default search_path (public) and would see the legacy public tables, not the demo.
         const existingCount = await tenantConnection.runInTenantSchema((manager: EntityManager) =>

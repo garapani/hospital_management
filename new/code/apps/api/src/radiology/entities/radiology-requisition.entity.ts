@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { OrderItem } from '../../orders/entities/order-item.entity.js';
 
 @Entity('radiology_requisitions')
 export class RadiologyRequisition {
@@ -7,6 +8,13 @@ export class RadiologyRequisition {
 
   @Column({ type: 'uuid' })
   orderItemId!: string;
+
+  // Declared relation for the list views that join the order item's description — the
+  // orderItemId column remains the source of truth and the radiology→orders edge already exists
+  // via the workflow service's OrdersService dependency.
+  @ManyToOne(() => OrderItem, { nullable: false })
+  @JoinColumn({ name: 'orderItemId' })
+  orderItem!: OrderItem;
 
   @Column({ type: 'uuid' })
   imagingItemId!: string;

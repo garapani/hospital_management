@@ -267,6 +267,14 @@ describe('MVP end-to-end workflow (integration)', () => {
     }), 201);
     expectOk(await http.patch(`/pharmacy/dispensings/${dispensing.body.id}/dispense`, {}));
 
+    // The console list views must work too — these are the exact queries the Pharmacy and
+    // Radiology pages issue, and both previously 500'd on a non-existent relation join.
+    const pharmacyList = expectOk(await http.get('/pharmacy/dispensings?page=1&limit=10'));
+    expect(pharmacyList.body.data).toHaveLength(1);
+    expect(pharmacyList.body.data[0].orderItem.itemDescription).toBe('Paracetamol 500mg x10');
+    const radiologyList = expectOk(await http.get('/radiology/requisitions?page=1&limit=10'));
+    expect(radiologyList.body.data).toHaveLength(1);
+
     // --- Billing: charge-capture produced one invoice with three lines; pay it -------------------
     const invoicesRes = expectOk(await http.get(`/billing/invoices?patientId=${patientId}`));
     expect(invoicesRes.body.data).toHaveLength(1);
