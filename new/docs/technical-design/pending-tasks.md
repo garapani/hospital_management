@@ -120,9 +120,9 @@ scope, not merely lower priority.
 - [x] **Manual cleanup left over from the reporting-archiver session** (2026-08-21) — stale
       `worktree-feat-reporting-archiver` branch deleted (work had landed on main via the
       reporting-archiver session's own commits); `scratch_rep_check` schema confirmed already
-      absent from dev Postgres. Note: orphaned schemas `tenant_lab_report_pdf_1` /
-      `tenant_radiology_report_pdf_1` (no registry rows) remain from an earlier PDF session —
-      candidates for the next cleanup.
+      absent from dev Postgres. **Follow-up (2026-08-21):** orphaned PDF-test schemas
+      `tenant_lab_report_pdf_1` / `tenant_radiology_report_pdf_1` (no registry rows) dropped —
+      remaining schemas (`__platform`, `demo`, `demo1`) all have registry rows.
 
 ## Phase 1 — Close the security gaps
 
