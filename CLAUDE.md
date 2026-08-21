@@ -26,6 +26,9 @@ source of truth for scope and product phasing — read it, don't take this file'
     when fixed, never deleted — it's a historical record.
   - `Deployment-Guide.md`, `Runbook.md`, `Technical-Design.md` — deployment/ops/architecture
     reference docs, kept in sync with `new/code` as it evolves.
+  - `claude-code-tasks.md` — actionable task backlog for Claude Code sessions (in-flight work,
+    pending tasks, cleanups, improvements, each with context/what-to-do/verify/test). Start here
+    when picking up development work; it supersedes this file for task sequencing.
 - **`new/docs/superpowers/specs/`** and **`new/docs/superpowers/plans/`** — the design/implementation
   pipeline output for every `pending-tasks.md` item resolved so far (see below). Filenames follow
   `YYYY-MM-DD-<topic>-design.md` (specs) and `YYYY-MM-DD-<topic>.md` (plans).
