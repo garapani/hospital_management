@@ -127,6 +127,11 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     description: 'Provision, list, view, suspend, and reactivate hospital tenants.',
   },
   {
+    name: 'rbac.manage',
+    description:
+      'Create and list the global role catalog (platform-only — mapped to Super Admin only; hospital admins map roles to users via the tenant-scoped role picker instead).',
+  },
+  {
     name: 'master-data.manage',
     description: 'Create, list, deactivate, and reactivate departments and wards.',
   },
@@ -410,6 +415,10 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'identity.accounts.manage' },
   { roleName: 'Super Admin', permissionName: 'identity.accounts.manage' },
   { roleName: 'Super Admin', permissionName: 'system-admin.tenants.manage' },
+  // Role-catalog management is platform-only: only the Super Admin may create/list roles.
+  // Hospital admins map (assign) roles to users through the tenant-scoped /accounts/roles
+  // picker instead — they never touch the shared role catalog.
+  { roleName: 'Super Admin', permissionName: 'rbac.manage' },
   { roleName: 'Hospital Admin', permissionName: 'master-data.manage' },
   { roleName: 'Super Admin', permissionName: 'master-data.manage' },
   // Super Admin is mapped to every other module's permissions (appointment, vitals, encounter,
