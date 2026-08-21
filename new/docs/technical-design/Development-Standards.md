@@ -1557,3 +1557,21 @@ The end-to-end spec boots the real AppModule and provisions a tenant to pin this
 ("In a real app we might show a toast here") — that is why a failed creation showed nothing. The
 modal now renders the backend message via `p-message`, and the form only asks for hospital
 name/id + package, with a note that roles follow the package.
+
+## 41. Super Admin is platform-only (2026-08-21)
+
+Cross-tenant roles (Super Admin) must never be enable-able for a hospital tenant. Two layers:
+
+**Role-assignment guards.** `TenantsService.provisionTenant` (explicit `roleIds` path) and
+`setTenantRoles` both reject any role with `isCrossTenant = true` (400, "platform-only");
+`resolvePackageDefaultRoles`/`addPackageDefaultRoles` filter them out as belt-and-braces, and
+`seed-initial-setup`'s `enableAllCatalogRoles` excludes them (existing dev DBs had the demo's
+Super Admin `tenant_roles` row removed by hand).
+
+**Permission filtering.** `system-admin.tenants.manage` was removed from
+`ALWAYS_ON_PERMISSION_PREFIXES` in `package-catalog.ts`. It only survives
+`PackagesService.filterPermissions` for the platform tenant (which is never filtered), so even if
+a Super Admin role were somehow enabled on a customer tenant, staff JWTs there would NOT carry
+tenant-management powers. Frontend: the tenant-detail "Available roles" list filters out
+`isCrossTenant` roles (with a note) so they can't be toggled on by mistake; the backend guard
+remains the authority.
