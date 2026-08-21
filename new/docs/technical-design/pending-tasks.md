@@ -148,6 +148,18 @@ scope, not merely lower priority.
       picker instead. Seeded live via `nx run api:seed-rbac` (idempotent); verified live
       (superadmin 200/201, demoadmin 403 `Missing required permission: rbac.manage`). Backend
       suite 626 passed. See `Development-Standards.md` §44.
+- [x] **Platform-console gaps: password reset, role revocation, tenant history** (2026-08-21) —
+      from the platform-screen review: `POST /accounts/:id/reset-password` (forgotten-password
+      recovery — generated one-time password or admin-supplied temp, always forces a change and
+      clears lockout); role chips on user detail can now revoke a specific assignment, guarded so
+      the **last Super Admin in the platform tenant can never be removed** (platform lockout
+      prevention); tenant detail gained a "Platform history" panel (audit events per tenant via a
+      new `recordId` audit filter). Building it exposed + fixed an audit bug: the subscriber
+      derived recordIds from a hardcoded `entity['id']`, so every `tenants` audit row had an
+      empty recordId (Tenant's PK is `hospitalId`) — now resolved from TypeORM PK metadata.
+      Live-verified (reset → 403 must-change → login; revoke-to-last → 400; tenant history
+      returns the provision event with its hospitalId). Backend suite 636, frontend 304. See
+      `Development-Standards.md` §45.
 
 ## Phase 2 — Guardrails while the backlog grows
 

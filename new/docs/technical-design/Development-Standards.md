@@ -1663,3 +1663,29 @@ deliberately *not* in `ALWAYS_ON_PERMISSION_PREFIXES`, so no customer tenant can
 **Rule of thumb for platform-only powers:** gate them with a permission mapped to Super Admin
 only (like `system-admin.tenants.manage` and `rbac.manage`) rather than reusing an always-on
 customer permission — otherwise the API surface silently outruns the console.
+
+## 45. Platform-console gaps: password reset, role revocation guard, tenant history (2026-08-21)
+
+**Admin password reset.** `POST /accounts/:id/reset-password` (permission: `identity.accounts.manage`)
+is the forgotten-password path: it always flags the account must-change on next login and clears
+lockout state (`failedLoginAttempts`/`lockedUntil`) so the user can actually sign in. With no body it
+generates a one-time initial password returned in the response (shown once, same rule as
+`createStaffAccount`); an optional `{ password }` uses the admin's temporary password as-is but
+still forces the change — a reset is *recovery*, unlike create where an admin-chosen password is the
+real password. The controller defaults the DTO (`@Body() body: ResetPasswordDto = {}`) — a bodiless
+POST otherwise crashes on `body.password`.
+
+**Platform lockout guard.** `revokeRoleAssignment` refuses to deactivate the **last active Super
+Admin** in the platform tenant (400) — removing it would leave no operator able to administer the
+platform. Hospital tenants are unaffected; the UI surfaces the backend message on the remove-role
+chip action.
+
+**Auditable tenant history, and the recordId bug it exposed.** `GET /audit` accepts `recordId`, so the
+tenant-detail "Platform history" panel lists the platform trail's events for one hospital
+(provisioned / package changed / suspended) — platform-side data only, no cross-tenant reads.
+Making that work exposed a real audit bug: `AuditSubscriber` derived the record id from a hardcoded
+`entity['id']`, but the `Tenant` entity's primary key is `hospitalId`, so **every tenant audit row
+was written with an empty recordId**. The subscriber now resolves the id from
+`event.metadata.primaryColumns` (joined with `:` for composite keys), so tenant events correlate
+correctly. Historical empty rows cannot be backfilled (no tenant identifier was stored).
+**Rule:** never hardcode `entity['id']` for audit correlation — use the entity's real PK metadata.
