@@ -173,6 +173,15 @@ scope, not merely lower priority.
       endpoint now. Live-verified (role create/edit/deactivate hidden from the demo picker /
       reactivate, Super Admin deactivate 400, dept catalog edit/deactivate, demoadmin 403).
       Backend suite 646, frontend 317. See `Development-Standards.md` §46.
+- [x] **Tenant deletion & retention** (2026-08-21) — policy chosen: archive (soft-delete,
+      reversible, data kept, login blocked) + purge (irreversible, archived-only, typed
+      hospitalId confirmation, drops schema/role/registry row, recorded in the platform audit
+      trail) + no auto-purge. Also fixed the **suspend-never-blocked-login bug** found on the
+      way: login/refresh now gate on tenant status (suspended/archived → 403 tenantInactive /
+      refresh invalidToken). Live-verified: suspend → login blocked, archive → blocked,
+      restore → active, purge guards (active refused, wrong confirm refused) + schema/role/row
+      gone, audit delete record survives, demo unaffected. Backend suite 653, frontend 320.
+      See `Development-Standards.md` §47.
 
 ## Phase 2 — Guardrails while the backlog grows
 
