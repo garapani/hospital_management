@@ -11,6 +11,7 @@ export interface AuditRecordFilter {
   tableName?: string;
   action?: 'create' | 'update' | 'delete';
   changedByAccountId?: string;
+  recordId?: string;
   correlationId?: string;
 }
 
@@ -33,6 +34,7 @@ export class AuditService {
       if (filter.tableName) where.tableName = filter.tableName;
       if (filter.action) where.action = filter.action;
       if (filter.changedByAccountId) where.changedByAccountId = filter.changedByAccountId;
+      if (filter.recordId) where.recordId = filter.recordId;
       if (filter.correlationId) where.correlationId = filter.correlationId;
 
       const qb = repository.createQueryBuilder('audit');

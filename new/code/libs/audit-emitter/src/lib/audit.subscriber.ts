@@ -37,6 +37,7 @@ export class AuditSubscriber implements EntitySubscriberInterface {
       null,
       event.entity ?? null,
       event.manager,
+      event.metadata.primaryColumns.map((column) => column.propertyName),
     );
   }
 
@@ -50,6 +51,7 @@ export class AuditSubscriber implements EntitySubscriberInterface {
       (event.databaseEntity as Record<string, unknown>) ?? null,
       (event.entity as Record<string, unknown>) ?? null,
       event.manager,
+      event.metadata.primaryColumns.map((column) => column.propertyName),
     );
   }
 
@@ -63,6 +65,7 @@ export class AuditSubscriber implements EntitySubscriberInterface {
       (event.databaseEntity as Record<string, unknown>) ?? null,
       null,
       event.manager,
+      event.metadata.primaryColumns.map((column) => column.propertyName),
     );
   }
 
@@ -73,6 +76,7 @@ export class AuditSubscriber implements EntitySubscriberInterface {
     before: Record<string, unknown> | null,
     after: Record<string, unknown> | null,
     manager: EntityManager,
+    primaryKeyPropertyNames: string[],
   ): Promise<void> {
     const resolvedClass = (before ?? after)?.constructor;
     if (resolvedClass === undefined || resolvedClass === Object) {
@@ -90,10 +94,18 @@ export class AuditSubscriber implements EntitySubscriberInterface {
       return;
     }
 
+    // Resolve the record id from the entity's real primary key columns, not a hardcoded 'id' —
+    // entities whose key is named differently (e.g. Tenant.hospitalId) otherwise get an empty
+    // recordId and their audit rows can't be correlated back to the record.
+    const recordId = primaryKeyPropertyNames
+      .map((propertyName) => entityForId?.[propertyName])
+      .filter((value) => value !== undefined && value !== null)
+      .join(':');
+
     await this.publisher.publish(
       {
         tableName,
-        recordId: String(entityForId?.['id'] ?? ''),
+        recordId,
         action,
         hospitalId: this.tenantContext.getTenantId(),
         changedByAccountId: this.tenantContext.getAccountId(),

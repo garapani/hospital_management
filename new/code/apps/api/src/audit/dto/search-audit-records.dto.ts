@@ -24,6 +24,10 @@ export class SearchAuditRecordsDto {
 
   @IsOptional()
   @IsString()
+  recordId?: string;
+
+  @IsOptional()
+  @IsString()
   correlationId?: string;
 
   @IsOptional()

@@ -11,3 +11,8 @@ export class ChangeOwnPasswordDto {
   currentPassword!: string;
   newPassword!: string;
 }
+
+export class ResetPasswordDto {
+  /** Optional temporary password; when omitted the backend generates one (returned once). */
+  password?: string;
+}

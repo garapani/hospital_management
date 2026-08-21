@@ -51,6 +51,8 @@ export interface AccountWithRoles {
   account: Account;
   roleIds: string[];
   roleNames: string[];
+  /** Active role assignments with their ids, so clients can revoke a specific assignment. */
+  assignments: { id: string; roleId: string; roleName: string }[];
 }
 
 @Injectable()
@@ -183,8 +185,18 @@ export class AccountsService {
       roleIds.length === 0
         ? []
         : await this.dataSource.getRepository(Role).find({ where: { id: In(roleIds) } });
+    const roleNameById = new Map(roles.map((role) => [role.id, role.name]));
 
-    return { account, roleIds, roleNames: roles.map((role) => role.name) };
+    return {
+      account,
+      roleIds,
+      roleNames: roles.map((role) => role.name),
+      assignments: accountRoles.map((accountRole) => ({
+        id: accountRole.id,
+        roleId: accountRole.roleId,
+        roleName: roleNameById.get(accountRole.roleId) ?? 'Unknown role',
+      })),
+    };
   }
 
   /**
@@ -362,6 +374,39 @@ export class AccountsService {
     });
   }
 
+  /**
+   * Admin-initiated password reset (forgotten-password recovery). Always forces a change on next
+   * login and clears lockout state; an optional admin-supplied temporary password is used as-is,
+   * otherwise one is generated and returned once — same one-time disclosure rule as
+   * createStaffAccount. Unlike create (where an admin-chosen password is the real password), a
+   * reset is recovery, so the must-change gate stays on either way.
+   */
+  async resetPassword(
+    accountId: string,
+    password?: string,
+  ): Promise<{ initialPassword?: string }> {
+    const generatedPassword = password ? undefined : generateInitialPassword();
+    const newPassword = password ?? generatedPassword;
+    const passwordHash = await bcrypt.hash(newPassword as string, BCRYPT_SALT_ROUNDS);
+
+    await this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const account = await repository.findOne({ where: { id: accountId } });
+      if (!account) {
+        throw new NotFoundException(`Account ${accountId} not found`);
+      }
+      account.passwordHash = passwordHash;
+      account.needsPasswordUpdate = true;
+      // A reset is also the unlock path for a locked account: failed attempts and lockout are
+      // cleared so the user can actually sign in with the new password.
+      account.failedLoginAttempts = 0;
+      account.lockedUntil = null;
+      await repository.save(account);
+    });
+
+    return generatedPassword ? { initialPassword: generatedPassword } : {};
+  }
+
   async assignRole(accountId: string, roleName: string, startDate?: Date, endDate?: Date): Promise<AccountRole> {
     const role = await this.dataSource.getRepository(Role).findOne({ where: { name: roleName } });
     if (!role) {
@@ -439,6 +484,23 @@ export class AccountsService {
       if (!accountRole) {
         throw new NotFoundException(`Role assignment ${accountRoleId} not found for account ${accountId}`);
       }
+
+      // Platform lockout guard: the platform tenant must always keep at least one Super Admin,
+      // otherwise the whole platform console becomes unrecoverable (no operator can log in).
+      if (this.tenantContext.getTenantId() === resolvePlatformTenantId() && accountRole.isActive) {
+        const role = await this.dataSource.getRepository(Role).findOne({ where: { id: accountRole.roleId } });
+        if (role?.isCrossTenant) {
+          const remaining = await manager
+            .getRepository(AccountRole)
+            .count({ where: { roleId: role.id, isActive: true } });
+          if (remaining <= 1) {
+            throw new BadRequestException(
+              'Cannot remove the last Super Admin from the platform tenant — there would be no operator left to administer the platform',
+            );
+          }
+        }
+      }
+
       accountRole.isActive = false;
       await repository.save(accountRole);
     });

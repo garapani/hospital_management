@@ -4,6 +4,7 @@ import { TenantContextService } from '@hospital/tenant-context';
 import { AUDIT_EVENT_PUBLISHER, AuditEvent, AuditEventPublisher } from '@hospital/audit-emitter';
 import { AccountsModule } from './accounts.module.js';
 import { AccountsService } from './accounts.service.js';
+import { Tenant } from '../tenants/entities/tenant.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -116,6 +117,50 @@ describe('Audit wiring (integration)', () => {
       ),
     ).toBe(true);
 
+    await teardownTenantTestContext(ctx);
+    await moduleRef.close();
+  });
+
+  it('resolves the recordId from the entity real primary key (Tenant.hospitalId, not a hardcoded id)', async () => {
+    const published: AuditEvent[] = [];
+    const testPublisher: AuditEventPublisher = {
+      publish: async (event) => {
+        published.push(event);
+      },
+    };
+
+    const ctx = await setupTenantTestContext({ namePrefix: 'audit_pk', seedRbac: true });
+
+    const moduleRef = await Test.createTestingModule({ imports: [AccountsModule] })
+      .overrideProvider(AUDIT_EVENT_PUBLISHER)
+      .useValue(testPublisher)
+      .overrideProvider(DataSource)
+      .useValue(ctx.dataSource)
+      .overrideProvider(TenantContextService)
+      .useValue(ctx.tenantContext)
+      .compile();
+    await moduleRef.init();
+
+    const tenantRepository = ctx.dataSource.getRepository(Tenant);
+    await ctx.tenantContext.run({ tenantId: ctx.tenantId, correlationId: 'audit-pk' }, () =>
+      tenantRepository.save(
+        tenantRepository.create({
+          hospitalId: 'audit_pk_tenant',
+          hospitalName: 'Audit PK Tenant',
+          status: 'active',
+          packageCode: 'basic',
+          activatedAt: new Date(),
+          suspendedAt: null,
+          createdBy: 'audit-pk-spec',
+        }),
+      ),
+    );
+
+    const event = published.find((e) => e.tableName === 'tenants');
+    expect(event).toBeDefined();
+    expect(event?.recordId).toBe('audit_pk_tenant');
+
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, ['audit_pk_tenant']);
     await teardownTenantTestContext(ctx);
     await moduleRef.close();
   });

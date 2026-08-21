@@ -328,6 +328,61 @@ describe('AccountsService (integration)', () => {
     });
   });
 
+  describe('admin password reset', () => {
+    let accountId: string;
+
+    beforeAll(async () => {
+      const created = await ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: 'reset.me',
+          email: 'reset@example.com',
+          displayName: 'Reset Me',
+          password: 'original-password-1',
+          roleName: 'Nurse',
+        }),
+      );
+      accountId = created.id;
+    });
+
+    it('generates a new password, forces a change, and clears lockout state', async () => {
+      await ctx.inTenant(() =>
+        ctx.accountsService.lockAccount(accountId, new Date(Date.now() + 60_000)),
+      );
+
+      const result = await ctx.inTenant(() => ctx.accountsService.resetPassword(accountId));
+      expect(result.initialPassword).toBeDefined();
+
+      const found = await ctx.inTenant(() => ctx.accountsService.findByUsernameWithRoles('reset.me'));
+      expect(found?.account.needsPasswordUpdate).toBe(true);
+      expect(found?.account.lockedUntil).toBeNull();
+      expect(found?.account.failedLoginAttempts).toBe(0);
+      expect(
+        await bcrypt.compare('original-password-1', found!.account.passwordHash as string),
+      ).toBe(false);
+      expect(
+        await bcrypt.compare(result.initialPassword as string, found!.account.passwordHash as string),
+      ).toBe(true);
+    });
+
+    it('uses an admin-supplied temporary password as-is and still forces a change', async () => {
+      await ctx.inTenant(() => ctx.accountsService.resetPassword(accountId, 'temp-pass-123'));
+
+      const found = await ctx.inTenant(() => ctx.accountsService.findByUsernameWithRoles('reset.me'));
+      expect(found?.account.needsPasswordUpdate).toBe(true);
+      expect(
+        await bcrypt.compare('temp-pass-123', found!.account.passwordHash as string),
+      ).toBe(true);
+    });
+
+    it('rejects resetting an unknown account', async () => {
+      await expect(
+        ctx.inTenant(() =>
+          ctx.accountsService.resetPassword('00000000-0000-0000-0000-000000000000'),
+        ),
+      ).rejects.toThrow('not found');
+    });
+  });
+
   describe('platform-tenant operator accounts (tenant-agnostic roles)', () => {
     beforeAll(() => {
       // Redirect "the platform tenant" to this test-scoped tenant so the real __platform schema
@@ -386,6 +441,47 @@ describe('AccountsService (integration)', () => {
       await expect(
         ctx.inTenant(() => ctx.accountsService.assignRole(created.id, 'Doctor')),
       ).rejects.toThrow('hospital role');
+    });
+
+    it('protects the last Super Admin in the platform tenant from revocation', async () => {
+      const superAdminRole = await ctx.dataSource
+        .getRepository(Role)
+        .findOneOrFail({ where: { name: 'Super Admin' } });
+
+      const op1 = await ctx.inTenant(() =>
+        ctx.accountsService.findByUsernameWithRoles('platform.op1'),
+      );
+      const op2 = await ctx.inTenant(() =>
+        ctx.accountsService.findByUsernameWithRoles('platform.op2'),
+      );
+
+      const activeAssignments = (accountId: string) =>
+        ctx.inTenant(() =>
+          ctx.tenantConnection.runInTenantSchema((manager) =>
+            manager
+              .getRepository(AccountRole)
+              .find({ where: { accountId, isActive: true } }),
+          ),
+        );
+
+      const op1Assignments = await activeAssignments(op1!.account.id);
+      const op2Assignments = await activeAssignments(op2!.account.id);
+      const op1Super = op1Assignments.find((a) => a.roleId === superAdminRole.id);
+      const op2Super = op2Assignments.find((a) => a.roleId === superAdminRole.id);
+      expect(op1Super).toBeDefined();
+      expect(op2Super).toBeDefined();
+
+      // Two Super Admins exist, so removing one is fine...
+      await ctx.inTenant(() =>
+        ctx.accountsService.revokeRoleAssignment(op1!.account.id, op1Super!.id),
+      );
+
+      // ...but the second one is the last — revoking it would lock the platform out.
+      await expect(
+        ctx.inTenant(() =>
+          ctx.accountsService.revokeRoleAssignment(op2!.account.id, op2Super!.id),
+        ),
+      ).rejects.toThrow('last Super Admin');
     });
   });
 });

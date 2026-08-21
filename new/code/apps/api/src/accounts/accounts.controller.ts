@@ -15,7 +15,7 @@ import {
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { Account } from './entities/account.entity.js';
 import { AccountsService } from './accounts.service.js';
-import { CreateAccountDto, ChangeOwnPasswordDto } from './dto/create-account.dto.js';
+import { CreateAccountDto, ChangeOwnPasswordDto, ResetPasswordDto } from './dto/create-account.dto.js';
 import { AssignRoleDto } from './dto/assign-role.dto.js';
 
 const REQUIRED_PERMISSION = 'identity.accounts.manage';
@@ -78,7 +78,12 @@ export class AccountsController {
     if (!found) {
       throw new NotFoundException(`Account ${id} not found`);
     }
-    return { account: toAccountResponse(found.account), roleNames: found.roleNames };
+    return {
+      account: toAccountResponse(found.account),
+      roleIds: found.roleIds,
+      roleNames: found.roleNames,
+      assignments: found.assignments,
+    };
   }
 
   @Patch(':id/deactivate')
@@ -100,6 +105,16 @@ export class AccountsController {
   async unlock(@Param('id') id: string) {
     const account = await this.accountsService.adminUnlockAccount(id);
     return toAccountResponse(account);
+  }
+
+  /** Admin-initiated password reset (forgotten-password recovery). Generates a one-time
+   *  initial password when none is supplied; the account must change it on next login. */
+  @Post(':id/reset-password')
+  @RequirePermission(REQUIRED_PERMISSION)
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Param('id') id: string, @Body() body: ResetPasswordDto = {}) {
+    const { initialPassword } = await this.accountsService.resetPassword(id, body.password);
+    return initialPassword ? { success: true, initialPassword } : { success: true };
   }
 
   @Post(':id/roles')

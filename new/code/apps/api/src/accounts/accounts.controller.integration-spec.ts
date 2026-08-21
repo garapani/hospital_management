@@ -103,6 +103,64 @@ describe('AccountsController (integration)', () => {
     expect(response.body.message).toMatch(/platform-only/);
   });
 
+  it('POST /accounts/:id/reset-password generates a one-time password and forces a change', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post('/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        username: 'ctrl.reset.user',
+        email: 'ctrlreset@example.com',
+        displayName: 'Ctrl Reset User',
+        password: 'a-reset-original-password',
+        roleName: 'Nurse',
+      });
+    const accountId = createResponse.body.id;
+
+    const resetResponse = await request(app.getHttpServer())
+      .post(`/accounts/${accountId}/reset-password`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(resetResponse.status).toBe(200);
+    expect(resetResponse.body).toMatchObject({ success: true });
+    expect(typeof resetResponse.body.initialPassword).toBe('string');
+    expect(resetResponse.body.initialPassword.length).toBeGreaterThanOrEqual(12);
+
+    // The account is flagged must-change (login gate is covered by the auth-flow specs).
+    const getResponse = await request(app.getHttpServer())
+      .get(`/accounts/${accountId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.body.account.needsPasswordUpdate).toBe(true);
+  });
+
+  it('POST /accounts/:id/reset-password accepts an admin-supplied temporary password', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post('/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        username: 'ctrl.reset.supplied',
+        email: 'ctrlresetsupplied@example.com',
+        displayName: 'Ctrl Reset Supplied',
+        password: 'a-supplied-original-password',
+        roleName: 'Nurse',
+      });
+    const accountId = createResponse.body.id;
+
+    const resetResponse = await request(app.getHttpServer())
+      .post(`/accounts/${accountId}/reset-password`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ password: 'AdminTemp!123' });
+    expect(resetResponse.status).toBe(200);
+    expect(resetResponse.body).toEqual({ success: true });
+    expect(resetResponse.body.initialPassword).toBeUndefined();
+  });
+
+  it('POST /accounts/:id/reset-password returns 404 for an unknown account', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/accounts/00000000-0000-0000-0000-000000000000/reset-password')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(response.status).toBe(404);
+  });
+
   describe('platform tenant (tenant-agnostic role catalog)', () => {
     beforeAll(() => {
       // Redirect "the platform tenant" to the test tenant the admin token is scoped to, so the

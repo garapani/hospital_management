@@ -20,6 +20,7 @@ export class AuditController {
         tableName: query.tableName,
         action: query.action,
         changedByAccountId: query.changedByAccountId,
+        recordId: query.recordId,
         correlationId: query.correlationId,
       },
       query,
