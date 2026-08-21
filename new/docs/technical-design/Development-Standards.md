@@ -1636,3 +1636,12 @@ so the picker-vs-API disagreement is closed on the assign path too. "The platfor
 through `resolvePlatformTenantId()` (`tenants/platform-tenant.ts`), which honors the test-only
 `PLATFORM_ADMIN_TENANT_ID` env override so specs exercise platform behavior against a throwaway
 tenant instead of the real `__platform` schema (same mechanism `seed-initial-setup` uses).
+
+**Platform roles are platform-only, not "the whole catalog"** (2026-08-21, correction): the
+platform role picker offers exactly the cross-tenant roles — today just **Super Admin** — never
+hospital roles like Doctor/Nurse. Offering hospital roles in the platform tenant was meaningless
+and a privilege leak: `filterPermissions` is platform-exempt, so a "Doctor" platform account
+would have received every permission in its JWT. `listRoles()` in the platform tenant filters
+`isCrossTenant = true`; `createStaffAccount`/`assignRole` reject a hospital role there with 400
+(the mirror image of rejecting Super Admin in a hospital tenant), keeping the picker and the API
+in agreement in both directions.

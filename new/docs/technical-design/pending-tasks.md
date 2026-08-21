@@ -101,11 +101,15 @@ scope, not merely lower priority.
       interceptor treats the endpoint like `/auth/login` so a wrong current password can't trigger
       the session-clear redirect). Live-verified end to end; full suites green (backend 614,
       frontend 287). See `Development-Standards.md` §43. **Follow-up (2026-08-21):** the platform
-      tenant is tenant-agnostic — `GET /accounts/roles` there returns the whole catalog including
-      Super Admin, and a platform admin can create/assign Super Admin operators (hospital tenants
-      still 400); `assignRole` gained the same cross-tenant + enabled-for-tenant guards as
-      `createStaffAccount`. Live-verified (platform picker 14 roles / creates Super Admin 201;
-      demo picker 13 roles, Super Admin 400). Backend suite 623 passed.
+      tenant is tenant-agnostic — platform operators get the cross-tenant roles (Super Admin);
+      a platform admin can create/assign Super Admin operators (hospital tenants still 400);
+      `assignRole` gained the same cross-tenant + enabled-for-tenant guards as
+      `createStaffAccount`. **Correction (2026-08-21):** the platform picker is platform-only,
+      not the whole catalog — `GET /accounts/roles` in the platform tenant returns just Super
+      Admin (never Doctor/Nurse, which would leak hospital permissions into platform JWTs since
+      `filterPermissions` is platform-exempt), and hospital-role creation/assignment in the
+      platform tenant → 400. Live-verified (platform picker [Super Admin], Doctor 400, Super
+      Admin 201; demo picker 13 roles, Super Admin 400). Backend suite 624 passed.
 
 ## Phase 0 — Housekeeping
 
