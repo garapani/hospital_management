@@ -117,9 +117,12 @@ scope, not merely lower priority.
       (`276d5ac`)
 - [x] Fix moved-path references (new-features.md #16) — bundled into the same commit
       (`276d5ac`)
-- [ ] Manual cleanup left over from the reporting-archiver session: delete the stale
-      `worktree-feat-reporting-archiver` branch, drop the `scratch_rep_check` schema in local dev
-      Postgres (both blocked by `guard-destructive.sh`, need to be run by hand)
+- [x] **Manual cleanup left over from the reporting-archiver session** (2026-08-21) — stale
+      `worktree-feat-reporting-archiver` branch deleted (work had landed on main via the
+      reporting-archiver session's own commits); `scratch_rep_check` schema confirmed already
+      absent from dev Postgres. Note: orphaned schemas `tenant_lab_report_pdf_1` /
+      `tenant_radiology_report_pdf_1` (no registry rows) remain from an earlier PDF session —
+      candidates for the next cleanup.
 
 ## Phase 1 — Close the security gaps
 
