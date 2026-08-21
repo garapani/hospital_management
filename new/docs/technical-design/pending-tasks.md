@@ -139,6 +139,15 @@ scope, not merely lower priority.
    `SET LOCAL ROLE` describe of `tenant-connection.service.integration-spec.ts` — a
    schema-qualified read AND a write against another tenant's schema both fail with
    `permission denied for schema` under the tenant's own role, with a same-schema positive control.
+- [x] **Role catalog is Super Admin only** (2026-08-21) — `GET/POST /roles` (the shared global
+      catalog behind the platform console's Global Catalog screen) previously required
+      `master-data.manage`, which is always-on for customers, so any hospital admin could create
+      roles via the API even though the screen is platform-only. New `rbac.manage` permission
+      mapped to **Super Admin only** (and not in the always-on list) now gates both endpoints;
+      hospital admins map (assign) roles to users through the tenant-scoped `/accounts/roles`
+      picker instead. Seeded live via `nx run api:seed-rbac` (idempotent); verified live
+      (superadmin 200/201, demoadmin 403 `Missing required permission: rbac.manage`). Backend
+      suite 626 passed. See `Development-Standards.md` §44.
 
 ## Phase 2 — Guardrails while the backlog grows
 

@@ -1645,3 +1645,21 @@ would have received every permission in its JWT. `listRoles()` in the platform t
 `isCrossTenant = true`; `createStaffAccount`/`assignRole` reject a hospital role there with 400
 (the mirror image of rejecting Super Admin in a hospital tenant), keeping the picker and the API
 in agreement in both directions.
+
+## 44. Role catalog is Super Admin only — hospital admins map roles, never create them (2026-08-21)
+
+**The global role catalog (`GET/POST /roles`) is a platform-only concern.** A hospital admin's job
+is to *map* (assign) roles to users through the tenant-scoped `GET/POST /accounts/roles` picker
+(which returns only the roles the tenant's package/provisioning enabled — or just Super Admin in
+the platform tenant). Creating or listing catalog roles used to require `master-data.manage`,
+which is always-on for customers, so any hospital admin could call the API directly and create
+roles in the shared catalog (even `isCrossTenant` ones) even though the Global Catalog screen only
+exists in the platform console.
+
+**Fix:** new `rbac.manage` permission (`seed-rbac-catalog.ts`), mapped to **Super Admin only** and
+deliberately *not* in `ALWAYS_ON_PERMISSION_PREFIXES`, so no customer tenant can ever hold it;
+`RoleManagementController` requires it on both endpoints. Re-seeding is idempotent
+(`nx run api:seed-rbac`), and a live Super Admin picks it up at next login (JWT 15m).
+**Rule of thumb for platform-only powers:** gate them with a permission mapped to Super Admin
+only (like `system-admin.tenants.manage` and `rbac.manage`) rather than reusing an always-on
+customer permission — otherwise the API surface silently outruns the console.
