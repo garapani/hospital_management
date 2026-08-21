@@ -77,4 +77,53 @@ describe('RoleManagementService (integration)', () => {
     expect(highIndex).toBeGreaterThanOrEqual(0);
     expect(lowIndex).toBeGreaterThan(highIndex);
   });
+
+  it('updates description and priority, leaving the name immutable', async () => {
+    const role = await roleManagementService.createRole({
+      name: `${PREFIX}Editable Role`,
+      description: 'Original description',
+      priority: 10,
+    });
+
+    const updated = await roleManagementService.updateRole(role.id, {
+      description: 'Edited description',
+      priority: 77,
+    });
+    expect(updated.name).toBe(`${PREFIX}Editable Role`);
+    expect(updated.description).toBe('Edited description');
+    expect(updated.priority).toBe(77);
+  });
+
+  it('deactivates and reactivates a role', async () => {
+    const role = await roleManagementService.createRole({
+      name: `${PREFIX}Toggled Role`,
+      description: 'Toggle me',
+      priority: 20,
+    });
+
+    const deactivated = await roleManagementService.deactivateRole(role.id);
+    expect(deactivated.isActive).toBe(false);
+
+    const reactivated = await roleManagementService.reactivateRole(role.id);
+    expect(reactivated.isActive).toBe(true);
+  });
+
+  it('never allows deactivating a cross-tenant (platform) role', async () => {
+    const superAdmin = await ctx.dataSource
+      .getRepository(Role)
+      .findOneOrFail({ where: { name: 'Super Admin' } });
+
+    await expect(roleManagementService.deactivateRole(superAdmin.id)).rejects.toThrow(
+      'platform role and cannot be deactivated',
+    );
+  });
+
+  it('returns 404 for update/deactivate/reactivate of an unknown role', async () => {
+    const unknown = '00000000-0000-0000-0000-000000000000';
+    await expect(
+      roleManagementService.updateRole(unknown, { description: 'x' }),
+    ).rejects.toThrow('not found');
+    await expect(roleManagementService.deactivateRole(unknown)).rejects.toThrow('not found');
+    await expect(roleManagementService.reactivateRole(unknown)).rejects.toThrow('not found');
+  });
 });

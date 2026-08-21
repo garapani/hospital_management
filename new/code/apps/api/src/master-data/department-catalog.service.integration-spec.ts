@@ -72,4 +72,51 @@ describe('DepartmentCatalogService (integration)', () => {
     const list = await departmentCatalogService.listDepartmentCatalogs();
     expect(list.some((c: DepartmentCatalog) => c.departmentCode === `${PREFIX}NEUR`)).toBe(true);
   });
+
+  it('updates catalog metadata, leaving the code immutable', async () => {
+    const catalog = await departmentCatalogService.createDepartmentCatalog({
+      departmentCode: `${PREFIX}EDIT`,
+      departmentName: 'Editable',
+      description: 'Original',
+      isAppointmentApplicable: true,
+    });
+
+    const updated = await departmentCatalogService.updateDepartmentCatalog(catalog.id, {
+      departmentName: 'Editable (edited)',
+      description: 'Edited',
+      isAppointmentApplicable: false,
+    });
+    expect(updated.departmentCode).toBe(`${PREFIX}EDIT`);
+    expect(updated.departmentName).toBe('Editable (edited)');
+    expect(updated.description).toBe('Edited');
+    expect(updated.isAppointmentApplicable).toBe(false);
+  });
+
+  it('deactivates and reactivates a catalog department', async () => {
+    const catalog = await departmentCatalogService.createDepartmentCatalog({
+      departmentCode: `${PREFIX}TOGGLE`,
+      departmentName: 'Toggleable',
+      description: null,
+      isAppointmentApplicable: true,
+    });
+
+    const deactivated = await departmentCatalogService.deactivateDepartmentCatalog(catalog.id);
+    expect(deactivated.isActive).toBe(false);
+
+    const reactivated = await departmentCatalogService.reactivateDepartmentCatalog(catalog.id);
+    expect(reactivated.isActive).toBe(true);
+  });
+
+  it('returns 404 for update/deactivate/reactivate of an unknown catalog department', async () => {
+    const unknown = '00000000-0000-0000-0000-000000000000';
+    await expect(
+      departmentCatalogService.updateDepartmentCatalog(unknown, { departmentName: 'x' }),
+    ).rejects.toThrow('not found');
+    await expect(departmentCatalogService.deactivateDepartmentCatalog(unknown)).rejects.toThrow(
+      'not found',
+    );
+    await expect(departmentCatalogService.reactivateDepartmentCatalog(unknown)).rejects.toThrow(
+      'not found',
+    );
+  });
 });

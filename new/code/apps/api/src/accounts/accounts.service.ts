@@ -72,6 +72,9 @@ export class AccountsService {
     } catch {
       throw new BadRequestException(`Unknown role: ${input.roleName}`);
     }
+    if (!role.isActive) {
+      throw new BadRequestException(`Role ${role.name} has been deactivated and cannot be assigned`);
+    }
 
     // A hospital tenant must never hold cross-tenant (Super Admin) roles, and staff can only be
     // given roles the tenant's package/provisioning enabled — otherwise the role picker (which
@@ -316,12 +319,13 @@ export class AccountsService {
       // Platform operators are tenant-agnostic but platform-only: offer just the cross-tenant
       // (Super Admin) roles — never hospital roles like Doctor/Nurse, which have no meaning in
       // the platform tenant and would leak hospital permissions into platform JWTs.
-      query.where('role."isCrossTenant" = true');
+      query.where('role."isCrossTenant" = true').andWhere('role."isActive" = true');
     } else if (tenantId) {
       // Package-gated hospital tenants only see roles their tenant_roles enabled.
       query
         .innerJoin('tenant_roles', 'tr', 'tr."roleId" = role.id')
-        .where('tr."tenantId" = :tenantId', { tenantId });
+        .where('tr."tenantId" = :tenantId', { tenantId })
+        .andWhere('role."isActive" = true');
     }
 
     return query.getMany();
@@ -411,6 +415,9 @@ export class AccountsService {
     const role = await this.dataSource.getRepository(Role).findOne({ where: { name: roleName } });
     if (!role) {
       throw new NotFoundException(`Unknown role: ${roleName}`);
+    }
+    if (!role.isActive) {
+      throw new BadRequestException(`Role ${role.name} has been deactivated and cannot be assigned`);
     }
 
     // Same guards as createStaffAccount: a hospital tenant can never gain a cross-tenant role

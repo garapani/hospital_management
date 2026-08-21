@@ -111,5 +111,25 @@ describe('RoleManagementController permission gating (integration)', () => {
       .set('Authorization', `Bearer ${rbacToken}`)
       .send({ name: `${PREFIX}Super Role`, description: 'Platform-only', priority: 2 });
     expect(createResponse.status).toBe(201);
+    const roleId = createResponse.body.id;
+
+    const updateResponse = await request(app.getHttpServer())
+      .patch(`/roles/${roleId}`)
+      .set('Authorization', `Bearer ${rbacToken}`)
+      .send({ description: 'Platform-only (edited)', priority: 3 });
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body.description).toBe('Platform-only (edited)');
+
+    const deactivateResponse = await request(app.getHttpServer())
+      .patch(`/roles/${roleId}/deactivate`)
+      .set('Authorization', `Bearer ${rbacToken}`);
+    expect(deactivateResponse.status).toBe(200);
+    expect(deactivateResponse.body.isActive).toBe(false);
+
+    const reactivateResponse = await request(app.getHttpServer())
+      .patch(`/roles/${roleId}/reactivate`)
+      .set('Authorization', `Bearer ${rbacToken}`);
+    expect(reactivateResponse.status).toBe(200);
+    expect(reactivateResponse.body.isActive).toBe(true);
   });
 });

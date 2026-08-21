@@ -326,6 +326,50 @@ describe('AccountsService (integration)', () => {
         await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, [registryTenant]);
       }
     });
+
+    it('rejects creating or assigning a deactivated role', async () => {
+      const roleName = 'deactivated_role_spec';
+      const repo = ctx.dataSource.getRepository(Role);
+      await repo.save(
+        repo.create({
+          name: roleName,
+          description: 'Temporary deactivated role',
+          priority: 1,
+          isCrossTenant: false,
+          bypassesPermissionChecks: false,
+          isActive: false,
+        }),
+      );
+
+      try {
+        await expect(
+          ctx.inTenant(() =>
+            ctx.accountsService.createStaffAccount({
+              username: 'deact.user',
+              email: 'deact@example.com',
+              displayName: 'Deact User',
+              password: 'a-password',
+              roleName,
+            }),
+          ),
+        ).rejects.toThrow('deactivated');
+
+        const assignee = await ctx.inTenant(() =>
+          ctx.accountsService.createStaffAccount({
+            username: 'deact.assignee',
+            email: 'deactassignee@example.com',
+            displayName: 'Deact Assignee',
+            password: 'a-password',
+            roleName: 'Nurse',
+          }),
+        );
+        await expect(
+          ctx.inTenant(() => ctx.accountsService.assignRole(assignee.id, roleName)),
+        ).rejects.toThrow('deactivated');
+      } finally {
+        await repo.delete({ name: roleName });
+      }
+    });
   });
 
   describe('admin password reset', () => {

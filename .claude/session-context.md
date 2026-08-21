@@ -1,17 +1,18 @@
 # Session Context
-Updated: 2026-08-14T18:08:35Z
-Session: 3a19fc87-1834-45b4-b6b0-5a995f8f05e4
+Updated: 2026-08-17T09:02:12Z
+Session: 241d1812-9cca-4dcc-b6a9-1c2f339c31bb
 
 ## Last Assistant Message
-Recorded in `PRD.md` alongside the name decision — `#006D77` primary/accent (close to the logo's teal), `#F0FDFD` background, and confirmed `#006D77` + white text clears WCAG AA (6.1:1).
+All three items from your list are done. Summary of the Encounters fix (the diagnose skill's post-mortem):
 
-Nothing to wire up yet — the frontend repo doesn't exist (PRD §9.4, framework still TBD). One gap: no semantic colors chosen (success/warning/error/info) — worth picking those alongside the framework decision rather than after, so the first components aren't built with ad hoc reds/greens.
+**Root cause:** `app.module.ts`'s `ThrottlerStorageRedisService` defaulted `REDIS_PORT` to `6379` (Redis's usual port) instead of `6380` — the actual host-mapped port from `docker-compose.dev.yml`. `data-source.ts` already handles this correctly for Postgres (defaults `DB_PORT` to `5433`); Redis just never got the same treatment. Since `ThrottlerGuard` is globally registered and runs before every authenticated request reaches a controller, any test hitting it with the wrong port exhausted ioredis's retries — either blowing past Jest's 5000ms timeout (looked like a hang) or returning 500 given more time, and leaking reconnect timers afterward (the teardown hang).
+
+**Why only encounters:** it was the only clinical controller spec driving real authenticated HTTP end-to-end — triage/vitals only assert 401 paths, which `AuthContextMiddleware` rejects before the request ever reaches `ThrottlerGuard`.
 
 ## Git State
 Branch: main
-Uncommitted changes: 10
- new/code/README.md               |  2 +-
- new/code/apps/api/src/main.ts    | 15 ++++++++++++---
- new/code/package.json            |  2 +-
- new/docs/technical-design/PRD.md |  4 +++-
- 6 files changed, 27 insertions(+), 16 deletions(-)
+Uncommitted changes: 3
+ .claude/session-context.md                         | 19 +++++-----
+ .claude/session-end.md                             |  2 +-
+ new/code/apps/api/src/accounts/accounts.service.ts | 41 +++++++++++++++-------
+ 3 files changed, 38 insertions(+), 24 deletions(-)
