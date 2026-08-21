@@ -1689,3 +1689,23 @@ was written with an empty recordId**. The subscriber now resolves the id from
 `event.metadata.primaryColumns` (joined with `:` for composite keys), so tenant events correlate
 correctly. Historical empty rows cannot be backfilled (no tenant identifier was stored).
 **Rule:** never hardcode `entity['id']` for audit correlation — use the entity's real PK metadata.
+
+## 46. Global catalog edit + deactivate; department catalog is platform-only (2026-08-21)
+
+**The Global Catalog is no longer create-only.** Roles: `PATCH /roles/:id` edits
+description/priority (the **name is immutable** — renaming would orphan `tenant_roles` and
+account-role references); `PATCH /roles/:id/deactivate|reactivate` soft-removes a role.
+Deactivation semantics: pickers (`AccountsService.listRoles`) and new assignments stop offering
+the role (`createStaffAccount`/`assignRole` reject inactive roles with 400), while **existing
+account assignments keep working until revoked** — deactivation is a catalog-level "no longer
+offered", not a mass-revocation. Cross-tenant roles (Super Admin) can never be deactivated (400);
+the Global Catalog UI hides the toggle for them. Department catalogs: `PATCH
+/catalogs/departments/:id` edits name/description/appt (code immutable) plus deactivate/reactivate.
+
+**Department catalogs are platform-only.** They used `master-data.manage` — the same always-on
+hole the role catalog had — so any hospital admin could create/edit the shared department
+templates via the API. Both catalog controllers now require `rbac.manage` (Super Admin only);
+the permission-gating spec proves a `master-data.manage`-only token gets 403 on every catalog
+endpoint. Rule: every endpoint behind a platform-only console screen must be gated by a
+Super-Admin-only permission — `master-data.manage` covers *tenant* departments/wards, never the
+global catalog.

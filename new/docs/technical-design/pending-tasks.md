@@ -160,6 +160,16 @@ scope, not merely lower priority.
       Live-verified (reset → 403 must-change → login; revoke-to-last → 400; tenant history
       returns the provision event with its hospitalId). Backend suite 636, frontend 304. See
       `Development-Standards.md` §45.
+- [x] **Global catalog edit + deactivate; department catalog platform-only** (2026-08-21) — the
+      catalog was create-only: `PATCH /roles/:id` (description/priority, name immutable),
+      `PATCH /roles/:id/deactivate|reactivate` (soft-remove: pickers + new assignments stop
+      offering it, existing assignments keep working; Super Admin can never be deactivated), and
+      the same edit/deactivate for `/catalogs/departments`. Also closed the second
+      `master-data.manage` hole: department catalog endpoints moved to `rbac.manage`
+      (Super Admin only) — a hospital admin with `master-data.manage` gets 403 on every catalog
+      endpoint now. Live-verified (role create/edit/deactivate hidden from the demo picker /
+      reactivate, Super Admin deactivate 400, dept catalog edit/deactivate, demoadmin 403).
+      Backend suite 646, frontend 317. See `Development-Standards.md` §46.
 
 ## Phase 2 — Guardrails while the backlog grows
 
