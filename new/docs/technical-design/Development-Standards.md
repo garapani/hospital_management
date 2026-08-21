@@ -1591,3 +1591,36 @@ console shows the generated credentials in a panel that stays open until copied.
 list as *"Included in <package>"* (the tenant's current package enables it by default) or
 *"Manual"* (switched on by hand). The annotation follows the tenant's current package — on a
 package change the new package's roles get added automatically (see §40), and the labels update.
+
+## 43. Secure staff account creation: generated initial passwords + must-change-password onboarding (2026-08-21)
+
+**Staff account creation is now the frontend's only job after provisioning** — `POST /accounts`
+(any tenant) takes an optional `password`; when omitted, `AccountsService.createStaffAccount`
+generates a random 12-char base64url initial password and returns it **once** in the response
+(`initialPassword`), with `needsPasswordUpdate: true`. A supplied admin password means no forced
+change; the client cannot forge `needsPasswordUpdate: false` to suppress the forced change on a
+generated password (the service ignores the flag when no password was sent). The old hardcoded
+`ChangeMe123!` frontend default — a standing backdoor since the password was known to everyone —
+is gone; the create-user modal shows the generated password in a keep-open panel (same pattern as
+§42's bootstrap-credentials panel).
+
+**Role validation at creation** (`createStaffAccount`): unknown role → 400; cross-tenant role
+(Super Admin) → 400 for any hospital tenant (the platform-tenant bootstrap passes an internal
+`allowPlatformRole` flag the HTTP controller always forces to `false`, so a crafted body can never
+set it); role not enabled for the tenant (checked against `tenant_roles` for real registry tenants,
+fail-open for schema-only test tenants like `filterPermissions`) → 400. A crafted request can no
+longer mint a Super Admin.
+
+**Must-change-password flow.** Login with an account flagged `needsPasswordUpdate` returns HTTP
+403 `{mustChangePassword: true}` and issues **no tokens**; `/auth/refresh` also rejects such
+accounts, so a pre-change refresh token cannot bypass the gate. The onboarding endpoint
+`POST /auth/change-password` is unauthenticated (excluded from `AuthContextMiddleware` like login),
+authenticates with username + current password (same proof as login — wrong/missing credentials
+both 401 without revealing which), and **only accepts accounts still flagged must-change** (400
+otherwise); it replaces the password and clears the flag. Regular logged-in rotation stays on the
+authenticated `POST /accounts/me/password` (`changeOwnPassword`, current-password verified). The
+Angular client treats `/auth/change-password` like `/auth/login` in the auth interceptor — no
+Bearer token, no refresh-on-401 — so a wrong current password can't trigger the session-clear
+redirect; the `LoginOutcome` union gained a `mustChangePassword` kind and the login screen routes
+to an unguarded `/change-password` route (outside both shells, prefilled with the username) that
+validates length/confirmation client-side before calling the endpoint.

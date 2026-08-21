@@ -88,6 +88,19 @@ scope, not merely lower priority.
       admission, completed lab/radiology/pharmacy on one order (real charge-capture → an unpaid
       invoice for staff to demo payment on), 2 employees and a payroll run; idempotent (skips when
       the demo tenant already has patients).
+- [x] **Staff account creation: no hardcoded passwords, no Super Admin minting, working
+      must-change flow** (2026-08-21) — `POST /accounts` validates the role at creation (unknown /
+      cross-tenant Super Admin / not-enabled-for-tenant all 400; the HTTP controller forces the
+      internal seed-only `allowPlatformRole` escape hatch to `false`), generates a random 12-char
+      initial password when none is supplied (returned once) and forces a change on first login.
+      Login with a flagged account returns 403 `{mustChangePassword:true}` with no tokens; refresh
+      rejects flagged accounts; the unauthenticated `POST /auth/change-password` (excluded from
+      `AuthContextMiddleware` like login) verifies username + current password and only accepts
+      still-flagged accounts. Frontend: create-user modal shows the generated password once and
+      toasts errors; login routes to a new unguarded `/change-password` screen (username prefilled,
+      interceptor treats the endpoint like `/auth/login` so a wrong current password can't trigger
+      the session-clear redirect). Live-verified end to end; full suites green (backend 614,
+      frontend 287). See `Development-Standards.md` §43.
 
 ## Phase 0 — Housekeeping
 
