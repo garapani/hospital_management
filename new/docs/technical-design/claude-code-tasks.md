@@ -318,6 +318,34 @@ cd frontend && CI=true pnpm exec nx run staff-console:test -- --testPathPatterns
 cd frontend && CI=true pnpm exec nx run staff-console:build
 ```
 
+### 2.13 Fix payroll payslips 500: `month=undefined&year=undefined` query params
+**Status:** real live bug, confirmed from the dev-server log (`GET /api/payroll/payslips?page=1&limit=10&month=undefined&year=undefined` → 500 `invalid input syntax for type integer: "undefined"`).
+
+**Context:** `apps/staff-console/src/app/payroll/payroll-list.ts` builds the list query as
+`{ page, limit, month: this.monthFilter() ?? undefined, year: this.yearFilter() ?? undefined }`
+and passes it as **query params** to `ApiClientService.get`. Angular's `HttpClient` stringifies
+`undefined` to the literal string `"undefined"` in the query string. The backend
+`ListPayslipsQueryDto` (`new/code/apps/api/src/payroll/dto/payroll.dto.ts`) declares
+`month?: number; year?: number`, but there is **no global ValidationPipe/transform** in
+`apps/api/src/main.ts`, so the values arrive as raw strings — `query.month !== undefined` is
+true (it's the string `"undefined"`) and gets bound to the integer `periodMonth` column → 500.
+(The same `?? undefined` pattern in `triage-detail.ts` and `employee-list.ts` is harmless — those
+are JSON request bodies, where undefined keys are dropped by serialization. Only query-param
+sites break.)
+
+**What to do:** stop sending undefined keys in query params. Cleanest fix: build the params
+object conditionally in `payroll-list.ts` (omit `month`/`year` when the filter is null), or add
+an `omitUndefined` helper in `ApiClientService.get` that strips undefined values from `params`.
+Optionally harden the backend DTO with `@Type(() => Number)`/validation so `"undefined"`
+can't reach the query builder — but the frontend fix is the real one.
+**Verify:** `GET /api/payroll/payslips?page=1&limit=10` (no month/year) returns 200; the Payroll
+screen loads without a 500; filtering by month/year still works.
+**Test:**
+```bash
+cd frontend && CI=true pnpm exec nx run staff-console:test -- --testPathPatterns="payroll"
+cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="payroll"
+```
+
 ---
 
 ## 3. Cleanups
