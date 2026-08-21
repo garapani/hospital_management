@@ -1709,3 +1709,24 @@ the permission-gating spec proves a `master-data.manage`-only token gets 403 on 
 endpoint. Rule: every endpoint behind a platform-only console screen must be gated by a
 Super-Admin-only permission — `master-data.manage` covers *tenant* departments/wards, never the
 global catalog.
+
+## 47. Tenant deletion & retention: archive (soft) + purge (hard), and the suspend-login bug (2026-08-21)
+
+**Lifecycle:** `active` → `suspended` (reversible, blocks login) → `archived` (soft-delete,
+reversible, blocks login, data kept) → `purged` (irreversible). Archive is the deletion path for
+churned hospitals: `PATCH /tenants/:id/archive` sets `status='archived'` + `archivedAt`
+(migration 0050), keeps the schema and all data, and `restore` returns to active. **Purge** is
+hard and deliberate: only an **archived** tenant, and `confirmHospitalId` must exactly match
+(`PATCH /tenants/:id/purge` with `{ confirmHospitalId }` — PATCH because the frontend API client
+has no DELETE-with-body). It drops the schema + role + registry row via **loaded-entity
+`remove()`, not `repository.delete()`** — `delete()` bypasses the audit subscriber, so the
+destructive action would be untraceable; `remove()` records a 'delete' event in the platform
+trail (which lives in `tenant___platform` and survives the drop). Retention policy: **no
+auto-purge** — archived data is kept indefinitely; purge is manual + typed-confirmation only.
+
+**The suspend-login bug it exposed:** `suspendTenant` only set the status column — `AuthService`
+never checked tenant status, so suspended hospitals kept working. Login and refresh now gate on
+the registry row (`TenantsService.getTenantStatus`, fail-open for schema-only test tenants,
+platform tenant exempt): suspended/archived → login 403 `{tenantInactive, reason}` (frontend
+shows the message via the serverError path), refresh → `invalidToken`. Rule: any tenant-status
+change must be enforced at the auth boundary, not just stored on the row.
