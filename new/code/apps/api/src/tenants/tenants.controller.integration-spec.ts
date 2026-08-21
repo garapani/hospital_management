@@ -79,6 +79,55 @@ describe('TenantsController (integration)', () => {
     expect(response.body.status).toBe('active');
   });
 
+  it('bootstraps a Hospital Admin account with generated credentials on provision', async () => {
+    const hospitalId = 'test_tenant_ctrl_admin';
+    const response = await request(app.getHttpServer())
+      .post('/tenants')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ hospitalId, hospitalName: 'Admin Bootstrap Hospital' });
+
+    expect(response.status).toBe(201);
+    expect(response.body.adminCredentials).toEqual(
+      expect.objectContaining({
+        username: `admin.${hospitalId}`,
+        password: expect.any(String),
+      }),
+    );
+    expect(response.body.adminCredentials.password.length).toBeGreaterThanOrEqual(8);
+
+    // The account actually exists in the tenant schema with the Hospital Admin role.
+    const accountRows: { username: string; roleName: string }[] = await ctx.dataSource.query(
+      `SELECT a.username, r.name AS "roleName"
+       FROM "${`tenant_${hospitalId}`}".accounts a
+       JOIN "${`tenant_${hospitalId}`}".account_roles ar ON ar."accountId" = a.id
+       JOIN roles r ON r.id = ar."roleId"
+       WHERE a.username = $1`,
+      [`admin.${hospitalId}`],
+    );
+    expect(accountRows).toEqual([
+      expect.objectContaining({ username: `admin.${hospitalId}`, roleName: 'Hospital Admin' }),
+    ]);
+  });
+
+  it('uses the platform-admin-supplied credentials when provided', async () => {
+    const hospitalId = 'test_tenant_ctrl_admin_explicit';
+    const response = await request(app.getHttpServer())
+      .post('/tenants')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        hospitalId,
+        hospitalName: 'Explicit Admin Hospital',
+        adminUsername: 'head.admin',
+        adminPassword: 'HeadAdmin@123!',
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.adminCredentials).toEqual({
+      username: 'head.admin',
+      password: 'HeadAdmin@123!',
+    });
+  });
+
   it('rejects provisioning a duplicate hospitalId with 409', async () => {
     await request(app.getHttpServer())
       .post('/tenants')

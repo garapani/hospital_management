@@ -20,6 +20,7 @@ describe('TenantsService (integration)', () => {
       ctx.tenantConnection,
       ctx.tenantContext,
       new PackagesService(ctx.dataSource),
+      ctx.accountsService,
     );
   });
 

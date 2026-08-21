@@ -7,11 +7,18 @@ import { Role } from '../rbac/entities/role.entity.js';
 import { DepartmentCatalog } from '../master-data/entities/department-catalog.entity.js';
 import { Department } from '../master-data/entities/department.entity.js';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { AccountsService } from '../accounts/accounts.service.js';
 import { PackagesService } from '../packages/packages.service.js';
 import { PACKAGE_CATALOG } from '../packages/package-catalog.js';
 import { PLATFORM_TENANT_ID } from './platform-tenant.js';
+import { randomBytes } from 'node:crypto';
 
 const SAFE_HOSPITAL_ID = /^[a-z0-9_]+$/;
+
+/** 12-character bootstrap password (URL-safe, no ambiguous chars). */
+function generateBootstrapPassword(): string {
+  return randomBytes(9).toString('base64url');
+}
 
 /** A catalog role plus whether this tenant currently has it enabled. */
 export interface TenantRoleOption {
@@ -35,10 +42,20 @@ export interface ProvisionTenantInput {
   hospitalName: string;
   /** The SaaS package to provision under; defaults to 'basic' (the MVP launch tier). */
   packageCode?: string;
+  /** Optional bootstrap Hospital Admin account. When omitted, the backend generates a username
+   *  and password and returns them as `adminCredentials` in the response. */
+  adminUsername?: string;
+  adminEmail?: string;
+  adminPassword?: string;
   /** Deprecated — ignored when a tenant context with an accountId is active. */
   createdBy?: string;
   roleIds?: string[];
   departmentCatalogIds?: string[];
+}
+
+export interface AdminCredentials {
+  username: string;
+  password: string;
 }
 
 @Injectable()
@@ -49,6 +66,7 @@ export class TenantsService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly tenantContext: TenantContextService,
     private readonly packagesService: PackagesService,
+    private readonly accountsService: AccountsService,
   ) {}
 
   /**
@@ -62,7 +80,9 @@ export class TenantsService {
     return this.tenantContext.getAccountId() ?? (fallback as string);
   }
 
-  async provisionTenant(input: ProvisionTenantInput): Promise<Tenant> {
+  async provisionTenant(
+    input: ProvisionTenantInput,
+  ): Promise<Tenant & { adminCredentials: AdminCredentials }> {
     if (!SAFE_HOSPITAL_ID.test(input.hospitalId)) {
       throw new BadRequestException(`Invalid hospitalId format: ${input.hospitalId}`);
     }
@@ -161,7 +181,42 @@ export class TenantsService {
       }
     }
 
-    return tenant;
+    // Bootstrap the Hospital Admin account — the platform admin's only job for the new tenant;
+    // the hospital admin then creates all further staff accounts. Without this the tenant has no
+    // login path at all (account creation requires a session). A generated password is returned
+    // once in the response for handover.
+    const adminCredentials = await this.createBootstrapAdmin(input.hospitalId, {
+      username: input.adminUsername,
+      email: input.adminEmail,
+      password: input.adminPassword,
+    });
+
+    return { ...tenant, adminCredentials };
+  }
+
+  /** Creates (or returns credentials for) the tenant's initial Hospital Admin account. */
+  private async createBootstrapAdmin(
+    hospitalId: string,
+    provided: { username?: string; email?: string; password?: string },
+  ): Promise<AdminCredentials> {
+    const username = provided.username ?? `admin.${hospitalId}`;
+    const password = provided.password ?? generateBootstrapPassword();
+    const email = provided.email ?? `${username}@${hospitalId}.local`;
+
+    await this.tenantContext.run(
+      { tenantId: hospitalId, correlationId: 'tenant-provisioning' },
+      () =>
+        this.accountsService.createStaffAccount({
+          username,
+          email,
+          displayName: 'Hospital Administrator',
+          password,
+          roleName: 'Hospital Admin',
+          needsPasswordUpdate: provided.password ? false : true,
+        }),
+    );
+
+    return { username, password };
   }
 
   /**

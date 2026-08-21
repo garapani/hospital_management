@@ -3,7 +3,7 @@ import { DataSource } from 'typeorm';
 import { Package } from './entities/package.entity.js';
 import { Tenant } from '../tenants/entities/tenant.entity.js';
 import { PLATFORM_TENANT_ID } from '../tenants/platform-tenant.js';
-import { permissionAllowed } from './package-catalog.js';
+import { PACKAGE_CATALOG, permissionAllowed } from './package-catalog.js';
 
 /**
  * Resolves a tenant's SaaS package and filters its permission list accordingly. Enforced at
@@ -20,8 +20,14 @@ import { permissionAllowed } from './package-catalog.js';
 export class PackagesService {
   constructor(private readonly dataSource: DataSource) {}
 
-  async listPackages(): Promise<Package[]> {
-    return this.dataSource.getRepository(Package).find({ order: { createdAt: 'ASC' } });
+  async listPackages(): Promise<Array<Package & { defaultRoleNames: string[] }>> {
+    const rows = await this.dataSource.getRepository(Package).find({ order: { createdAt: 'ASC' } });
+    // defaultRoleNames lives in the code catalog (package-catalog.ts), not the DB row — merge it
+    // so the console can annotate which roles each package enables.
+    return rows.map((pkg) => ({
+      ...pkg,
+      defaultRoleNames: PACKAGE_CATALOG.find((p) => p.code === pkg.code)?.defaultRoleNames ?? [],
+    }));
   }
 
   async getPackage(code: string): Promise<Package | null> {
