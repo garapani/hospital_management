@@ -1575,3 +1575,19 @@ a Super Admin role were somehow enabled on a customer tenant, staff JWTs there w
 tenant-management powers. Frontend: the tenant-detail "Available roles" list filters out
 `isCrossTenant` roles (with a note) so they can't be toggled on by mistake; the backend guard
 remains the authority.
+
+## 42. Bootstrap admin at provisioning + package role annotations (2026-08-21)
+
+**Every tenant gets its Hospital Admin account at provisioning** — the platform admin's only job;
+the hospital admin then creates all further staff. `POST /tenants` accepts optional
+`adminUsername`/`adminEmail`/`adminPassword`; when omitted it generates `admin.<hospitalId>` and a
+12-char base64url password and returns them once in the response as `adminCredentials`
+(`needsPasswordUpdate: true` when generated). This fixed a chicken-and-egg: a newly provisioned
+tenant previously had no login path at all (account creation requires a session). The platform
+console shows the generated credentials in a panel that stays open until copied.
+
+**Role annotations.** `GET /packages` now merges `defaultRoleNames` from the code catalog
+(`package-catalog.ts`) into the DB rows, so the console can render each role in the tenant-detail
+list as *"Included in <package>"* (the tenant's current package enables it by default) or
+*"Manual"* (switched on by hand). The annotation follows the tenant's current package — on a
+package change the new package's roles get added automatically (see §40), and the labels update.
