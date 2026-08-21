@@ -114,15 +114,14 @@ describe('AccountsController (integration)', () => {
       delete process.env['PLATFORM_ADMIN_TENANT_ID'];
     });
 
-    it('GET /accounts/roles returns the full catalog, including Super Admin', async () => {
+    it('GET /accounts/roles offers only platform roles: Super Admin, never hospital roles', async () => {
       const response = await request(app.getHttpServer())
         .get('/accounts/roles')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(response.status).toBe(200);
       const names = (response.body as { name: string }[]).map((r) => r.name);
-      expect(names).toContain('Super Admin');
-      expect(names).toContain('Hospital Admin');
+      expect(names).toEqual(['Super Admin']);
     });
 
     it('creates a Super Admin operator account', async () => {
@@ -139,6 +138,21 @@ describe('AccountsController (integration)', () => {
       expect(response.status).toBe(201);
       expect(response.body.username).toBe('ctrl.platform.super');
       expect(response.body.passwordHash).toBeUndefined();
+    });
+
+    it('rejects a hospital role (Doctor) with 400', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/accounts')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          username: 'ctrl.platform.doctor',
+          email: 'ctrlplatformdoctor@example.com',
+          displayName: 'Ctrl Platform Doctor',
+          roleName: 'Doctor',
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toMatch(/hospital role/);
     });
   });
 

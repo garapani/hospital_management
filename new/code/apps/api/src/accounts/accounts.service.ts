@@ -75,16 +75,21 @@ export class AccountsService {
     // given roles the tenant's package/provisioning enabled — otherwise the role picker (which
     // lists enabled roles) and the API would disagree, and a crafted request could create a
     // Super Admin account. tenant_roles is the single source of truth for "enabled for tenant".
-    // The two exceptions: the platform tenant's own operator accounts (roles there are
-    // tenant-agnostic — the whole catalog, including Super Admin), and the seed's internal
-    // allowPlatformRole escape hatch for test-scoped platform tenants, which the HTTP layer can
-    // never set.
+    // The platform tenant is the mirror image: its operators are tenant-agnostic but platform-only
+    // — only cross-tenant (Super Admin) roles are offered there, never hospital roles like
+    // Doctor/Nurse. The seed's internal allowPlatformRole escape hatch (test-scoped platform
+    // tenants) is the only other cross-tenant path, and the HTTP layer can never set it.
     const isPlatformTenant = this.tenantContext.getTenantId() === resolvePlatformTenantId();
     const platformBypass =
       role.isCrossTenant && (input.allowPlatformRole === true || isPlatformTenant);
     if (role.isCrossTenant && !platformBypass) {
       throw new BadRequestException(
         `Role ${role.name} is platform-only and cannot be assigned to a hospital tenant account`,
+      );
+    }
+    if (!role.isCrossTenant && isPlatformTenant) {
+      throw new BadRequestException(
+        `Role ${role.name} is a hospital role and cannot be assigned to a platform operator account`,
       );
     }
     const tenantId = this.tenantContext.getTenantId();
@@ -295,10 +300,13 @@ export class AccountsService {
       .addOrderBy('role.name', 'ASC');
 
     const tenantId = this.tenantContext.getTenantId();
-    // Package-gated tenants only see roles their tenant_roles enabled. The platform tenant is
-    // not a package-gated hospital — its operators pick from the whole catalog (including the
-    // cross-tenant Super Admin), so the join is skipped there (tenant-agnostic role picker).
-    if (tenantId && tenantId !== resolvePlatformTenantId()) {
+    if (tenantId && tenantId === resolvePlatformTenantId()) {
+      // Platform operators are tenant-agnostic but platform-only: offer just the cross-tenant
+      // (Super Admin) roles — never hospital roles like Doctor/Nurse, which have no meaning in
+      // the platform tenant and would leak hospital permissions into platform JWTs.
+      query.where('role."isCrossTenant" = true');
+    } else if (tenantId) {
+      // Package-gated hospital tenants only see roles their tenant_roles enabled.
       query
         .innerJoin('tenant_roles', 'tr', 'tr."roleId" = role.id')
         .where('tr."tenantId" = :tenantId', { tenantId });
@@ -361,14 +369,19 @@ export class AccountsService {
     }
 
     // Same guards as createStaffAccount: a hospital tenant can never gain a cross-tenant role
-    // or a role its package/provisioning didn't enable, even by hitting the API directly —
-    // otherwise the role picker and the API would disagree. The platform tenant is exempt (its
-    // operators are tenant-agnostic). Fail-open for schema-only test tenants (no registry row).
+    // or a role its package/provisioning didn't enable, and the platform tenant can never gain a
+    // hospital role — otherwise the role picker and the API would disagree. Fail-open for
+    // schema-only test tenants (no registry row).
     const tenantId = this.tenantContext.getTenantId();
     const isPlatformTenant = tenantId === resolvePlatformTenantId();
     if (role.isCrossTenant && !isPlatformTenant) {
       throw new BadRequestException(
         `Role ${role.name} is platform-only and cannot be assigned to a hospital tenant account`,
+      );
+    }
+    if (!role.isCrossTenant && isPlatformTenant) {
+      throw new BadRequestException(
+        `Role ${role.name} is a hospital role and cannot be assigned to a platform operator account`,
       );
     }
     const registryRow: { hospitalId: string }[] = tenantId

@@ -339,13 +339,10 @@ describe('AccountsService (integration)', () => {
       delete process.env['PLATFORM_ADMIN_TENANT_ID'];
     });
 
-    it('listRoles is tenant-agnostic: the whole catalog, including the cross-tenant Super Admin', async () => {
+    it('listRoles is tenant-agnostic but platform-only: Super Admin, never hospital roles', async () => {
       const roles = await ctx.inTenant(() => ctx.accountsService.listRoles());
       const names = roles.map((r) => r.name);
-      expect(names).toContain('Super Admin');
-      expect(names).toContain('Hospital Admin');
-      expect(names).toContain('Patient');
-      expect(names.length).toBeGreaterThan(10);
+      expect(names).toEqual(['Super Admin']);
     });
 
     it('creates a Super Admin operator account in the platform tenant', async () => {
@@ -364,21 +361,31 @@ describe('AccountsService (integration)', () => {
       expect(found?.roleNames).toEqual(['Super Admin']);
     });
 
-    it('assigns the Super Admin role to an existing platform account', async () => {
+    it('rejects a hospital role (Doctor) for a platform operator account', async () => {
+      await expect(
+        ctx.inTenant(() =>
+          ctx.accountsService.createStaffAccount({
+            username: 'platform.doctor',
+            email: 'doctor@platform.local',
+            displayName: 'Platform Doctor',
+            password: 'op-password-789',
+            roleName: 'Doctor',
+          }),
+        ),
+      ).rejects.toThrow('hospital role');
+
       const created = await ctx.inTenant(() =>
         ctx.accountsService.createStaffAccount({
           username: 'platform.op2',
           email: 'op2@platform.local',
           displayName: 'Platform Operator Two',
           password: 'op-password-456',
-          roleName: 'Hospital Admin',
+          roleName: 'Super Admin',
         }),
       );
-
-      await ctx.inTenant(() => ctx.accountsService.assignRole(created.id, 'Super Admin'));
-
-      const found = await ctx.inTenant(() => ctx.accountsService.getAccountWithRoles(created.id));
-      expect(found?.roleNames.sort()).toEqual(['Hospital Admin', 'Super Admin']);
+      await expect(
+        ctx.inTenant(() => ctx.accountsService.assignRole(created.id, 'Doctor')),
+      ).rejects.toThrow('hospital role');
     });
   });
 });
