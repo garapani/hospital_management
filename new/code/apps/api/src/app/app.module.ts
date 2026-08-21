@@ -7,6 +7,7 @@ import { TenantContextModule, TenantContextMiddleware } from '@hospital/tenant-c
 import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { AuthModule } from '../auth/auth.module.js';
 import { TenantsModule } from '../tenants/tenants.module.js';
+import { PlatformBillingModule } from '../platform-billing/platform-billing.module.js';
 import { PackagesModule } from '../packages/packages.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { RbacModule } from '../rbac/rbac.module.js';
@@ -94,6 +95,7 @@ import { VaccinationModule } from '../vaccination/vaccination.module.js';
     TenantContextModule,
     AuthModule,
     TenantsModule,
+    PlatformBillingModule,
     PackagesModule,
     AuditModule,
     RbacModule,

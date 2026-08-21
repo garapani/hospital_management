@@ -25,6 +25,11 @@ export interface PackageDefinition {
    * decides the sensible defaults.
    */
   defaultRoleNames: string[];
+  /** List price in ₹ per billing cycle — the platform's SaaS pricing, used by the subscription
+   *  billing module. Placeholder values agreed with the product owner; the annual price is the
+   *  two-months-free bundle. */
+  priceMonthly: number;
+  priceAnnual: number;
 }
 
 const BASIC_ROLES = [
@@ -90,6 +95,8 @@ export const PACKAGE_CATALOG: PackageDefinition[] = [
       'Small hospitals: registration, visits, billing, lab, radiology, pharmacy, inventory, employees, payroll and core reporting.',
     modules: BASIC_MODULES,
     defaultRoleNames: BASIC_ROLES,
+    priceMonthly: 4999,
+    priceAnnual: 54000,
   },
   {
     code: 'standard',
@@ -98,6 +105,8 @@ export const PACKAGE_CATALOG: PackageDefinition[] = [
       'Medium hospitals: Basic plus ward supply, nursing, OT, maternity, CSSD, vaccination, fixed assets, helpdesk, marketing, SSU and doctor fraction.',
     modules: STANDARD_MODULES,
     defaultRoleNames: [...BASIC_ROLES, 'Helpdesk Agent'],
+    priceMonthly: 9999,
+    priceAnnual: 108000,
   },
   {
     code: 'enterprise',
@@ -106,6 +115,8 @@ export const PACKAGE_CATALOG: PackageDefinition[] = [
       'Large hospitals: Standard plus insurance & claims, accounting, and the full Document & Print scope.',
     modules: ENTERPRISE_MODULES,
     defaultRoleNames: [...BASIC_ROLES, 'Helpdesk Agent', 'Patient'],
+    priceMonthly: 19999,
+    priceAnnual: 216000,
   },
 ];
 
