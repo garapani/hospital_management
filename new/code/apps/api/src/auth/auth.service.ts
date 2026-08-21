@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 import { TenantContextService } from '@hospital/tenant-context';
@@ -18,7 +18,8 @@ export interface LoginInput {
 export type LoginResult =
   | { accessToken: string; refreshToken: string }
   | { locked: true; retryAfterSeconds: number }
-  | { invalidCredentials: true };
+  | { invalidCredentials: true }
+  | { mustChangePassword: true };
 
 export interface RefreshInput {
   refreshToken: string;
@@ -70,6 +71,13 @@ export class AuthService {
 
     await this.accountsService.resetFailedLogins(account.id);
 
+    // A freshly created account with an initial/generated password has no full access until it
+    // replaces it — otherwise a known or generated-but-shared password would be a standing
+    // backdoor. No tokens are issued; the client routes to the change-password flow.
+    if (account.needsPasswordUpdate) {
+      return { mustChangePassword: true };
+    }
+
     const hospitalId = this.tenantContext.getTenantId();
     // Package-scoped: only permissions whose modules are in the tenant's package reach the JWT,
     // so out-of-package features 403 and never render in the console.
@@ -86,6 +94,32 @@ export class AuthService {
     );
 
     return { accessToken, refreshToken };
+  }
+
+  /**
+   * Onboarding password change for an account flagged `needsPasswordUpdate` (login with an
+   * initial/generated password). Deliberately unauthenticated: login issues no tokens for such
+   * accounts, so the client proves ownership with username + current password — the same
+   * credential check login performs. Strictly gated to the must-change state; regular rotation
+   * goes through the authenticated POST /accounts/me/password.
+   */
+  async changeInitialPassword(
+    username: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const found = await this.accountsService.findByUsernameWithRoles(username);
+    if (!found) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (!found.account.needsPasswordUpdate) {
+      throw new BadRequestException('This account is not required to change its password');
+    }
+    await this.accountsService.changePasswordByUsername(
+      username,
+      currentPassword,
+      newPassword,
+    );
   }
 
   async refresh(input: RefreshInput): Promise<RefreshResult> {
@@ -109,6 +143,12 @@ export class AuthService {
     }
 
     if (!found.account.isActive || (found.account.lockedUntil && found.account.lockedUntil.getTime() > Date.now())) {
+      return { invalidToken: true };
+    }
+
+    // An account that must change its password cannot refresh into full access — the refresh
+    // token predates the change and would otherwise bypass the login-time gate.
+    if (found.account.needsPasswordUpdate) {
       return { invalidToken: true };
     }
 

@@ -49,7 +49,7 @@ describe('AccountsController (integration)', () => {
     await app.close();
   });
 
-  it('creates a staff account with needsPasswordUpdate set, and never returns passwordHash', async () => {
+  it('creates a staff account with an admin-supplied password, no forced change, never returns passwordHash', async () => {
     const response = await request(app.getHttpServer())
       .post('/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -63,7 +63,28 @@ describe('AccountsController (integration)', () => {
 
     expect(response.status).toBe(201);
     expect(response.body.username).toBe('ctrl.create.user');
+    // Admin chose the password, so the user signs in with it directly — no forced change.
+    expect(response.body.needsPasswordUpdate).toBe(false);
+    expect(response.body.initialPassword).toBeUndefined();
+    expect(response.body.passwordHash).toBeUndefined();
+  });
+
+  it('generates a one-time initial password and forces a change when none is supplied', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        username: 'ctrl.generated.user',
+        email: 'ctrlgenerated@example.com',
+        displayName: 'Ctrl Generated User',
+        roleName: 'Doctor',
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.username).toBe('ctrl.generated.user');
     expect(response.body.needsPasswordUpdate).toBe(true);
+    expect(typeof response.body.initialPassword).toBe('string');
+    expect(response.body.initialPassword.length).toBeGreaterThanOrEqual(12);
     expect(response.body.passwordHash).toBeUndefined();
   });
 

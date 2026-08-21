@@ -82,6 +82,97 @@ describe('AuthService (integration)', () => {
     expect((result as { retryAfterSeconds: number }).retryAfterSeconds).toBeGreaterThan(0);
   });
 
+  describe('must-change-password onboarding', () => {
+    beforeAll(async () => {
+      await ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: 'fresh.staff',
+          email: 'fresh@example.com',
+          displayName: 'Fresh Staff',
+          password: 'initial-pass-123',
+          needsPasswordUpdate: true,
+          roleName: 'Nurse',
+        }),
+      );
+    });
+
+    it('login with the initial password returns mustChangePassword and issues no tokens', async () => {
+      const result = await ctx.inTenant(() =>
+        authService.login({ username: 'fresh.staff', password: 'initial-pass-123' }),
+      );
+
+      expect(result).toEqual({ mustChangePassword: true });
+    });
+
+    it('rejects changeInitialPassword with a wrong current password', async () => {
+      await expect(
+        ctx.inTenant(() =>
+          authService.changeInitialPassword('fresh.staff', 'wrong-current', 'some-new-pass-789'),
+        ),
+      ).rejects.toThrow('Invalid credentials');
+    });
+
+    it('rejects a new password shorter than 8 characters', async () => {
+      await expect(
+        ctx.inTenant(() =>
+          authService.changeInitialPassword('fresh.staff', 'initial-pass-123', 'short'),
+        ),
+      ).rejects.toThrow('at least 8 characters');
+    });
+
+    it('rejects changeInitialPassword for an account not flagged must-change', async () => {
+      await expect(
+        ctx.inTenant(() =>
+          authService.changeInitialPassword('dr.carol', 'correct-password-123', 'some-new-pass-789'),
+        ),
+      ).rejects.toThrow('not required to change its password');
+    });
+
+    it('changeInitialPassword replaces the password and clears the flag', async () => {
+      await ctx.inTenant(() =>
+        authService.changeInitialPassword('fresh.staff', 'initial-pass-123', 'brand-new-pass-456'),
+      );
+
+      const loginWithOld = await ctx.inTenant(() =>
+        authService.login({ username: 'fresh.staff', password: 'initial-pass-123' }),
+      );
+      expect(loginWithOld).toEqual({ invalidCredentials: true });
+
+      const loginWithNew = await ctx.inTenant(() =>
+        authService.login({ username: 'fresh.staff', password: 'brand-new-pass-456' }),
+      );
+      expect('accessToken' in loginWithNew).toBe(true);
+    });
+
+    it('rejects refresh for an account whose password was reset to must-change after login', async () => {
+      const account = await ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: 'refresh.mustchange',
+          email: 'refreshmustchange@example.com',
+          displayName: 'Refresh Must Change',
+          password: 'a-valid-password-1',
+          roleName: 'Nurse',
+        }),
+      );
+      const loginResult = await ctx.inTenant(() =>
+        authService.login({ username: 'refresh.mustchange', password: 'a-valid-password-1' }),
+      );
+      if (!('refreshToken' in loginResult)) {
+        throw new Error('expected a successful login');
+      }
+
+      // Simulate an admin resetting the password while the account holds live tokens: the
+      // refresh path must not bypass the login-time must-change gate.
+      await ctx.dataSource.query(
+        `UPDATE "tenant_${ctx.tenantId}".accounts SET "needsPasswordUpdate" = true WHERE id = $1`,
+        [account.id],
+      );
+
+      const refreshResult = await authService.refresh({ refreshToken: loginResult.refreshToken });
+      expect(refreshResult).toEqual({ invalidToken: true });
+    });
+  });
+
   it("includes the account's real permissions in the JWT, not an empty placeholder", async () => {
     const result = await ctx.inTenant(() =>
       authService.login({ username: 'admin.amy', password: 'correct-password-123' }),

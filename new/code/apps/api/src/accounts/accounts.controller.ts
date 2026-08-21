@@ -15,7 +15,7 @@ import {
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { Account } from './entities/account.entity.js';
 import { AccountsService } from './accounts.service.js';
-import { CreateAccountDto } from './dto/create-account.dto.js';
+import { CreateAccountDto, ChangeOwnPasswordDto } from './dto/create-account.dto.js';
 import { AssignRoleDto } from './dto/assign-role.dto.js';
 
 const REQUIRED_PERMISSION = 'identity.accounts.manage';
@@ -34,11 +34,24 @@ export class AccountsController {
   @RequirePermission(REQUIRED_PERMISSION)
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() body: CreateAccountDto) {
+    // needsPasswordUpdate is decided by the service (true when the initial password was
+    // generated, false when the admin supplied one). A generated password is returned once.
+    // allowPlatformRole is an internal seed-only escape hatch — force it off here so a forged
+    // request body can never create a Super Admin account.
     const account = await this.accountsService.createStaffAccount({
       ...body,
-      needsPasswordUpdate: true,
+      allowPlatformRole: false,
     });
-    return toAccountResponse(account);
+    const { initialPassword, ...rest } = account;
+    return { ...toAccountResponse(rest as Account), initialPassword };
+  }
+
+  /** Self-service password change — auth-only (no permission), for the must-change flow. */
+  @Post('me/password')
+  @HttpCode(HttpStatus.OK)
+  async changeOwnPassword(@Body() body: ChangeOwnPasswordDto) {
+    await this.accountsService.changeOwnPassword(body.currentPassword, body.newPassword);
+    return { success: true };
   }
 
   @Get('roles')

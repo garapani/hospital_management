@@ -139,6 +139,9 @@ export class AppModule implements NestModule {
       .exclude(
         { path: 'auth/login', method: RequestMethod.POST },
         { path: 'auth/refresh', method: RequestMethod.POST },
+        // The must-change-password onboarding: accounts flagged needsPasswordUpdate get no tokens
+        // at login, so this endpoint authenticates with username + current password instead.
+        { path: 'auth/change-password', method: RequestMethod.POST },
         // Prometheus scrapers cannot carry JWTs; /metrics exposes only aggregate counters.
         { path: 'metrics', method: RequestMethod.GET },
       )

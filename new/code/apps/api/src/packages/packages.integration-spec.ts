@@ -64,6 +64,7 @@ describe('SaaS packages (integration)', () => {
       ctx.tenantConnection,
       ctx.tenantContext,
       packagesService,
+      ctx.accountsService,
     );
 
     platformToken = await signTestToken({

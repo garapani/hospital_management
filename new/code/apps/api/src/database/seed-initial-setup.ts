@@ -162,6 +162,9 @@ async function seedAdminAccount(
         password: config.password,
         roleName: role.name,
         needsPasswordUpdate: false,
+        // The platform admin is the one legitimate holder of a cross-tenant role; every other
+        // seeded account (Hospital Admin etc.) goes through the normal guards.
+        allowPlatformRole: role.isCrossTenant,
       }),
   );
   console.log(
