@@ -1485,3 +1485,42 @@ permission rows to seed/revoke per package.
 re-run migration `0048` for existing DBs. **Not done:** the platform console's package picker
 (tenant-creation form) and any self-serve upgrade — the backend contract (`GET /packages`,
 `POST /tenants {packageCode}`, `PATCH /tenants/:id/package`) is ready for the frontend repo.
+
+## 39. MVP acceptance walk, charge-capture hardening, demo seeding (2026-08-21)
+
+Three patterns established while making the Basic-package flow "ready for MVP":
+
+**Migration timestamps are the execution order — and they're namespaced by schema.** TypeORM
+sorts pending migrations by `parseInt(migrationName.slice(-13))`, NOT by array order. This repo
+namespaces the timestamp: platform migrations use `10000000000NN`
+(`CreatePackagesTable1000000000048`), tenant migrations use `20000000000NN`
+(`CreateVaccinationTables00472000000000047`). A new tenant migration MUST use the
+`20000000000NN` suffix — a `100…`-suffixed tenant migration sorts before the billing-tables
+migration, runs with `invoice_items` unresolved in the tenant schema, falls through the
+`search_path` to the legacy `public` copy of the table, and creates its index in the wrong schema
+(observed live: `UQ_invoice_items_source_order_item` landed in `public`; every subsequent
+provisioning failed with "relation already exists"). When a migration misbehaves like this, the
+fix is the name, and the stray object in `public` must be dropped by hand.
+
+**Charge-capture is race-safe and recoverable.** `captureChargeForOrderItem` takes a per-patient
+advisory lock (`SELECT pg_advisory_xact_lock(hashtext('charge_capture:<patientId>'))`) before the
+find-open-invoice-then-append step — the lock is transaction-scoped (released on commit/rollback)
+so it serializes concurrent first-captures for the same patient without touching unrelated
+transactions or needing a schema change. Migration `0049` adds a unique partial index on
+`invoice_items("sourceOrderItemId") WHERE NOT NULL`, making "one charge per order item" a DB
+invariant. The recovery path is `POST /billing/invoices/charge-capture` (`reRunChargeCapture`):
+it loads the order item (404 unknown, 409 not-Completed) and runs capture in its own transaction;
+already-charged items return `{captured:false, reason:'already-charged'}` — safe to repeat.
+
+**Demo seeding boots the app, and its idempotency check must run in the tenant schema.**
+`database/seed-demo-data.ts` runs via `NestFactory.createApplicationContext(AppModule)` (target
+`api:seed-demo-data`) rather than hand-wired services, precisely so the charge-capture and
+notification subscribers are live — a service-only seeder would silently skip auto-billing. It is
+idempotent by counting existing patients **inside** the tenant schema
+(`tenantConnection.runInTenantSchema(m => m.getRepository(Patient).count())`): a bare repository
+count on the app DataSource queries the default `search_path` (public) and would see the legacy
+public tables instead. Non-HTTP callers must pass actor fallbacks explicitly wherever a NOT NULL
+or CHECK-constrained actor column exists (orders.orderedBy, lab enterResult enteredBy, radiology
+markScanned/verify — `CHK_radiology_requisitions_scanned_complete`/`_verified_complete` — and
+payroll processedBy); `resolveActor` still prefers the authenticated principal when a tenant
+context with an accountId is active.

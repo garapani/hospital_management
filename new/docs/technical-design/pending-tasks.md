@@ -48,11 +48,14 @@ scope, not merely lower priority.
       `sourceOrderItemId`) to the patient's open invoice, creating one if none exists. Best-effort
       per the human partner's ruling: unpriced/unsupported items are skipped before any SQL write,
       so they never roll back the completing workflow. 8 new integration tests (charge capture +
-      catalog pricing) — full suite 389 passed. See `Development-Standards.md` §27. Known
-      follow-ups: no re-run mechanism for a capture that fails at the SQL layer (rare — the error is
-      logged; a "re-run capture for a completed order item" endpoint is a future item), and the
-      find-open-invoice-then-append step is not row-locked (a concurrent first-capture race could
-      create two invoices — same future item).
+      catalog pricing) — full suite 389 passed. See `Development-Standards.md` §27. **Both known
+      follow-ups closed (2026-08-21):** `captureChargeForOrderItem` now takes a per-patient
+      Postgres advisory lock (`pg_advisory_xact_lock(hashtext('charge_capture:<patientId>'))`)
+      before the open-invoice find, so concurrent first captures cannot create two invoices, and a
+      unique partial index (`invoice_items.sourceOrderItemId` where not null, migration `0049`)
+      makes "one charge per order item" a database invariant; a recovery path exists at
+      `POST /billing/invoices/charge-capture` (re-runs capture for a completed order item, safe to
+      repeat — already-charged is a no-op).
 - [x] **Appointments: doctor-schedule/availability endpoints.** Create/list/get/update/cancel
       exist; PRD's module description implies "doctor schedules" as in-scope. **Resolved
       (2026-08-20):** `GET /appointments/doctors/:doctorId/schedule` and
@@ -72,6 +75,19 @@ scope, not merely lower priority.
       `GET /admissions/discharge-summaries/:id`, `PATCH .../:id`, and `PATCH .../:id/review`
       (a review/sign-off flow); creation gated on the admission being discharged; covered by
       integration tests including the preparedBy/reviewedBy actor derivation.
+- [x] **MVP end-to-end acceptance walk + demo data** (2026-08-21) — `src/app/mvp-workflow.integration-spec.ts`
+      boots the real AppModule and walks the whole Basic-package flow over HTTP: patient →
+      appointment → vitals/encounter → ward/bed → admission → order (Lab+Pharmacy+Radiology) →
+      inventory stock (category→item→vendor→PO→goods receipt) → lab collect/results/verify →
+      radiology scan/report/verify → pharmacy dispense → one auto-charged invoice with 3 lines →
+      payment → employees → payroll run → notifications → reporting. Two real contract fixes fell
+      out (sub-category create lives at `POST /inventory/sub-categories`, not under the category
+      route; `recordPayment` returns the Payment, not the invoice) plus the charge-capture
+      hardening above. **Demo seeder** `nx run api:seed-demo-data` (`database/seed-demo-data.ts`)
+      fills the demo tenant with a ward/beds, 3 patients, appointments, a visit record, an
+      admission, completed lab/radiology/pharmacy on one order (real charge-capture → an unpaid
+      invoice for staff to demo payment on), 2 employees and a payroll run; idempotent (skips when
+      the demo tenant already has patients).
 
 ## Phase 0 — Housekeeping
 
