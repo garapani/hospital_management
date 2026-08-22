@@ -325,7 +325,27 @@ cd frontend && CI=true pnpm exec nx run staff-console:build
 ```
 
 ### 2.13 Fix payroll payslips 500: `month=undefined&year=undefined` query params
-**Status:** real live bug, confirmed from the dev-server log (`GET /api/payroll/payslips?page=1&limit=10&month=undefined&year=undefined` → 500 `invalid input syntax for type integer: "undefined"`).
+**Status: done (2026-08-22), frontend commit `21083b8`.** Fixed at the frontend layer per the
+"Cleanest fix" option below — `PayrollApiService.listPayslips` now builds the query object
+conditionally (matching every other `*-api.service.ts` in the app) instead of spreading a
+possibly-undefined filters object into `{ params }`. 2 new HTTP-level regression tests
+(`payroll-api.service.spec.ts`) assert the literal `"undefined"` string never reaches the query
+string. Live-verified against the dev API: the old buggy shape
+(`?month=undefined&year=undefined`) still 500s (confirms root cause), the fixed shape
+(`?page=1&limit=10`, no month/year keys) 200s, and filtering by month/year still works.
+Convention recorded in `frontend/CLAUDE.md`'s screen-building-conventions section.
+
+**Backend hardening NOT done — correcting the note below:** the "optionally harden the backend
+DTO with `@Type(() => Number)`" suggestion turns out not to work as stated. Checked: **no
+`ValidationPipe` is registered anywhere in this app** (global or per-route — grepped
+`apps/api/src/main.ts` and the whole `apps/api/src` tree). Several *other* DTOs already carry
+`@IsOptional() @Type(() => Number) @IsInt()` decorators (`notifications/dto/search-notifications.dto.ts`,
+`audit/dto/search-audit-records.dto.ts`, and others) that are **entirely inert** — NestJS only
+invokes class-validator/class-transformer through an active `ValidationPipe`, so these decorators
+currently do nothing at runtime. Adding the same decorators to `ListPayslipsQueryDto` would have
+been equally inert without first wiring a pipe. That's a real, separate, codebase-wide finding —
+see the new backlog item below rather than a quick add here; wiring a global `ValidationPipe` has
+a much bigger blast radius (every controller in the app) than this one bug's scope justified.
 
 **Context:** `apps/staff-console/src/app/payroll/payroll-list.ts` builds the list query as
 `{ page, limit, month: this.monthFilter() ?? undefined, year: this.yearFilter() ?? undefined }`
@@ -351,6 +371,36 @@ screen loads without a 500; filtering by month/year still works.
 cd frontend && CI=true pnpm exec nx run staff-console:test -- --testPathPatterns="payroll"
 cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="payroll"
 ```
+
+### 2.14 No `ValidationPipe` registered anywhere — `class-validator` decorators on ~9 DTOs are dead code
+**Context (found while fixing 2.13):** grepped `apps/api/src/main.ts` and the whole `apps/api/src`
+tree for `ValidationPipe`/`APP_PIPE` — neither appears anywhere, global or per-route. NestJS only
+invokes `class-validator`/`class-transformer` (`@IsOptional()`, `@IsInt()`, `@Type(() => Number)`,
+`@IsEnum()`, etc.) through an active `ValidationPipe`. Without one, `@Body()`/`@Query()` DTOs are
+plain objects with zero runtime validation or type coercion — the decorators compile and typecheck
+fine but do nothing at request time. Confirmed affected: `notifications/dto/search-notifications.dto.ts`,
+`audit/dto/search-audit-records.dto.ts`, `pharmacy/dto/list-pharmacy-dispensing.dto.ts`,
+`lab/dto/update-price.dto.ts`, `radiology/dto/update-price.dto.ts`,
+`radiology/dto/list-radiology-requisition.dto.ts`, `inventory/dto/update-price.dto.ts`,
+`billing/dto/list-invoices.dto.ts`, `billing/dto/list-deposits.dto.ts` (grep for `@Type(` under
+`apps/api/src --include="*.dto.ts"` to re-find the current list — more may have been added since).
+2.13's payroll bug is one concrete symptom of this gap (an unvalidated string reaching a query
+builder as if it were the declared type), but it's a general soundness gap: any endpoint relying on
+these decorators for input shape currently has none of the protection its code implies.
+
+**What to do:** wire a global `ValidationPipe` (`app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, ... }))` in `main.ts`, or `APP_PIPE` in `app.module.ts`). This is a
+**bigger, riskier change than it looks** — every controller in the app gets validated for the
+first time, and `whitelist: true` (stripping/rejecting unexpected body/query properties) could
+break any endpoint whose DTO is currently incomplete relative to what the frontend actually sends.
+Needs a careful pass: audit every existing DTO for accuracy against its real payload shape before
+flipping the switch, not just add the pipe and see what breaks in prod. Given the blast radius,
+this likely wants the heavyweight brainstorm→plan pipeline (`CLAUDE.md`'s "The Heavyweight
+Pipeline"), not a fast-track fix, despite looking like a one-line change.
+**Verify:** full backend suite green with the pipe active; every existing DTO's decorators
+actually match its real request shape (audit pass); a request with a malformed/wrong-typed field
+now 400s instead of reaching a query builder or entity save.
+**Test:** `cd new/code && CI=true pnpm exec nx run api:test` (full suite, not just payroll —
+this change is app-wide by nature).
 
 ---
 
