@@ -590,6 +590,163 @@ row; no code path can call `listInvoices` without an explicit tenant scope.
 
 ---
 
+### 2.22 Billing-cycle switch doesn't adjust the billing period — recurring 10x overcharge/undercharge
+
+**Context:** found during the entity-audit-columns task's code review, in already-shipped
+platform-billing code. `SubscriptionBillingService.subscribe()`
+(`new/code/apps/api/src/platform-billing/subscription-billing.service.ts:100-111`) reuses the
+existing active subscription row when switching billing cycles, updating `packageCode`/
+`billingCycle`/`pricePerCycle`/`status` but leaving `currentPeriodStart`/`currentPeriodEnd`
+untouched.
+**Failure scenario:** tenant subscribes monthly (₹4,999, a 30-day period). On day 5, an admin
+switches them to annual — `pricePerCycle` becomes ₹54,000 but the period stays the original 30-day
+window. `issueInvoice()` bills the full annual price for a 30-day period, and `markInvoicePaid()`
+advances the next period by that same 30-day length — the tenant is charged the full annual price
+every 30 days indefinitely. The reverse switch (annual→monthly) undercharges the platform by the
+same mechanism. The existing test only asserts the new price, never period bounds after a switch.
+**What to do:** when `billingCycle` changes on an active subscription, recompute
+`currentPeriodStart`/`currentPeriodEnd` to match the new cycle length (or require canceling and
+re-subscribing instead of an in-place cycle switch — a design decision, not just a bug fix).
+**Verify:** switching cycles produces a period length matching the new `billingCycle`; the next
+invoice bills the correct amount for that period.
+**Test:** extend `subscription-billing.service.integration-spec.ts` with a monthly→annual and an
+annual→monthly switch, asserting period bounds and the next invoice amount.
+
+---
+
+### 2.23 Tenant provisioning is non-transactional; a purged tenant + stale refresh token 500s instead of 401
+
+**Context:** found during the entity-audit-columns task's code review, in already-shipped
+tenant/auth code.
+1. **`TenantsService.provisionTenant()`** (`tenants.service.ts:112`) commits the `tenants` registry
+   row as `status: 'active'` before department seeding and bootstrap-admin creation run, with no
+   transaction/rollback around any of it. A failure partway through (e.g. a duplicate
+   `departmentCode` in `departmentCatalogIds`) leaves a tenant that looks provisioned in every
+   listing but has zero login-capable accounts — and retrying `POST /tenants` with the same
+   `hospitalId` now 409s, so the only recovery is archive+purge and starting over.
+2. **`AuthService.refresh()`** (`auth.service.ts:173`) keys its suspended/archived gate off
+   `tenantsService.getTenant(hospitalId)`, which returns `null` once a tenant is purged. A `null`
+   tenant fails the `=== suspended || === archived` check, so the gate doesn't fire — a still-valid
+   refresh token issued before the purge proceeds into `accountsService` calls against a schema that
+   no longer exists, surfacing as a raw 500 instead of the intended 401.
+**What to do:** wrap `provisionTenant`'s registry-insert + department-seed + bootstrap-admin steps
+in a transaction (or add a cleanup path that can retry/complete a partially-provisioned tenant
+without requiring purge); add an explicit "tenant not found" check to `refresh()`'s gate (treat
+`null` the same as `archived`, not as "no gate needed").
+**Verify:** a provisioning failure partway through leaves no orphaned active tenant (either fully
+rolled back or clearly flagged incomplete and recoverable); refresh with a token for a purged
+tenant returns 401, not 500.
+**Test:** extend `tenants.service.integration-spec.ts` with a provisioning-failure case; extend
+`auth.service.integration-spec.ts`/`auth.controller.integration-spec.ts` with a purge-then-refresh
+case (only suspend/archive are currently tested).
+
+---
+
+### 2.24 Test-coverage gaps surfaced by code review (validation pipe, platform-billing, platform-branding)
+
+**Context:** found during the entity-audit-columns task's code review, across already-shipped code
+from earlier tasks. None of these are live bugs today — they're missing regression coverage that
+would let a *future* change ship silently broken.
+- **~13 pre-existing HTTP integration specs boot the real `AppModule` but never register the global
+  `ValidationPipe`** (`admissions/admissions.controller.integration-spec.ts`,
+  `app/metrics.integration-spec.ts`, `app/mvp-workflow.integration-spec.ts`,
+  `appointments/appointments.controller.integration-spec.ts`, `auth/auth.controller.integration-spec.ts`,
+  `auth/cross-tenant-login.integration-spec.ts`, `billing/billing-settings.controller.integration-spec.ts`,
+  `billing/deposits.controller.integration-spec.ts`, `billing/invoices.controller.integration-spec.ts`,
+  `clinical/encounters/encounters.controller.integration-spec.ts`,
+  `clinical/triage/triage.controller.integration-spec.ts`,
+  `clinical/vitals/vitals.controller.integration-spec.ts`, `orders/orders.controller.integration-spec.ts`)
+  — a future validator regression on any DTO these cover would ship green.
+- **`platform-billing-permission-gating.integration-spec.ts`** only asserts 403-without-permission
+  for 4 of 6 controller routes (`POST .../cancel`, `GET .../invoices` list, and
+  `POST /invoices/:invoiceId/paid` are untested).
+- **`platform-branding.integration-spec.ts`** has no HTTP-level test of the public,
+  pre-auth `GET /branding` route at all (every test calls the service directly, bypassing
+  middleware/routing entirely), and its permission-gating loop omits `POST .../logo` (upload).
+**What to do:** add `app.useGlobalPipes(createApiValidationPipe())` to the ~13 specs (or establish a
+shared test-app-factory helper that always registers it, closing this class of gap for future specs
+too); add the 3 missing routes to platform-billing's permission-gating loop; add an HTTP-level test
+for `GET /branding` and the missing `POST .../logo` permission-gating case.
+**Verify:** each spec fails if the protection it's supposed to cover is removed (verify by
+temporarily removing a decorator/pipe registration locally and confirming the test catches it, then
+restoring it).
+**Test:** the specs themselves, once extended.
+
+---
+
+### 2.25 Minor DTO-decorator gaps from the earlier ValidationPipe Phase B pass
+
+**Context:** found during the entity-audit-columns task's code review, in already-shipped DTO
+decoration code (2.14/2.18). Low severity, no security impact.
+- `maternity.dto.ts`'s `lmp`/`edd`/`deliveryDate` are `@IsString()` but map to Postgres `date`
+  columns and are compared with string ordering (`lmp > edd`) in `maternity.service.ts` — should be
+  `@IsDateString()` like the equivalent fields elsewhere in the same pass (`nursing.dto.ts`'s
+  `dueAt`, `ot.dto.ts`'s `scheduledAt`).
+- `inventory/dto/create-inventory-item-category.dto.ts`'s `displaySequence` is `@IsNumber()` but the
+  column is Postgres `int` — should be `@IsInt()` (a decimal value passes validation, then 500s at
+  the DB insert instead of a clean 400).
+- `insurance.dto.ts`'s `ListClaimsQueryDto.status` hardcodes its `@IsIn([...])` list instead of
+  reusing the exported `INSURANCE_CLAIM_STATUSES` constant (the sibling `fixed-asset.dto.ts` in the
+  same pass correctly reuses `FIXED_ASSET_CONDITIONS`) — a future new status value would need
+  updating in two places, and missing one silently 400s valid requests.
+**What to do:** fix the three decorators/reuse as described.
+**Verify:** `POST /maternity-records` with a malformed date 400s instead of reaching the DB;
+`POST /inventory/item-categories` with a decimal `displaySequence` 400s; `insurance.dto.ts` imports
+`INSURANCE_CLAIM_STATUSES` instead of duplicating the list.
+**Test:** one-line additions to each module's existing DTO/controller integration specs.
+
+---
+
+### 2.26 Reporting PDF export can block the event loop; CSV/PDF row-mapping is duplicated
+
+**Context:** found during the entity-audit-columns task's code review, in already-shipped reporting
+code (`reporting-query.service.ts`).
+- `exportEventsPdf` (line ~142) loads up to 10,000 rows and hands them to `pdfmake`, which lays out
+  and renders the whole landscape table **synchronously** on the Node event loop (confirmed in
+  `pdfmake`'s own source — no chunking, no worker-thread offload, same row cap as the much-cheaper
+  CSV export). A broad-date-range export from any tenant with `reporting.read` can stall every other
+  concurrent request on that API process for the duration — a single-tenant DoS of a shared process.
+- `exportEventsCsv` and `exportEventsPdf` duplicate the identical row-shaping `.map(...)` verbatim
+  instead of sharing a helper — a future field-serialization fix applied to one silently doesn't
+  apply to the other.
+**What to do:** lower the PDF row cap well below the CSV cap, and/or offload PDF generation to a
+worker thread / queue it as a background job instead of generating synchronously inside the request
+handler; extract the shared row-mapping into one function both exports call.
+**Verify:** a large PDF export no longer blocks concurrent requests from other tenants during
+generation; CSV and PDF exports of the same data can't drift in field formatting.
+**Test:** a load-adjacent test asserting a concurrent request completes promptly during a large PDF
+export (or a documented manual verification if that's impractical in the test harness).
+
+---
+
+### 2.27 Standard audit columns across entities (done)
+
+**Status: done.** Not a pre-existing backlog item — user-requested mid-session. Added
+`createdAt`/`createdBy`/`updatedAt`/`updatedBy` (base `AuditableEntity`) and `deletedAt`/`deletedBy`
+(soft-delete tier `SoftDeletableEntity extends AuditableEntity`) to 61 entities (54 tenant-scoped +
+7 platform-scoped) representing business/clinical/financial records and actively-managed
+lookup/catalog tables — see
+`new/docs/superpowers/specs/2026-08-22-entity-audit-columns-design.md` for the full design,
+scoping rule, and 10 numbered implementation lessons (two-tier class split, `varchar` not `uuid`
+for actor columns, verifying against real migrations not the entity class, `PLATFORM_MIGRATIONS`
+needing an explicit `nx run api:migrate`, and — the most consequential one — why
+`AuditColumnsSubscriber` needs `afterSoftRemove` with an explicit follow-up `UPDATE`, not
+`beforeSoftRemove` mutating the entity, because TypeORM's `softRemove()` never reads other entity
+properties for its SQL). Converted the 3 genuine hard-delete call sites found
+(`Prescription`/`Diagnosis`/`Vital`) to `softRemove()`. A `/code-review high` pass on the diff (this
+touches PHI, money, and auth entities across nearly the whole app) found and fixed two real bugs
+before commit — a subscriber-bypassing raw `manager.update()` in `Patient.deactivate()`, and 3
+pre-existing `uuid`-typed `createdBy` columns (`invoices`, `journal_entries`, `nursing_tasks`) that
+the migration's `ADD COLUMN IF NOT EXISTS` silently no-op'd past instead of converting — and
+surfaced several findings on unrelated, already-shipped code, logged separately as 2.22–2.26.
+**Verify:** all 61 entities compile with `noImplicitOverride` (catches any missed duplicate
+`createdAt`/`updatedAt` declaration); full backend suite green; a dedicated
+`audit-columns.integration-spec.ts` proves the subscriber populates all 3 actor columns end-to-end
+through the real `AppModule`, including the soft-delete path.
+**Test:** `cd new/code && CI=true pnpm exec nx run api:test` (full suite — app-wide schema change).
+
+---
+
 ## 3. Cleanups
 
 ### 3.1 Full-suite flake triage (infra, shared dev DB)
@@ -661,6 +818,20 @@ every `*.dto.ts` file's class properties and cross-reference against
 **Verify:** the check fails on a deliberately-undecorated test fixture field; passes on the
 current tree.
 **Test:** n/a until written.
+
+### 3.7 Two independently-maintained "no-auth-context-expected" route lists could drift
+
+**Context:** found during the entity-audit-columns task's code review. `app.module.ts`'s
+`AuthContextMiddleware.exclude()` call and `tenant-context.middleware.ts`'s
+`EXPECTED_FALLBACK_PATH_SUFFIXES`/`isExpectedBrandingFallback` both encode the same concept — "this
+route legitimately runs without auth context" — as two separately-maintained lists with no single
+source of truth. Both files' own comments already admit the risk: a route added to one list and not
+the other produces a spurious "Tenant context fallback to headers detected" warning on every
+legitimate call to it, forever, until someone notices.
+**What to do:** consolidate into one shared list (e.g. exported from `@hospital/tenant-context` and
+imported by `app.module.ts`) so a new unauthenticated route only needs updating in one place.
+**Verify:** adding a new unauthenticated route requires exactly one code change, not two.
+**Test:** n/a — a refactor of existing wiring, covered by the existing auth-wiring integration specs.
 
 ---
 

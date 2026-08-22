@@ -220,7 +220,37 @@ The gap was caught by the full backend test suite provisioning a fresh tenant sc
 manual review. Running the full suite against a real migration (not just `typecheck`) is what this
 class of bug needs to surface; a passing `tsc --build` says nothing about whether the SQL is right.
 
-### 8. `PLATFORM_MIGRATIONS` need an explicit `nx run api:migrate`; they don't auto-apply per test run
+### 9. `beforeSoftRemove` cannot set `deletedBy` — TypeORM's soft-remove SQL ignores it entirely
+
+The subscriber's first draft mutated `event.entity.deletedBy` in a `beforeSoftRemove` hook, mirroring
+the (working) `beforeInsert`/`beforeUpdate` pattern. It compiled, and a superficial manual check
+(soft-deleting a row and confirming `deletedAt` was set, then moving on) would have looked fine —
+`deletedAt` genuinely was set correctly. `deletedBy` silently stayed `null` on every soft-delete, and
+nothing caught this until a dedicated integration spec (`audit-columns.integration-spec.ts`)
+explicitly asserted `deletedBy` after a soft-delete, not just `deletedAt`.
+
+Root cause, traced through `node_modules/typeorm/persistence/SubjectExecutor.js`
+(`executeSoftRemoveOperations`): `repository.softRemove()` does not persist the entity object at
+all. It runs a purpose-built `queryRunner.manager.createQueryBuilder().softDelete()` query that sets
+**only** the column marked `@DeleteDateColumn` — it never reads any other property off the entity,
+subscriber-mutated or not. This is fundamentally different from `save()`/an `UPDATE`, which does
+persist whatever the (possibly subscriber-mutated) entity object holds. `beforeSoftRemove` mutating
+`deletedBy` is not "too late" or "on the wrong object" — it's on an object TypeORM's soft-delete path
+never reads at all.
+
+Fix: `afterSoftRemove` (not `before`) issues an **explicit follow-up `UPDATE`** via `event.manager`
+(the same `EntityManager`/transaction as the soft-remove itself, so it's atomic with it), targeting
+the row by its primary key columns (`event.metadata.primaryColumns`, read off `event.databaseEntity`
+— `event.entity` is optional/frequently absent on remove-family events per TypeORM's own
+`RemoveEvent` type, `databaseEntity` is the field guaranteed present).
+
+**Lesson:** a subscriber hook symmetrical in *name* to a working pattern (`beforeX` mutates
+`event.entity`, works for insert/update) is not guaranteed symmetrical in *mechanism* — TypeORM's
+remove-family operations are implemented as narrow, single-purpose queries, not full entity
+persistence, and this only surfaces by reading the actual persistence code or by writing a test that
+checks the *specific* field the mechanism is supposed to populate, not just "it ran without error."
+
+### 10. `PLATFORM_MIGRATIONS` need an explicit `nx run api:migrate`; they don't auto-apply per test run
 
 Unlike `TENANT_MIGRATIONS` (replayed fresh for every tenant schema `setupTenantTestContext`
 provisions, so a new tenant-scoped migration is exercised automatically by the next full-suite run),

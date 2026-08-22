@@ -2097,3 +2097,89 @@ segment before `/branding`, which matches the public route (`/branding` in tests
 prefix, `/api/branding` in production) but not the nested admin one — see the file's own comment for
 the reasoning, since this exact bug class (a suffix match over-matching a same-named nested route)
 can recur if a future feature's route also happens to end in one of these three suffixes.
+
+## 54. Standard audit columns across entities: `AuditableEntity`/`SoftDeletableEntity` (2026-08-22)
+
+User-requested mid-session (not a pre-existing backlog item): `createdAt`/`createdBy`/`updatedAt`/
+`updatedBy`/`deletedAt`/`deletedBy` across 61 entities. Full design and 10 numbered implementation
+lessons in `new/docs/superpowers/specs/2026-08-22-entity-audit-columns-design.md`
+(`claude-code-tasks.md` 2.27) — this section summarizes the load-bearing ones for future work
+touching these entities.
+
+**Two-tier base class, not one flat class.** `apps/api/src/database/auditable.entity.ts` exports
+`AuditableEntity` (creation/modification tracking only) and `SoftDeletableEntity extends
+AuditableEntity` (adds `deletedAt`/`deletedBy` via `@DeleteDateColumn`). Extend `SoftDeletableEntity`
+for anything a normal delete action might touch (nearly everything in scope); reserve the bare
+`AuditableEntity` for an entity that should never be soft-deletable. `createdBy`/`updatedBy`/
+`deletedBy` are plain nullable `varchar` — **not `uuid`**, despite `accounts.id` being a real uuid in
+production: `TenantContextService.getAccountId()` reads straight from the JWT `sub` claim with no
+format check, and this codebase's own test suite signs tokens with human-readable `sub` values
+(`'ops.alice'`, etc.), which a `uuid` column rejects outright on the first write any such test makes.
+
+**`AuditColumnsSubscriber` (`apps/api/src/database/audit-columns.subscriber.ts`) populates all
+three actor columns automatically — never set them in service code.** `beforeInsert`/`beforeUpdate`
+mutate `event.entity` (TypeORM persists whatever the entity object holds by the time these fire, so
+this works normally) and only fill a still-`null` field, never overwrite — a few entities
+(`Invoice`, `JournalEntry`, `NursingTask`) predate this subscriber and resolve `createdBy` themselves
+via their own `resolveActor()` helper; the subscriber is a no-op for those, not a conflict.
+**`deletedBy` cannot be set this way.** `repository.softRemove()` runs a narrow, purpose-built
+`softDelete()` query that sets *only* the `@DeleteDateColumn` — it never reads any other entity
+property, subscriber-mutated or not, so a `beforeSoftRemove` hook mutating `event.entity.deletedBy`
+compiles, looks right, and is silently discarded (confirmed by reading
+`node_modules/typeorm/persistence/SubjectExecutor.js`'s `executeSoftRemoveOperations`). The
+subscriber instead uses `afterSoftRemove`, issuing an explicit follow-up `UPDATE` via `event.manager`
+(same transaction as the soft-remove) keyed on `event.metadata.primaryColumns` read off
+`event.databaseEntity` (`event.entity` is optional/frequently absent on TypeORM's remove-family
+events — `databaseEntity` is the field its own `RemoveEvent` type guarantees present). This was only
+caught by a dedicated integration spec that asserted `deletedBy` specifically, not just `deletedAt`
+— a superficial "did the soft-delete work" check would have missed it, since `deletedAt` genuinely
+does get set correctly by TypeORM's own internal handling of `@DeleteDateColumn`.
+
+**Only convert `repository.remove()` to `.softRemove()` where a real delete call site exists.**
+Research (confirmed by code review across the whole diff) found the codebase already avoids hard
+deletes on core records almost entirely — patient "delete" is an `isActive` flag, most in-scope
+entities have no delete/remove method implemented at all. The three genuine exceptions converted:
+`EncountersService.deletePrescription()`/`deleteDiagnosis()` and `VitalsService.void()` (despite the
+name, this was a hard delete before the fix). Adding `deletedAt`/`deletedBy` columns to an entity
+does not, by itself, change any existing behavior — `remove()` still hard-deletes even on a
+`SoftDeletableEntity`; only a service explicitly calling `.softRemove()` gets the new behavior.
+
+**A raw `manager.update(Entity, { id }, { field: value })` call silently bypasses the subscriber.**
+`Patient.deactivate()` used exactly this pattern — found by code review, not by any test.
+TypeORM's `UpdateEvent.entity` for a `.update()` call (as opposed to `.save()`) is the literal
+partial-values object passed in (`{ isActive: false }`), not a real `Patient` instance, so
+`AuditColumnsSubscriber`'s `instanceof AuditableEntity` guard fails and `updatedBy` never gets set
+— while `updatedAt` *does* still get bumped, since TypeORM handles `@UpdateDateColumn` directly in
+its own SQL generation, independent of subscribers entirely. The gap is easy to miss precisely
+because the timestamp still looks right. Fix: load-then-`save()`, the same pattern already used
+correctly everywhere else in this codebase (e.g. `MasterDataService.deactivateDepartment()`).
+
+**Verify a migration's assumptions against the actual CREATE TABLE SQL, not the entity class.**
+Two real gaps only surfaced by running the full test suite against the real migration (not just
+`tsc --build`): (1) 6 tables (`roles`, `permissions`, `patient_addresses`, `patient_kins`, `beds`,
+`departments`, `wards`, `department_catalog`, `packages`, `subscriptions`) were missing
+`createdAt`/`updatedAt` entirely — the working assumption "these already exist everywhere" was
+wrong, caught by `column "createdAt" of relation "roles" does not exist` on the RBAC-catalog seed
+inside a fresh tenant-schema provision; (2) 3 tables (`invoices`, `journal_entries`,
+`nursing_tasks`) already had `createdBy` as `uuid NOT NULL`, so the migration's uniform `ADD COLUMN
+IF NOT EXISTS "createdBy" varchar` silently no-op'd on them, leaving the DB column `uuid` while the
+entity now declared `varchar` — caught by code review, not the test suite (the fixture data
+happened not to exercise a non-uuid actor on those specific 3 tables). Fixed with an explicit
+`ALTER COLUMN "createdBy" TYPE varchar USING "createdBy"::varchar` for those 3, instead of `ADD
+COLUMN IF NOT EXISTS`.
+
+**Migration sort-key ordering, again (see §-level `migration-safety-check` skill / the
+`CreatePatientTables0008` incident):** migrations 0009–0049 use a `2000000000NNN`-prefixed `name`
+suffix — numerically *larger* than a natural `1000000000053` would be. Migrations 50–52 got away
+with the smaller `1xxx` prefix because they only ever touched tables created within that same `1xxx`
+range (`tenants`, and their own new tables). This migration (0053) is the first one that needs to
+`ALTER` tables created by the `2xxx` group, so it uses `3000000000053`/`054` — sorting after
+*everything* — rather than inheriting the `1xxx` convention by pattern-matching the two most recent
+migrations without checking what they actually depend on.
+
+**`PLATFORM_MIGRATIONS` need an explicit `nx run api:migrate` (and `TENANT_MIGRATIONS` backfills
+need `nx run api:migrate-tenants`) against the dev/test database — neither auto-applies per test
+run.** `TENANT_MIGRATIONS` get exercised automatically because every `setupTenantTestContext` call
+provisions a brand-new tenant schema from scratch; `PLATFORM_MIGRATIONS` apply once to the single
+shared public schema and nothing in the test harness re-runs them. A new platform-scoped migration
+is invisible to the test suite until `migrate` is run explicitly once against that environment.
