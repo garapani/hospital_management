@@ -1,7 +1,8 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 @Entity('lab_test_categories')
-export class LabTestCategory {
+export class LabTestCategory extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -13,12 +14,4 @@ export class LabTestCategory {
   /** Soft-delete flag: deactivated catalog entries stay visible to existing records but are rejected for new use. */
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
-
-
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

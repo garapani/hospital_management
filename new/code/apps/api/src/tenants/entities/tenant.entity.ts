@@ -32,6 +32,11 @@ export class Tenant {
   @Column({ type: 'timestamptz', nullable: true })
   archivedAt!: Date | null;
 
+  // Free-text actor field, not a uuid FK — can hold non-account values like 'ops.alice' or
+  // 'seed-initial-setup' (see resolveActor() in tenants.service.ts). This is why Tenant does NOT
+  // extend AuditableEntity (new/docs/superpowers/specs/2026-08-22-entity-audit-columns-design.md):
+  // that base class's createdBy is a real uuid column, a genuine type mismatch here, not just a
+  // duplicate-write risk. archivedAt above already fills the role a generic deletedAt would.
   @Column({ type: 'varchar', nullable: true })
   createdBy!: string | null;
 

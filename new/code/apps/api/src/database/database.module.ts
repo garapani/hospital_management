@@ -3,6 +3,8 @@ import { DataSource } from 'typeorm';
 import { TenantContextModule } from '@hospital/tenant-context';
 import { createDataSource } from './data-source.js';
 import { TenantConnectionService } from './tenant-connection.service.js';
+import { AuditColumnsSubscriber } from './audit-columns.subscriber.js';
+import { AuditColumnsWiringService } from './audit-columns-wiring.service.js';
 
 @Global()
 @Module({
@@ -19,6 +21,8 @@ import { TenantConnectionService } from './tenant-connection.service.js';
       },
     },
     TenantConnectionService,
+    AuditColumnsSubscriber,
+    AuditColumnsWiringService,
   ],
   exports: [DataSource, TenantConnectionService],
 })

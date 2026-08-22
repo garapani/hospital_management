@@ -1,7 +1,8 @@
-import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 @Entity('billing_settings')
-export class BillingSettings {
+export class BillingSettings extends SoftDeletableEntity {
   @PrimaryColumn({ type: 'varchar', length: 20 })
   id!: string;
 
@@ -13,10 +14,4 @@ export class BillingSettings {
 
   @Column({ type: 'varchar' })
   hospitalLegalName!: string;
-
-  @CreateDateColumn({ type: 'timestamp with time zone' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamp with time zone' })
-  updatedAt!: Date;
 }

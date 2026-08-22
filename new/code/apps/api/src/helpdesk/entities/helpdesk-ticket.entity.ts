@@ -1,4 +1,6 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 export type HelpdeskTicketPriority = 'Low' | 'Medium' | 'High' | 'Urgent';
 export type HelpdeskTicketStatus = 'Open' | 'InProgress' | 'Resolved' | 'Closed';
@@ -7,7 +9,7 @@ export type HelpdeskTicketStatus = 'Open' | 'InProgress' | 'Resolved' | 'Closed'
  * Internal helpdesk ticket.
  */
 @Entity('helpdesk_tickets')
-export class HelpdeskTicket {
+export class HelpdeskTicket extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -45,10 +47,4 @@ export class HelpdeskTicket {
 
   @Column({ type: 'timestamptz', nullable: true })
   closedAt!: Date | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

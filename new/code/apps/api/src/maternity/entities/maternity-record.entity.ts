@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 export type DeliveryType = 'Normal' | 'C-Section' | 'Instrumental';
 
@@ -7,7 +8,7 @@ export type DeliveryType = 'Normal' | 'C-Section' | 'Instrumental';
  * is filled in by recordDelivery.
  */
 @Entity('maternity_records')
-export class MaternityRecord {
+export class MaternityRecord extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -47,10 +48,4 @@ export class MaternityRecord {
 
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

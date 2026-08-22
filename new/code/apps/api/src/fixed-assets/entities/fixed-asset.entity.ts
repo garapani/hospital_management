@@ -1,4 +1,6 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 // Mirrored locally (mirror-don't-extract): numeric columns come back from node-postgres as
 // strings; importing the billing module's transformer would create a fixed-assets -> billing edge.
@@ -16,7 +18,7 @@ export const FIXED_ASSET_CONDITIONS: FixedAssetCondition[] = ['In Service', 'Und
  * FixedAssetsService.getAssetValuation.
  */
 @Entity('fixed_assets')
-export class FixedAsset {
+export class FixedAsset extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -62,10 +64,4 @@ export class FixedAsset {
 
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

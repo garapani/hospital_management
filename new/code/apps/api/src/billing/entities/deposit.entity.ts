@@ -1,8 +1,9 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 import { numericTransformer } from './numeric.transformer.js';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 @Entity('deposits')
-export class Deposit {
+export class Deposit extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -29,10 +30,4 @@ export class Deposit {
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   refundedAt!: Date | null;
-
-  @CreateDateColumn({ type: 'timestamp with time zone' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamp with time zone' })
-  updatedAt!: Date;
 }

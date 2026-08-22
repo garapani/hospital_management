@@ -1,8 +1,9 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 import { numericTransformer } from './numeric.transformer.js';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 @Entity('invoices')
-export class Invoice {
+export class Invoice extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -44,13 +45,4 @@ export class Invoice {
 
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
-
-  @Column({ type: 'uuid' })
-  createdBy!: string;
-
-  @CreateDateColumn({ type: 'timestamp with time zone' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamp with time zone' })
-  updatedAt!: Date;
 }

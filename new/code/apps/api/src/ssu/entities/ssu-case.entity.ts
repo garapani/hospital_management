@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 // Mirrored locally (mirror-don't-extract): numeric columns come back from node-postgres as
 // strings; importing the billing module's transformer would create an ssu -> billing edge.
@@ -14,7 +15,7 @@ export type SsuCaseStatus = 'Open' | 'Approved' | 'Rejected' | 'Closed';
  * of bills the hospital writes off (0-100).
  */
 @Entity('ssu_cases')
-export class SsuCase {
+export class SsuCase extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -49,10 +50,4 @@ export class SsuCase {
 
   @Column({ type: 'text', nullable: true })
   decisionNotes!: string | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

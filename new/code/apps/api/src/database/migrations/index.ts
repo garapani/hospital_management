@@ -50,6 +50,8 @@ import { AddTenantArchive1000000000050 } from './0050-add-tenant-archive.js';
 import { CreateSubscriptionBilling1000000000051 } from './0051-create-subscription-billing.js';
 import { CreateTenantBranding1000000000052 } from './0052-create-tenant-branding.js';
 import { CreatePackagesTable0048 } from './0048-create-packages-table.js';
+import { AddAuditColumnsToTenantTables1000000000053 } from './0053-add-audit-columns-to-tenant-tables.js';
+import { AddAuditColumnsToPlatformTables1000000000054 } from './0054-add-audit-columns-to-platform-tables.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -63,6 +65,7 @@ export const PLATFORM_MIGRATIONS = [
   AddTenantArchive1000000000050,
   CreateSubscriptionBilling1000000000051,
   CreateTenantBranding1000000000052,
+  AddAuditColumnsToPlatformTables1000000000054,
 ];
 
 // Tenant-scoped migrations: create per-tenant-schema tables. Run once per tenant by
@@ -114,4 +117,5 @@ export const TENANT_MIGRATIONS = [
   CreateSsuTables0046,
   CreateVaccinationTables0047,
   AddInvoiceItemChargeUnique0049,
+  AddAuditColumnsToTenantTables1000000000053,
 ];

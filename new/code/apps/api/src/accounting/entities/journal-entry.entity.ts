@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 // Mirrored locally (mirror-don't-extract): numeric columns come back from node-postgres as
 // strings; importing the billing module's transformer would create an accounting -> billing edge.
@@ -10,7 +11,7 @@ const numericTransformer = {
 export type JournalStatus = 'Draft' | 'Posted';
 
 @Entity('journal_entries')
-export class JournalEntry {
+export class JournalEntry extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -26,22 +27,12 @@ export class JournalEntry {
   @Column({ type: 'varchar', default: 'Draft' })
   status!: JournalStatus;
 
-  /** Actor who created the entry (Draft). */
-  @Column({ type: 'uuid' })
-  createdBy!: string;
-
   /** Actor who posted it; null until posted. */
   @Column({ type: 'uuid', nullable: true })
   postedBy!: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   postedAt!: Date | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }
 
 @Entity('journal_lines')

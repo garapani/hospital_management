@@ -1,7 +1,8 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 @Entity('permissions')
-export class Permission {
+export class Permission extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 

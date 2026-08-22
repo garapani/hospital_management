@@ -1,7 +1,9 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 @Entity('discharge_summaries')
-export class DischargeSummary {
+export class DischargeSummary extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -55,10 +57,4 @@ export class DischargeSummary {
 
   @Column({ type: 'timestamptz', nullable: true })
   reviewedAt!: Date | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

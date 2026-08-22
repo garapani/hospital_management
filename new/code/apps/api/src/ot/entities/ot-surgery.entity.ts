@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 export type OtSurgeryStatus = 'Scheduled' | 'InProgress' | 'Completed' | 'Cancelled';
 
@@ -6,7 +7,7 @@ export type OtSurgeryStatus = 'Scheduled' | 'InProgress' | 'Completed' | 'Cancel
  * Operation Theatre surgery record: scheduling + execution status.
  */
 @Entity('ot_surgeries')
-export class OtSurgery {
+export class OtSurgery extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -48,10 +49,4 @@ export class OtSurgery {
 
   @Column({ type: 'uuid' })
   scheduledBy!: string;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

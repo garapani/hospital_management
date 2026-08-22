@@ -1,7 +1,8 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 @Entity('departments')
-export class Department {
+export class Department extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -31,7 +32,4 @@ export class Department {
 
   @Column({ type: 'integer', nullable: true })
   maxDailyAppointments!: number | null;
-
-  @CreateDateColumn()
-  createdAt!: Date;
 }

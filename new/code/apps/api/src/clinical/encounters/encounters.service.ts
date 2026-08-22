@@ -1,14 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 import { ClinicalNote } from './entities/clinical-note.entity.js';
 import { Diagnosis } from './entities/diagnosis.entity.js';
 import { Prescription } from './entities/prescription.entity.js';
 
-export type CreateNoteInput = Omit<ClinicalNote, 'id' | 'createdAt' | 'updatedAt' | 'status'>;
-export type UpdateNoteInput = Partial<Omit<ClinicalNote, 'id' | 'createdAt' | 'updatedAt' | 'patientId' | 'doctorId' | 'appointmentId'>>;
+// keyof SoftDeletableEntity (not the old literal 'createdAt' | 'updatedAt'): these entities now also
+// carry createdBy/updatedBy/deletedAt/deletedBy, all system-populated by AuditColumnsSubscriber,
+// never part of a create/update input.
+export type CreateNoteInput = Omit<ClinicalNote, 'id' | keyof SoftDeletableEntity | 'status'>;
+export type UpdateNoteInput = Partial<Omit<ClinicalNote, 'id' | keyof SoftDeletableEntity | 'patientId' | 'doctorId' | 'appointmentId'>>;
 
-export type CreateDiagnosisInput = Omit<Diagnosis, 'id' | 'createdAt' | 'updatedAt'>;
-export type CreatePrescriptionInput = Omit<Prescription, 'id' | 'createdAt' | 'updatedAt' | 'status'>;
+export type CreateDiagnosisInput = Omit<Diagnosis, 'id' | keyof SoftDeletableEntity>;
+export type CreatePrescriptionInput = Omit<Prescription, 'id' | keyof SoftDeletableEntity | 'status'>;
 
 @Injectable()
 export class EncountersService {
@@ -57,7 +61,8 @@ export class EncountersService {
       if (!diagnosis) {
         throw new NotFoundException(`Diagnosis ${id} not found`);
       }
-      await repository.remove(diagnosis);
+      // Soft delete (Diagnosis extends SoftDeletableEntity) — see deletePrescription below.
+      await repository.softRemove(diagnosis);
     });
   }
 
@@ -83,7 +88,9 @@ export class EncountersService {
       if (!prescription) {
         throw new NotFoundException(`Prescription ${id} not found`);
       }
-      await repository.remove(prescription);
+      // Soft delete (Prescription extends SoftDeletableEntity): deletedAt/deletedBy populated by
+      // AuditColumnsSubscriber, row excluded from normal find()/query-builder reads afterward.
+      await repository.softRemove(prescription);
     });
   }
 

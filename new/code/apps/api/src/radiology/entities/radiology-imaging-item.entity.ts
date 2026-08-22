@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 // Mirrored locally (mirror-don't-extract): numeric columns come back from node-postgres as
 // strings; importing the billing module's transformer would create a radiology -> billing edge.
@@ -8,7 +9,7 @@ const numericTransformer = {
 };
 
 @Entity('radiology_imaging_items')
-export class RadiologyImagingItem {
+export class RadiologyImagingItem extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -30,12 +31,4 @@ export class RadiologyImagingItem {
   /** Soft-delete flag: deactivated catalog entries stay visible to existing records but are rejected for new use. */
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
-
-
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

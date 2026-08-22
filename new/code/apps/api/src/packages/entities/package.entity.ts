@@ -1,8 +1,9 @@
-import { Column, CreateDateColumn, Entity, PrimaryColumn } from 'typeorm';
+import { Column, Entity, PrimaryColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 /** A SaaS package (public-schema catalog row, like roles/permissions). See package-catalog.ts. */
 @Entity('packages')
-export class Package {
+export class Package extends SoftDeletableEntity {
   @PrimaryColumn({ type: 'varchar' })
   code!: string;
 
@@ -14,7 +15,4 @@ export class Package {
 
   @Column({ type: 'jsonb' })
   modules!: string[];
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
 }

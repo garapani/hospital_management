@@ -1,4 +1,6 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 // Mirrored locally (mirror-don't-extract): numeric columns come back from node-postgres as
 // strings; importing the billing module's transformer would create an inventory -> billing edge.
@@ -8,7 +10,7 @@ const numericTransformer = {
 };
 
 @Entity('inventory_items')
-export class InventoryItem {
+export class InventoryItem extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid') id!: string;
   @Column({ type: 'uuid' }) subCategoryId!: string;
   @Column({ type: 'varchar' }) name!: string;
@@ -22,8 +24,4 @@ export class InventoryItem {
   /** Soft-delete flag: deactivated catalog entries stay visible to existing records but are rejected for new use. */
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
-
-
-  @CreateDateColumn({ type: 'timestamptz' }) createdAt!: Date;
-  @UpdateDateColumn({ type: 'timestamptz' }) updatedAt!: Date;
 }

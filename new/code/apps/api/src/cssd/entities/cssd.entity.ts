@@ -1,10 +1,11 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 /**
  * Sterile instrument catalog entry.
  */
 @Entity('cssd_instruments')
-export class CssdInstrument {
+export class CssdInstrument extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -22,12 +23,6 @@ export class CssdInstrument {
 
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }
 
 export type SterilizationCycleStatus = 'InProgress' | 'Completed' | 'Failed';
@@ -38,7 +33,7 @@ export type SterilizationMethod = 'Steam' | 'ETO' | 'Chemical';
  * instruments are sterile until then.
  */
 @Entity('cssd_sterilization_cycles')
-export class CssdSterilizationCycle {
+export class CssdSterilizationCycle extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -67,10 +62,4 @@ export class CssdSterilizationCycle {
 
   @Column({ type: 'text', nullable: true })
   failureReason!: string | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

@@ -1,8 +1,9 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 import { AuditExclude } from '@hospital/audit-emitter';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 @Entity('accounts')
-export class Account {
+export class Account extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -39,10 +40,4 @@ export class Account {
 
   @Column({ type: 'timestamptz', nullable: true })
   phoneVerifiedAt!: Date | null;
-
-  @CreateDateColumn()
-  createdAt!: Date;
-
-  @UpdateDateColumn()
-  updatedAt!: Date;
 }

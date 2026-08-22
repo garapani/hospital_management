@@ -1,4 +1,6 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 export type AccountType = 'Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense';
 export const ACCOUNT_TYPES: AccountType[] = ['Asset', 'Liability', 'Equity', 'Income', 'Expense'];
@@ -8,7 +10,7 @@ export const ACCOUNT_TYPES: AccountType[] = ['Asset', 'Liability', 'Equity', 'In
  * (a two-level tree is the practical norm for a hospital).
  */
 @Entity('ledger_accounts')
-export class LedgerAccount {
+export class LedgerAccount extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -26,10 +28,4 @@ export class LedgerAccount {
 
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

@@ -142,9 +142,15 @@ export class PatientsService {
   }
 
   async deactivate(id: string): Promise<void> {
-    await this.findOne(id);
+    // save(), not update(): a raw update() broadcasts the plain values object ({ isActive: false })
+    // to TypeORM subscribers, not a real Patient instance, so AuditColumnsSubscriber's
+    // `instanceof AuditableEntity` check silently fails and updatedBy never gets set (updatedAt
+    // still bumps — TypeORM handles @UpdateDateColumn directly in its own SQL generation,
+    // independent of subscribers — so the gap is easy to miss without an explicit updatedBy check).
+    const patient = await this.findOne(id);
+    patient.isActive = false;
     await this.tenantConnection.runInTenantSchema(async (manager) => {
-      await manager.update(Patient, { id }, { isActive: false });
+      await manager.save(Patient, patient);
     });
   }
 }

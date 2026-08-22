@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 export type NursingTaskStatus = 'Pending' | 'InProgress' | 'Completed' | 'Cancelled';
 
@@ -6,7 +7,7 @@ export type NursingTaskStatus = 'Pending' | 'InProgress' | 'Completed' | 'Cancel
  * A nursing task assigned to an admission (vitals check, dressing, care activity, ...).
  */
 @Entity('nursing_tasks')
-export class NursingTask {
+export class NursingTask extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -33,15 +34,6 @@ export class NursingTask {
 
   @Column({ type: 'timestamptz', nullable: true })
   completedAt!: Date | null;
-
-  @Column({ type: 'uuid' })
-  createdBy!: string;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }
 
 export type MedicationAdministrationStatus = 'Scheduled' | 'Administered' | 'Skipped';

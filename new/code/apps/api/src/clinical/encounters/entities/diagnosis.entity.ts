@@ -1,7 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { SoftDeletableEntity } from '../../../database/auditable.entity.js';
 
 @Entity('diagnoses')
-export class Diagnosis {
+export class Diagnosis extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -22,10 +23,4 @@ export class Diagnosis {
 
   @Column({ type: 'boolean', default: false })
   isPrimary!: boolean;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

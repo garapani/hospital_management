@@ -1,4 +1,6 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 export type EmploymentType = 'FullTime' | 'PartTime' | 'Contract';
 
@@ -6,7 +8,7 @@ export type EmploymentType = 'FullTime' | 'PartTime' | 'Contract';
  * HR employee master.
  */
 @Entity('employees')
-export class Employee {
+export class Employee extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -43,10 +45,4 @@ export class Employee {
 
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

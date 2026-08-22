@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn, Unique } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 // Mirrored locally (mirror-don't-extract): numeric columns come back from node-postgres as
 // strings; importing the billing module's transformer would create a payroll -> billing edge.
@@ -16,7 +17,7 @@ export type PayslipStatus = 'Draft' | 'Paid';
  */
 @Entity('payslips')
 @Unique(['employeeId', 'periodMonth', 'periodYear'])
-export class Payslip {
+export class Payslip extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -56,10 +57,4 @@ export class Payslip {
 
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

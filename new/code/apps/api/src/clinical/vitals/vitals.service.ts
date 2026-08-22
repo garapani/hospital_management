@@ -1,8 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 import { Vital } from './entities/vital.entity.js';
 
-export type CreateVitalInput = Omit<Vital, 'id' | 'createdAt' | 'updatedAt' | 'bmi' | 'recordedAt'> & { recordedAt?: Date };
+// keyof SoftDeletableEntity (not the old literal 'createdAt' | 'updatedAt'): Vital now also carries
+// createdBy/updatedBy/deletedAt/deletedBy, all system-populated, never part of a create input.
+export type CreateVitalInput = Omit<Vital, 'id' | keyof SoftDeletableEntity | 'bmi' | 'recordedAt'> & { recordedAt?: Date };
 export type UpdateVitalInput = Partial<CreateVitalInput>;
 
 @Injectable()
@@ -89,7 +92,8 @@ export class VitalsService {
         throw new NotFoundException(`Vital record ${id} not found`);
       }
       
-      await repository.remove(vital);
+      // Soft delete (Vital extends SoftDeletableEntity) — see EncountersService.deletePrescription.
+      await repository.softRemove(vital);
     });
   }
 }

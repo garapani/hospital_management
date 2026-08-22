@@ -1,4 +1,6 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 // Mirrored locally (mirror-don't-extract): numeric columns come back from node-postgres as
 // strings; importing the billing module's transformer would create an insurance -> billing edge.
@@ -24,7 +26,7 @@ export const INSURANCE_CLAIM_STATUSES: InsuranceClaimStatus[] = [
  * stays in Billing (the invoice's own payment records).
  */
 @Entity('insurance_claims')
-export class InsuranceClaim {
+export class InsuranceClaim extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -63,10 +65,4 @@ export class InsuranceClaim {
 
   @Column({ type: 'timestamptz', nullable: true })
   processedAt!: Date | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

@@ -1,9 +1,10 @@
-import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 /** Per-tenant white-label config (public schema — platform-admin-configured, never visible to the
  *  hospital itself). Absent row / null fields fall back to the default Vaidya brand. */
 @Entity('tenant_branding')
-export class TenantBranding {
+export class TenantBranding extends SoftDeletableEntity {
   @PrimaryColumn({ type: 'varchar' })
   tenantId!: string;
 
@@ -18,10 +19,4 @@ export class TenantBranding {
    *  logo is served via a short-lived presigned URL, never a public bucket path. */
   @Column({ type: 'varchar', nullable: true })
   logoObjectKey!: string | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }

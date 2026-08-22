@@ -1,10 +1,11 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 export type InvoiceStatus = 'open' | 'paid';
 
 /** A platform billing invoice for one subscription period (public schema). */
 @Entity('subscription_invoices')
-export class SubscriptionInvoice {
+export class SubscriptionInvoice extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 

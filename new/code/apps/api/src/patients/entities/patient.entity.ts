@@ -1,9 +1,10 @@
-import { Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { PatientAddress } from './patient-address.entity.js';
 import { PatientKin } from './patient-kin.entity.js';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 @Entity('patients')
-export class Patient {
+export class Patient extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -45,12 +46,6 @@ export class Patient {
 
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 
   @OneToMany(() => PatientAddress, (address) => address.patient, { cascade: true })
   addresses!: PatientAddress[];

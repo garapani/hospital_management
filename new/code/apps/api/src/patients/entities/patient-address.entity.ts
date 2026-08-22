@@ -1,8 +1,9 @@
 import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import type { Patient } from './patient.entity.js';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 @Entity('patient_addresses')
-export class PatientAddress {
+export class PatientAddress extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 

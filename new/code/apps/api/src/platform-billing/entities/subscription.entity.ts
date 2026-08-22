@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 export type BillingCycle = 'monthly' | 'annual';
 export type SubscriptionStatus = 'active' | 'canceled';
@@ -6,7 +7,7 @@ export type SubscriptionStatus = 'active' | 'canceled';
 /** Platform-side SaaS subscription for a hospital tenant (public schema — the tenant's contract
  *  with the platform, never visible to the hospital itself). */
 @Entity('subscriptions')
-export class Subscription {
+export class Subscription extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -31,7 +32,4 @@ export class Subscription {
 
   @Column({ type: 'timestamptz' })
   currentPeriodEnd!: Date;
-
-  @CreateDateColumn()
-  createdAt!: Date;
 }

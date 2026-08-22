@@ -1,7 +1,9 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 @Entity('stock_requisitions')
-export class StockRequisition {
+export class StockRequisition extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid') id!: string;
   @Column({ type: 'uuid' }) departmentId!: string;
   @Column({ type: 'uuid' }) requestedBy!: string;
@@ -10,6 +12,4 @@ export class StockRequisition {
   // 'Pending' | 'PartiallyFulfilled' | 'Fulfilled' | 'Cancelled'
   @Column({ type: 'text', nullable: true }) notes!: string | null;
   @Column({ type: 'text', nullable: true }) cancelReason!: string | null;
-  @CreateDateColumn({ type: 'timestamptz' }) createdAt!: Date;
-  @UpdateDateColumn({ type: 'timestamptz' }) updatedAt!: Date;
 }

@@ -1,7 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { SoftDeletableEntity } from '../../../database/auditable.entity.js';
 
 @Entity('vitals')
-export class Vital {
+export class Vital extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -46,10 +47,4 @@ export class Vital {
 
   @Column({ type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP' })
   recordedAt!: Date;
-
-  @CreateDateColumn({ type: 'timestamp with time zone' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamp with time zone' })
-  updatedAt!: Date;
 }

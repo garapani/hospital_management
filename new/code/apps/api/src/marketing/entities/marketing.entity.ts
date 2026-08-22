@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 export type ReferralSourceType = 'Doctor' | 'Walk-in' | 'Advertising' | 'Social Media' | 'Other';
 
@@ -6,7 +7,7 @@ export type ReferralSourceType = 'Doctor' | 'Walk-in' | 'Advertising' | 'Social 
  * A referral source the hospital tracks (where patients come from).
  */
 @Entity('referral_sources')
-export class ReferralSource {
+export class ReferralSource extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -18,12 +19,6 @@ export class ReferralSource {
 
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }
 
 /**
