@@ -409,7 +409,14 @@ Follow the PRD's own phase ordering as-is:
     `insurance.manage` wired to Billing/Accounts Staff, Hospital Admin, Super Admin. Migration
     `0034`; 8 integration tests. Not done (future items): external referrals
     (`ExtReferralModels`), PM-JAY/Medicare-specific claim formats (deferred to the compliance
-    adapter per PRD §5.7), payer-side settlement reconciliation, and a frontend page.
+    adapter per PRD §5.7), payer-side settlement reconciliation. **Frontend page shipped
+    2026-08-22** (separate repo `frontend/`): a Payers/Policies/Claims tabbed page
+    (`apps/staff-console/src/app/insurance/`) — payer master list/create/edit/deactivate,
+    patient policy list/create/deactivate with a Check Coverage action, and the claims list with
+    the full status-machine actions (Submit/Approve/Reject/Mark Paid), gated by
+    `insurance.read`/`insurance.manage` and a permission-driven nav entry. 15 new frontend tests;
+    full claims lifecycle (payer → policy → coverage check → claim → submit → approve → pay)
+    live-verified end to end against the dev API. See `Development-Standards.md` §50.
   - **Accounting (2026-08-20):** `accounting` module — hierarchical chart of accounts
     (Asset/Liability/Equity/Income/Expense + soft-delete), double-entry journal entries (balanced
     lines, `Draft -> Posted` immutable, auto `JRN-…` numbers, actor-derived createdBy/postedBy per

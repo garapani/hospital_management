@@ -1839,3 +1839,43 @@ application, and tenant isolation, all via direct service calls. `reporting-even
 covers the pure builder's structure (brand/title, header + per-row table body, the
 filters-summary line appearing only when a filter is active) the same way
 `lab-report-document.spec.ts` covers Lab's.
+
+## 50. Insurance frontend page (2026-08-22)
+
+The `insurance` backend module (payers, policies, claims lifecycle, coverage check — §
+`pending-tasks.md` Phase 3) shipped with no frontend page; this closes that gap in the frontend
+repo (`apps/staff-console/src/app/insurance/`).
+
+**Follows the Reporting-dashboard shape, not a new one.** One routed component
+(`insurance-dashboard/`) with `p-tabs` for the three sub-resources (Payers/Policies/Claims), same
+as `reporting-dashboard/`'s Overview/Events split — a single feature page for a module with
+several related-but-distinct sub-resources doesn't need three separate routes. Payers reuse the
+create+edit+deactivate/reactivate CRUD pattern from `global-catalog-list.ts` (Roles/Departments);
+Policies and Claims reuse the `p-table` lazy/server-paginated pattern from `invoice-list.ts`
+(`[lazyLoadOnInit]="false"` + explicit first load, per this file's screen-building conventions).
+
+**Pagination envelope: `{data, meta}`, not the Reporting/Invoice bespoke shapes.** Both
+`listPolicies`/`listClaims` on the backend go through the shared `@hospital/pagination`
+`paginate()` helper, whose actual return shape is `{ data: T[], meta: { total, page, limit,
+totalPages } }` — matching `audit.model.ts`'s `PaginatedResponse<T>` (used by the platform
+tenant-history panel), not `InvoiceListResult`'s flattened `{data, total, page, limit}` (an older,
+pre-`@hospital/pagination` shape specific to billing) or Reporting's bespoke `{items, total}`.
+Verified against the actual `paginate()` implementation (`libs/pagination/src/utils/paginate.ts`)
+rather than assumed from a sibling screen — the three list-envelope shapes already live side by
+side in this codebase and picking the wrong one only fails at runtime, not typecheck, since all
+three are structurally plausible TypeScript interfaces.
+
+**Money-adjacent actions (Approve/Reject/Mark Paid) reuse existing, already-reviewed backend
+endpoints — no new backend logic, so this shipped without a dedicated `/code-review` pass.** The
+repo's risk-gated review rule applies to money-*handling logic*; this page is a UI consumer of
+claim-lifecycle endpoints that predate it (§ Phase 3, migration `0034`, 8 backend tests already in
+place). The full lifecycle (payer create → policy create → coverage check → claim create → submit
+→ approve → pay) was live-verified end to end against the dev API instead, using a temporarily
+enterprise-upgraded demo tenant (Insurance is Enterprise-package-gated; reverted after
+verification) — confirming the frontend's request/response shapes match the live backend exactly,
+which is the failure mode a review would otherwise be checking for on a pure consumer page.
+
+**Nav placement:** a standalone top-level "Insurance" link (like "Invoices"), not inside a new
+"Finance" section — Accounting and Fixed Assets are still frontend-less (per `pending-tasks.md`),
+so a dedicated Finance nav section would currently hold one item. Revisit grouping once a second
+finance-domain page ships.

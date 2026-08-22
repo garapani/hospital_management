@@ -229,6 +229,8 @@ portal is a bigger product decision — confirm scope with the human before star
 **Test:** `cd frontend && CI=true pnpm exec nx run staff-console:test && CI=true pnpm exec nx run staff-console:build`.
 
 ### 2.7 Insurance frontend page (Phase 3)
+**Status: done (2026-08-22).** See `Development-Standards.md` §50.
+
 **Context:** `insurance` module complete (payers, policies, claims lifecycle, coverage
 check) with **no frontend page**.
 **What to do:** payer master list/create, patient policy view, claims list with the
