@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app/app.module.js';
+import { createApiValidationPipe } from './app/api-validation-pipe.js';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger as PinoLogger } from 'nestjs-pino';
 
@@ -30,6 +31,11 @@ async function bootstrap() {
     origin: corsOrigins,
     allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id'],
   });
+  // Phase A of 2.14 (see new/docs/superpowers/specs/2026-08-22-global-validation-pipe-design.md):
+  // activates the class-validator decorators that already exist on ~9 DTOs (previously dead code —
+  // no ValidationPipe was ever registered) and coerces typed-but-undecorated fields (e.g.
+  // PaginationQueryDto's page/limit) via reflected design:type metadata.
+  app.useGlobalPipes(createApiValidationPipe());
   const globalPrefix = 'api';
   app.setGlobalPrefix(globalPrefix);
 
