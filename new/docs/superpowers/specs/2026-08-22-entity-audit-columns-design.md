@@ -21,12 +21,18 @@ diff) — denormalized `createdBy`/`updatedBy` columns are additive to this, not
 ## Solution
 
 Add six standardized columns — `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `deletedAt`,
-`deletedBy` — to the ~37 entities representing real business/clinical/financial records (patients,
-admissions, invoices, orders, prescriptions, inventory, etc.), plus a handful of platform-scoped
-equivalents (tenant registry, subscriptions, subscription invoices, tenant branding). Excluded:
-pure join tables, append-only event/log tables (already timestamped differently — `audit_records`,
-`reporting_events`, `stock_transaction`-style ledgers), and numbering-counter tables with no row
-identity of their own.
+`deletedBy` — to ~54 tenant-scoped tables plus a handful of platform-scoped ones. Scope is
+"real business/clinical/financial records **and** the lookup/catalog tables admins actively
+manage" (patients, admissions, invoices, orders, prescriptions, inventory items, *and* lab test
+catalog, chart of accounts, department/ward/bed catalog, insurance payer catalog, fixed-asset
+categories, etc. — "who changed this lab test's price" is as real an audit question as "who
+created this admission"). Excluded: pure join tables (`account_roles`, `role_permissions`),
+append-only event/log tables already timestamped differently (`audit_records`, `reporting_events`,
+`notifications`, `payments`, `returns`, `invoice_items`, `bed_transfers`, `stock_transactions`,
+`stock_balances`, `ward_stock_transactions`/`ward_stock_balances`, `lab_results`,
+`triage_entries`, `medication_administrations`, `journal_lines`, `patient_referrals`), and
+numbering-counter tables with no row identity of their own (`billing_sequences`,
+`patient_sequences`).
 
 No separate `isSoftDeleted` boolean: TypeORM's `@DeleteDateColumn()` makes `deletedAt IS NOT NULL`
 the soft-delete flag itself.
@@ -97,9 +103,11 @@ NOT EXISTS` statements (matching the established multi-statement pattern in
 `0031-add-catalog-prices.ts`) — not one migration per table:
 
 - **Tenant-scoped** (`TENANT_MIGRATIONS`): adds the missing columns (`createdBy` where absent,
-  `updatedBy`, `deletedAt`, `deletedBy` everywhere) across the ~37 in-scope tenant tables.
+  `updatedBy`, `deletedAt`, `deletedBy` everywhere) across the ~54 in-scope tenant tables.
 - **Platform-scoped** (`PLATFORM_MIGRATIONS`): same, for `tenants`, `subscriptions`,
-  `subscription_invoices`, `tenant_branding`.
+  `subscription_invoices`, `tenant_branding`, `roles`, `permissions`, `department_catalog`,
+  `packages` (global catalogs platform admins manage — `role_permissions` stays excluded as a
+  pure join table).
 
 Both use `ADD COLUMN IF NOT EXISTS` (idempotent, matching `0050`'s established defensive style) and
 ship `down()` migrations dropping the same columns.
@@ -150,6 +158,5 @@ rule:
   to use the new `deletedAt` column — different concept, explicitly out of scope (§5 above).
 - Does not add FK constraints from `createdBy`/`updatedBy`/`deletedBy` to `accounts.id` — matches
   the existing convention on the 4 entities that already have `createdBy`.
-- Does not touch the 9 platform-scoped entities excluded as join/lookup/log (rbac catalog,
-  department catalog, packages) — borderline lookup/catalog tables stay out of scope for now per the
-  "all business/clinical/financial entities" scoping decision.
+- Does not touch `role_permissions` (join table) or any append-only log/event table — the only
+  platform-scoped exclusions.
