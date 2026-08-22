@@ -508,8 +508,18 @@ export class TenantsService {
   /**
    * Hard purge — irreversible. Drops the tenant schema + role and the registry row (tenant_roles
    * cascades). Guarded: only an ARCHIVED tenant can be purged, and the caller must confirm the
-   * hospitalId explicitly. The platform audit trail (tenant___platform.audit_records) survives
-   * the drop, so the purge itself stays recorded.
+   * hospitalId explicitly. The platform audit trail (tenant___platform.audit_records) and
+   * subscription billing history (subscriptions/subscription_invoices — see migration 0055)
+   * survive the drop, so the purge itself stays recorded and revenue history isn't lost.
+   *
+   * Schema/role drop and registry-row removal all run in one transaction, with the DDL drops
+   * ordered *before* the registry-row removal: if DROP SCHEMA/ROLE fails partway through, the
+   * transaction rolls back and the registry row is left in place, keeping hospitalId reserved.
+   * The prior implementation removed the registry row first and outside any transaction — a
+   * failed/hung schema drop after that point freed hospitalId for reuse while the old schema's
+   * data was still sitting on disk, so a subsequent provisionTenant() for a new tenant with the
+   * same hospitalId would have its `CREATE SCHEMA IF NOT EXISTS` silently succeed against the
+   * still-populated old schema, exposing the previous tenant's PHI to the new tenant's admin.
    */
   async purgeTenant(hospitalId: string, confirmHospitalId: string): Promise<{ purged: string }> {
     if (confirmHospitalId !== hospitalId) {
@@ -530,11 +540,13 @@ export class TenantsService {
       throw new BadRequestException(`Tenant ${hospitalId} has an invalid hospitalId; refusing to purge`);
     }
 
-    // Loaded-entity remove() (not repository.delete()) so the audit subscriber records the
-    // destructive purge as a 'delete' event in the platform trail. tenant_roles cascades.
-    await this.dataSource.getRepository(Tenant).remove(tenant);
-    await this.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${hospitalId}" CASCADE`);
-    await this.dataSource.query(`DROP ROLE IF EXISTS "tenant_${hospitalId}"`);
+    await this.dataSource.transaction(async (manager) => {
+      await manager.query(`DROP SCHEMA IF EXISTS "tenant_${hospitalId}" CASCADE`);
+      await manager.query(`DROP ROLE IF EXISTS "tenant_${hospitalId}"`);
+      // Loaded-entity remove() (not repository.delete()) so the audit subscriber records the
+      // destructive purge as a 'delete' event in the platform trail. tenant_roles cascades.
+      await manager.getRepository(Tenant).remove(tenant);
+    });
     return { purged: hospitalId };
   }
 }

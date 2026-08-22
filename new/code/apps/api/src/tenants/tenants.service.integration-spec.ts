@@ -159,4 +159,91 @@ describe('TenantsService (integration)', () => {
       expect(tenant.createdBy).toBe(AUTHENTICATED_ACCOUNT);
     });
   });
+
+  describe('purgeTenant', () => {
+    it('rejects purging a tenant that is not archived', async () => {
+      await tenantsService.provisionTenant({
+        hospitalId: 'test_tenant_svc_purge_not_archived',
+        hospitalName: 'Not Archived Hospital',
+      });
+
+      await expect(
+        tenantsService.purgeTenant(
+          'test_tenant_svc_purge_not_archived',
+          'test_tenant_svc_purge_not_archived',
+        ),
+      ).rejects.toThrow(/must be archived/);
+    });
+
+    it('drops the schema/role and registry row, but preserves subscription billing history (migration 0055)', async () => {
+      const hospitalId = 'test_tenant_svc_purge_ok';
+      await tenantsService.provisionTenant({ hospitalId, hospitalName: 'Purge Ok Hospital' });
+      await tenantsService.archiveTenant(hospitalId);
+
+      // Simulates a subscription/subscription_invoice row this tenant accrued while active —
+      // inserted directly rather than through SubscriptionBillingService to keep this test
+      // scoped to the purge behavior, not subscription lifecycle rules.
+      const [{ id: subscriptionId }] = await ctx.dataSource.query(
+        `INSERT INTO subscriptions ("tenantId", "packageCode", "billingCycle", "pricePerCycle",
+                                     "currentPeriodStart", "currentPeriodEnd")
+         VALUES ($1, 'basic', 'monthly', 1000, now(), now() + interval '30 days')
+         RETURNING id`,
+        [hospitalId],
+      );
+
+      const result = await tenantsService.purgeTenant(hospitalId, hospitalId);
+      expect(result).toEqual({ purged: hospitalId });
+
+      const [registryRow] = await ctx.dataSource.query(
+        `SELECT 1 FROM tenants WHERE "hospitalId" = $1`,
+        [hospitalId],
+      );
+      expect(registryRow).toBeUndefined();
+
+      const [schemaRow] = await ctx.dataSource.query(
+        `SELECT 1 FROM information_schema.schemata WHERE schema_name = $1`,
+        [`tenant_${hospitalId}`],
+      );
+      expect(schemaRow).toBeUndefined();
+
+      // Migration 0055 dropped subscriptions.tenantId's ON DELETE CASCADE FK to tenants —
+      // billing/revenue history must outlive the purge even though the tenant registry row is gone.
+      const [survivingSubscription] = await ctx.dataSource.query(
+        `SELECT "tenantId" FROM subscriptions WHERE id = $1`,
+        [subscriptionId],
+      );
+      expect(survivingSubscription.tenantId).toBe(hospitalId);
+    });
+
+    it('a failure partway through the drop leaves the registry row intact, blocking hospitalId reuse', async () => {
+      const hospitalId = 'test_tenant_svc_purge_fail';
+      const roleName = `tenant_${hospitalId}`;
+      await tenantsService.provisionTenant({ hospitalId, hospitalName: 'Purge Fail Hospital' });
+      await tenantsService.archiveTenant(hospitalId);
+
+      // Forces a real DROP ROLE failure (role owns an object outside its own schema, so Postgres
+      // refuses to drop it) so the transaction rolls back partway through — proving the fix's
+      // ordering/atomicity, not just that a BadRequestException short-circuits before any DDL runs.
+      await ctx.dataSource.query(`CREATE TABLE public.purge_fail_dummy (id int)`);
+      await ctx.dataSource.query(`ALTER TABLE public.purge_fail_dummy OWNER TO "${roleName}"`);
+
+      try {
+        await expect(tenantsService.purgeTenant(hospitalId, hospitalId)).rejects.toThrow();
+
+        const [registryRow] = await ctx.dataSource.query(
+          `SELECT 1 FROM tenants WHERE "hospitalId" = $1`,
+          [hospitalId],
+        );
+        expect(registryRow).toBeDefined();
+
+        const [schemaRow] = await ctx.dataSource.query(
+          `SELECT 1 FROM information_schema.schemata WHERE schema_name = $1`,
+          [`tenant_${hospitalId}`],
+        );
+        expect(schemaRow).toBeDefined();
+      } finally {
+        await ctx.dataSource.query(`DROP TABLE IF EXISTS public.purge_fail_dummy`);
+      }
+    });
+  });
 });
