@@ -186,6 +186,54 @@ be in while still fully present and queryable in normal flows), not a removed ro
 would be a real modeling mistake: a deactivated patient must still show up in most patient searches
 (with a status badge), while a soft-deleted row is invisible to `find()` by design.
 
+### 6. `createdBy`/`updatedBy`/`deletedBy` are `varchar`, not `uuid` — corrected mid-implementation
+
+The first draft of `AuditableEntity` typed these columns `uuid`, matching `invoices.createdBy`/
+`journal_entries.createdBy`/`nursing_tasks.createdBy`. Running the full backend suite against the
+real migration immediately surfaced the problem: `TenantContextService.getAccountId()` is populated
+straight from the JWT's `sub` claim (`auth-context.middleware.ts`) with no format validation — real
+logins always carry a genuine `accounts.id` uuid there, but this codebase's own test suite routinely
+signs tokens with human-readable `sub` values (`'ops.alice'`, `'master-data-controller-admin'`,
+etc.), which a `uuid`-typed column rejects outright (`invalid input syntax for type uuid`) on the
+first insert/update any such test performs — over 200 test failures on the first full-suite run
+after wiring the subscriber. Fixed by switching the type to `varchar`, matching `tenants.createdBy`'s
+existing precedent instead. This is an audit-trail actor label, not a column anything joins against
+or validates structurally — varchar loses nothing meaningful for production traffic (a real uuid is
+still valid varchar content) while accommodating the test convention without rewriting it.
+
+**Lesson for the next person touching this pattern:** don't assume a "the value always comes from a
+real logged-in account" invariant holds in every environment this code runs in — test fixtures in
+this codebase deliberately favor readable identifiers over realistic ones, and a DB-level type
+constraint is the wrong place to enforce a shape assumption that's only true in production.
+
+### 7. Verifying against the actual DB schema, not the entity class, saved this from a worse bug
+
+Before writing the migration, the working assumption was "`createdAt`/`updatedAt` already exist on
+nearly every in-scope table, so the migration only needs to add the 4 new columns." That assumption
+was wrong for 6 tables (`roles`, `permissions`, `patient_addresses`, `patient_kins` — missing both;
+`beds`, `departments`, `wards`, `department_catalog`, `packages`, `subscriptions` — missing
+`updatedAt`), verified by grepping each table's *original CREATE TABLE migration*, not the entity
+class as last read (the entity class only tells you what TypeScript expects, not what's actually on
+disk — a distinction the `migration-safety-check` skill exists to enforce for exactly this reason).
+The gap was caught by the full backend test suite provisioning a fresh tenant schema and hitting
+`column "createdAt" of relation "roles" does not exist` on the very first RBAC-catalog seed — not by
+manual review. Running the full suite against a real migration (not just `typecheck`) is what this
+class of bug needs to surface; a passing `tsc --build` says nothing about whether the SQL is right.
+
+### 8. `PLATFORM_MIGRATIONS` need an explicit `nx run api:migrate`; they don't auto-apply per test run
+
+Unlike `TENANT_MIGRATIONS` (replayed fresh for every tenant schema `setupTenantTestContext`
+provisions, so a new tenant-scoped migration is exercised automatically by the next full-suite run),
+`PLATFORM_MIGRATIONS` apply once to the single shared public schema and are **not** re-run
+automatically by the test suite — `apps/api/src/testing/tenant-test-context.ts` has no
+`PLATFORM_MIGRATIONS`-running code at all. A new platform-scoped migration needs `pnpm exec nx run
+api:migrate` run explicitly against the dev/test database before any test exercising that schema
+will see it (and `pnpm exec nx run api:migrate-tenants` to backfill already-provisioned tenant
+schemas with a new *tenant*-scoped migration, for the same reason — a fresh `setupTenantTestContext`
+call runs `TENANT_MIGRATIONS` from scratch, but a tenant schema that already existed before the new
+migration was added won't have it until backfilled). Both were required here and are now part of the
+standard rollout sequence for any future schema-touching task, not just this one.
+
 ## Testing Decisions
 
 Touches every business/clinical/financial entity plus a real behavior change (soft-delete on
