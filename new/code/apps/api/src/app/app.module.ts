@@ -8,6 +8,7 @@ import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { AuthModule } from '../auth/auth.module.js';
 import { TenantsModule } from '../tenants/tenants.module.js';
 import { PlatformBillingModule } from '../platform-billing/platform-billing.module.js';
+import { PlatformBrandingModule } from '../platform-branding/platform-branding.module.js';
 import { PackagesModule } from '../packages/packages.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { RbacModule } from '../rbac/rbac.module.js';
@@ -96,6 +97,7 @@ import { VaccinationModule } from '../vaccination/vaccination.module.js';
     AuthModule,
     TenantsModule,
     PlatformBillingModule,
+    PlatformBrandingModule,
     PackagesModule,
     AuditModule,
     RbacModule,
@@ -146,6 +148,13 @@ export class AppModule implements NestModule {
         { path: 'auth/change-password', method: RequestMethod.POST },
         // Prometheus scrapers cannot carry JWTs; /metrics exposes only aggregate counters.
         { path: 'metrics', method: RequestMethod.GET },
+        // The login page renders branding before any session exists — resolved from
+        // x-tenant-id (TenantContextMiddleware, which runs on every route below), not a JWT.
+        // Also listed in @hospital/tenant-context's TenantContextMiddleware
+        // (EXPECTED_FALLBACK_PATH_SUFFIXES) — that's a separate list keyed by path suffix, not
+        // wired to this one, so a route added only here still logs a spurious "fallback to
+        // headers" warning on every legitimate call until added there too.
+        { path: 'branding', method: RequestMethod.GET },
       )
       .forRoutes('*');
     consumer.apply(TenantContextMiddleware).forRoutes('*');

@@ -4,10 +4,11 @@ import { randomUUID } from 'node:crypto';
 import type {} from '@hospital/auth-guards';
 import { TenantContextService } from './tenant-context.service.js';
 
-// The only two routes where AuthContextMiddleware never runs (see its own .exclude() list), so
-// header-based fallback here is expected, not suspicious — matched by suffix since this list is
-// prefix-agnostic to main.ts's app.setGlobalPrefix('api').
-const EXPECTED_FALLBACK_PATH_SUFFIXES = ['/auth/login', '/auth/refresh'];
+// The routes where AuthContextMiddleware never runs (see its own .exclude() list in
+// app.module.ts — keep this list in sync with that one), so header-based fallback here is
+// expected, not suspicious — matched by suffix since this list is prefix-agnostic to main.ts's
+// app.setGlobalPrefix('api').
+const EXPECTED_FALLBACK_PATH_SUFFIXES = ['/auth/login', '/auth/refresh', '/branding'];
 
 @Injectable()
 export class TenantContextMiddleware implements NestMiddleware {

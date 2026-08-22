@@ -60,4 +60,23 @@ describe('AppModule auth-exclusion wiring (integration)', () => {
     expect(response.status).toBe(401);
     expect(response.body.message).toBe('Missing or malformed Authorization header');
   });
+
+  it('GET /branding is excluded from AuthContextMiddleware: the login page can render branding pre-session', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/branding')
+      .set('x-tenant-id', ctx.tenantId);
+
+    // No Authorization header at all — a 200 (not 401) proves the request reached
+    // TenantBrandingController rather than being rejected by the auth middleware. An unconfigured
+    // tenant resolves to all-null (the frontend's default-Vaidya-brand case), not an error.
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ displayName: null, primaryColor: null, logoUrl: null });
+  });
+
+  it('POST /branding (wrong method, same path — no such route) is NOT excluded: AuthContextMiddleware rejects it with 401', async () => {
+    const response = await request(app.getHttpServer()).post('/branding');
+
+    expect(response.status).toBe(401);
+    expect(response.body.message).toBe('Missing or malformed Authorization header');
+  });
 });

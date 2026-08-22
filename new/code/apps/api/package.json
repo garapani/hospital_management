@@ -132,17 +132,17 @@
   "dependencies": {
     "@hospital/audit-emitter": "workspace:*",
     "@hospital/auth-guards": "workspace:*",
+    "@hospital/object-storage": "workspace:*",
     "@hospital/observability": "workspace:*",
     "@hospital/pagination": "workspace:*",
+    "@hospital/pdf": "workspace:*",
     "@hospital/tenant-context": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0",
-    "tslib": "^2.3.0",
-    "@hospital/object-storage": "workspace:*",
-    "@hospital/pdf": "workspace:*"
+    "tslib": "^2.3.0"
   },
   "devDependencies": {
     "@nestjs/testing": "^11.0.0"
