@@ -1,32 +1,84 @@
-import { DeliveryType } from '../entities/maternity-record.entity.js';
+import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+
+import type { DeliveryType } from '../entities/maternity-record.entity.js';
+
+const DELIVERY_TYPES = ['Normal', 'C-Section', 'Instrumental'] as const;
 
 export class CreateMaternityRecordDto {
+  @IsString()
   admissionId!: string;
+
+  @IsString()
   patientId!: string;
+
+  @IsOptional()
+  @IsNumber()
   gravida?: number;
+
+  @IsOptional()
+  @IsNumber()
   para?: number;
+
+  @IsOptional()
+  @IsString()
   lmp?: string;
+
+  @IsOptional()
+  @IsString()
   edd?: string;
+
+  @IsOptional()
+  @IsString()
   notes?: string;
 }
 
 export class UpdateMaternityRecordDto {
+  @IsOptional()
+  @IsNumber()
   gravida?: number;
+
+  @IsOptional()
+  @IsNumber()
   para?: number;
+
+  @IsOptional()
+  @IsString()
   lmp?: string;
+
+  @IsOptional()
+  @IsString()
   edd?: string;
+
+  @IsOptional()
+  @IsString()
   notes?: string;
 }
 
 export class RecordDeliveryDto {
+  @IsString()
   deliveryDate!: string;
+
+  @IsIn(DELIVERY_TYPES)
   deliveryType!: DeliveryType;
+
+  @IsNumber()
   babyCount!: number;
+
+  @IsOptional()
+  @IsString()
   complications?: string;
+
+  @IsOptional()
+  @IsString()
   notes?: string;
 }
 
 export class ListMaternityRecordsQueryDto {
+  @IsOptional()
+  @IsString()
   patientId?: string;
+
+  @IsOptional()
+  @IsString()
   admissionId?: string;
 }

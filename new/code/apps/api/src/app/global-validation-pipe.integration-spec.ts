@@ -112,7 +112,7 @@ describe('Global ValidationPipe (integration)', () => {
     expect(response.status).toBe(400);
   });
 
-  it('list endpoints backed by the undecorated PaginationQueryDto are unaffected (whitelist stays off)', async () => {
+  it('list endpoints backed by PaginationQueryDto still paginate correctly now that it carries decorators too (2.14 Phase B)', async () => {
     const response = await request(app.getHttpServer())
       .get('/billing/invoices')
       .query({ page: '1', limit: '5' })
@@ -121,5 +121,19 @@ describe('Global ValidationPipe (integration)', () => {
 
     expect(response.status).toBe(200);
     expect(Array.isArray(response.body.data)).toBe(true);
+  });
+
+  // 2.14 Phase B (claude-code-tasks.md 2.18): whitelist is now on for every DTO. forbidNonWhitelisted
+  // stays off deliberately (see api-validation-pipe.ts) — an unrecognized field is silently dropped,
+  // not rejected. This is the one place asserting that documented behavior end to end: a genuinely
+  // unexpected field must not turn into a 400.
+  it('silently drops an unrecognized field instead of rejecting the request (whitelist on, forbidNonWhitelisted off)', async () => {
+    const response = await request(app.getHttpServer())
+      .patch('/lab/tests/00000000-0000-0000-0000-000000000000/price')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({ price: 42, notPartOfTheDto: 'should be stripped, not rejected' });
+
+    expect(response.status).not.toBe(400);
   });
 });

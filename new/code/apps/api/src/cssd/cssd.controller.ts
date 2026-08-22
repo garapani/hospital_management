@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
-import { PaginationQueryDto } from '@hospital/pagination';
 import { CssdService } from './cssd.service.js';
 import {
   CompleteCycleDto,
@@ -56,7 +55,7 @@ export class CssdController {
 
   @Get('cycles')
   @RequirePermission('cssd.read')
-  async listCycles(@Query() query: PaginationQueryDto & ListCyclesQueryDto) {
+  async listCycles(@Query() query: ListCyclesQueryDto) {
     return this.cssdService.listCycles(query);
   }
 

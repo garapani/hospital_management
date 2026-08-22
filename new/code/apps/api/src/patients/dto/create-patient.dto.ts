@@ -1,33 +1,113 @@
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+
 export class CreatePatientAddressDto {
+  @IsOptional()
+  @IsString()
   addressType?: string;
+
+  @IsOptional()
+  @IsString()
   streetAddress?: string;
+
+  @IsOptional()
+  @IsString()
   city?: string;
+
+  @IsOptional()
+  @IsString()
   state?: string;
+
+  @IsOptional()
+  @IsString()
   postalCode?: string;
+
+  @IsOptional()
+  @IsString()
   country?: string;
 }
 
 export class CreatePatientKinDto {
+  @IsString()
   kinName!: string;
+
+  @IsString()
   relationship!: string;
+
+  @IsString()
   phoneNumber!: string;
+
+  @IsOptional()
+  @IsString()
   email?: string;
+
+  @IsOptional()
+  @IsString()
   address?: string;
 }
 
 export class CreatePatientDto {
+  @IsString()
   firstName!: string;
+
+  @IsOptional()
+  @IsString()
   middleName?: string;
+
+  @IsString()
   lastName!: string;
+
+  @IsString()
   gender!: string;
+
+  @IsOptional()
+  @IsDateString()
   dateOfBirth?: string;
+
+  @IsOptional()
+  @IsString()
   age?: string;
+
+  @IsOptional()
+  @IsString()
   phoneNumber?: string;
+
+  @IsOptional()
+  @IsString()
   email?: string;
+
+  @IsOptional()
+  @IsString()
   bloodGroup?: string;
+
+  @IsOptional()
+  @IsString()
   governmentIdType?: string;
+
+  @IsOptional()
+  @IsString()
   governmentIdNumber?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePatientAddressDto)
   addresses?: CreatePatientAddressDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePatientKinDto)
   kins?: CreatePatientKinDto[];
+
+  @IsOptional()
+  @IsBoolean()
   allowDuplicate?: boolean;
 }

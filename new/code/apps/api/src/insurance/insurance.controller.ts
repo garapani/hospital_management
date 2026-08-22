@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
-import { PaginationQueryDto } from '@hospital/pagination';
 import { InsuranceClaimsService } from './insurance-claims.service.js';
 import {
   ApproveClaimDto,
@@ -9,6 +8,7 @@ import {
   CreatePayerDto,
   CreatePolicyDto,
   ListClaimsQueryDto,
+  ListPoliciesQueryDto,
   RejectClaimDto,
   UpdatePayerDto,
   UpdatePolicyDto,
@@ -59,7 +59,7 @@ export class InsuranceController {
 
   @Get('policies')
   @RequirePermission('insurance.read')
-  async listPolicies(@Query() query: PaginationQueryDto & { patientId?: string }) {
+  async listPolicies(@Query() query: ListPoliciesQueryDto) {
     return this.insuranceClaimsService.listPolicies(query);
   }
 

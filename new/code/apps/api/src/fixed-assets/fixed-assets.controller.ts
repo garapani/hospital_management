@@ -4,10 +4,9 @@ import { FixedAssetsService } from './fixed-assets.service.js';
 import {
   CreateFixedAssetCategoryDto,
   CreateFixedAssetDto,
+  ListFixedAssetsQueryDto,
   UpdateFixedAssetDto,
 } from './dto/fixed-asset.dto.js';
-import { PaginationQueryDto } from '@hospital/pagination';
-import { FixedAssetCondition } from './entities/fixed-asset.entity.js';
 
 @Controller('fixed-assets')
 @UseGuards(PermissionGuard)
@@ -47,7 +46,7 @@ export class FixedAssetsController {
   @Get()
   @RequirePermission('fixed-asset.read')
   async listAssets(
-    @Query() query: PaginationQueryDto & { categoryId?: string; condition?: FixedAssetCondition },
+    @Query() query: ListFixedAssetsQueryDto,
   ) {
     return this.fixedAssetsService.listAssets(query);
   }

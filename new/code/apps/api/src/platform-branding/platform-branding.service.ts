@@ -10,11 +10,14 @@ const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 /** Also enforced at the multer interceptor level (`platform-branding.controller.ts`) so an
  *  oversized upload is rejected before the whole file is buffered into memory, not after. */
 export const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2MB
+// SVG deliberately excluded: it's XML and can embed <script>, and this service only checks the
+// client-declared mimetype (never inspects file content) before writing that same value back as
+// the object's Content-Type — an uploaded SVG would be stored XSS against anyone who opens the
+// presigned logo URL directly.
 const ALLOWED_LOGO_MIME_TYPES: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
-  'image/svg+xml': 'svg',
 };
 const LOGO_URL_EXPIRY_SECONDS = 3600;
 
@@ -159,7 +162,7 @@ export class PlatformBrandingService {
       await this.objectStorage.putObject(hospitalId, key, file.buffer, file.size, {
         'Content-Type': file.mimetype,
       });
-      // A different extension than last time (e.g. .png replaced by .svg) would otherwise leave
+      // A different extension than last time (e.g. .png replaced by .webp) would otherwise leave
       // the old object orphaned in the bucket — best-effort cleanup, never blocks the upload.
       if (previousKey && previousKey !== key) {
         await this.objectStorage.removeObject(hospitalId, previousKey).catch(() => undefined);
