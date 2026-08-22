@@ -268,6 +268,8 @@ human approves scope.
 **Test:** n/a.
 
 ### 2.11 India compliance roadmap (Phase 5 item 13)
+**Status: done (2026-08-22).** See `india-compliance-roadmap.md`.
+
 **Context:** product-scoping work (DPDP Act, digital records rules, PM-JAY formats,
 government disease-reporting mapping), not blocking engineering.
 **What to do:** draft a compliance gap checklist in the PRD or a new doc; flag which

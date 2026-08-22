@@ -257,8 +257,16 @@ scope, not merely lower priority.
     2026-08-21:** Lab and Radiology verified-report PDF export mirrors each rendered PDF to
     `reports/lab/<requisitionNumber>.pdf` / `reports/radiology/<requisitionNumber>.pdf`
     (best-effort — the completing workflow never rolls back if the mirror fails).
-13. **India compliance roadmap** (new-features.md #14) — product-scoping work, not blocking
-    engineering.
+13. [x] **India compliance roadmap** (new-features.md #14) — product-scoping work, not blocking
+    engineering. **Done 2026-08-22:** `india-compliance-roadmap.md` — a 9-item gap checklist
+    (DPDP Act consent/data-subject-rights/breach-notification, medical-records retention,
+    disease-reporting, PM-JAY, ABHA, ESI/PF) with current-state, modules-touched, and a priority
+    signal per row, plus a "what's already in place" inventory (data residency, audit trail,
+    log redaction, tenant archive/purge as an erasure primitive, DB-level tenant isolation, GST
+    invoicing) and a note that GST landed inline in Billing rather than as the PRD's originally
+    envisioned separate India Compliance Adapter module. No code changes — a scoping document, to
+    be pulled from when a real requirement (tenant ask, accreditation audit, regulator change)
+    makes one of its rows actionable.
 14. [x] **Platform (Super Admin) console above tenants.** Super Admin accounts moved out of the
     `demo` hospital into a reserved `__platform` system tenant; `staff-console` split into a platform
     console (`/platform/*`, `PlatformShell`) and the tenant console (`AppShell`), guarded by
