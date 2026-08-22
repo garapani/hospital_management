@@ -543,7 +543,7 @@ race test mirroring the existing concurrent-upsert pattern in `platform-branding
 
 ---
 
-### 2.20 Tenant purge: non-atomic delete ordering (cross-tenant PHI leak risk) + cascades away platform revenue records
+### 2.20 Tenant purge: non-atomic delete ordering (cross-tenant PHI leak risk) + cascades away platform revenue records (done)
 
 **Context:** Found during 2.18's code review, in already-shipped tenant-lifecycle code (§47, not
 touched by 2.18). Two related issues in `TenantsService.purgeTenant`
@@ -566,6 +566,17 @@ should be preserved (change the FK to `ON DELETE SET NULL` or archive them) inst
 successful purge either preserves or intentionally archives the tenant's billing history.
 **Test:** extend the existing purge integration spec with a schema-drop-failure simulation and a
 post-purge check of `subscription_invoices`.
+
+**Done (2026-08-22/23):** `purgeTenant` now wraps `DROP SCHEMA`/`DROP ROLE`/registry-row `remove()`
+in one `dataSource.transaction`, DDL drops before the registry-row removal — a mid-purge failure
+rolls back atomically and leaves the row in place, blocking `hospitalId` reuse. Migration
+`0055-drop-subscriptions-tenant-fk-cascade.ts` drops `subscriptions.tenantId`'s `ON DELETE CASCADE`
+FK (matching the existing `audit_records`-has-no-FK precedent), so billing/revenue history now
+survives a purge. New tests in `tenants.service.integration-spec.ts`: rejects a non-archived purge,
+a happy-path purge that preserves a subscription row, and a forced real `DROP ROLE` failure
+(role owns a dummy table outside its schema) proving the transaction actually rolls back and the
+registry row survives. Full detail: `Development-Standards.md` §55. Surfaced one new follow-on gap,
+logged as 2.28 below rather than fixed in this pass.
 
 ---
 
@@ -744,6 +755,31 @@ surfaced several findings on unrelated, already-shipped code, logged separately 
 `audit-columns.integration-spec.ts` proves the subscriber populates all 3 actor columns end-to-end
 through the real `AppModule`, including the soft-delete path.
 **Test:** `cd new/code && CI=true pnpm exec nx run api:test` (full suite — app-wide schema change).
+
+---
+
+### 2.28 A purged tenant's `hospitalId` is freely reusable, and a new tenant inherits the old tenant's billing history
+
+**Context:** Found while fixing 2.20. `TenantsService.provisionTenant`
+(`apps/api/src/tenants/tenants.service.ts:96-100`) only checks the live `tenants` table for a
+`hospitalId` collision — purge deletes that row, so nothing stops a brand-new, unrelated tenant
+from being provisioned with a previously-purged `hospitalId`. Combined with 2.20's fix (dropping
+`subscriptions.tenantId`'s FK so billing history survives purge, migration 0055), a reused
+`hospitalId` would show the *previous* tenant's `subscriptions`/`subscription_invoices` rows mixed
+into the new tenant's billing views — `SubscriptionBillingService.getSubscription`/
+`listSubscriptions` filter only by the `tenantId` string, with no way to distinguish "this tenant's
+history" from "a different, purged tenant that once had the same id."
+**What to do:** decide the retirement policy for a purged `hospitalId` — either block reuse
+outright (check for orphaned `subscriptions` rows in `provisionTenant`, or keep a permanent
+tombstone table of purged ids), or tag `subscriptions`/`subscription_invoices` rows with a
+purge-timestamp/generation marker so a reused id's billing views can filter to the current tenant's
+lineage only. Related to 2.23 (purge + stale refresh token 500s) — both stem from "purge frees
+`hospitalId` for reuse" being under-specified; worth tackling together.
+**Verify:** provisioning a tenant with a `hospitalId` that has orphaned `subscriptions` rows from a
+prior purged tenant either fails with a clear error, or the new tenant's billing views correctly
+exclude the prior tenant's history.
+**Test:** extend `tenants.service.integration-spec.ts`'s purge tests with a purge-then-reprovision
+case asserting the chosen behavior.
 
 ---
 

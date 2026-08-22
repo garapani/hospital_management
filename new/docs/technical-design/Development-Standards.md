@@ -2183,3 +2183,50 @@ run.** `TENANT_MIGRATIONS` get exercised automatically because every `setupTenan
 provisions a brand-new tenant schema from scratch; `PLATFORM_MIGRATIONS` apply once to the single
 shared public schema and nothing in the test harness re-runs them. A new platform-scoped migration
 is invisible to the test suite until `migrate` is run explicitly once against that environment.
+
+## 55. Tenant purge: atomic drop ordering + revenue-history survives purge (2026-08-22)
+
+`claude-code-tasks.md` 2.20. `TenantsService.purgeTenant` (`apps/api/src/tenants/tenants.service.ts`)
+previously removed the `tenants` registry row *before* `DROP SCHEMA`/`DROP ROLE`, outside a
+transaction. A failure or hang in the schema drop left the registry row already gone —
+`hospitalId` immediately reusable, and a subsequent `provisionTenant`'s `CREATE SCHEMA IF NOT
+EXISTS` would silently succeed against the still-populated old schema, exposing the previous
+tenant's PHI to the new tenant's admin.
+
+**Fix: wrap all three drops in one transaction, DDL before the registry row.** `DROP SCHEMA` and
+`DROP ROLE` both participate in Postgres's transactional DDL (rolled back on abort, same as any
+other statement — they are *not* in Postgres's short list of statements that can't run inside a
+transaction block, e.g. `CREATE DATABASE`/`CREATE INDEX CONCURRENTLY`/`VACUUM`). So
+`this.dataSource.transaction(async (manager) => { DROP SCHEMA; DROP ROLE; manager.getRepository(Tenant).remove(tenant); })`
+gives real atomicity: any failure at any step rolls back everything, including an already-run
+`DROP SCHEMA`. The additional ordering (DDL drops first, registry-row removal last) is defense in
+depth on top of that: even without the transaction wrapper, this order alone means a mid-purge
+failure leaves the registry row — the thing that blocks `hospitalId` reuse — intact.
+
+**Revenue history: drop the cascading FK, don't archive.** `subscriptions.tenantId REFERENCES
+tenants("hospitalId") ON DELETE CASCADE` (migration 0051) meant every purge silently deleted the
+platform's own billing/revenue history for that tenant. Migration `0055-drop-subscriptions-tenant-
+fk-cascade.ts` drops that FK constraint entirely rather than switching it to `ON DELETE SET NULL`
+or building a separate archive table — this matches the existing, deliberate precedent set by
+`audit_records` (migration 0006), which was created with no FK to `tenants` at all specifically so
+it survives a tenant purge. `tenantId` becomes a plain informational `varchar` post-purge, same as
+`audit_records.recordId`/`changedByAccountId`. `subscription_invoices.subscriptionId` still
+cascades from `subscriptions(id)`, which is fine — `subscriptions` rows themselves are no longer
+deleted by a purge, so that cascade never fires.
+
+**Known follow-on gap, not fixed here (see `claude-code-tasks.md` 2.28):** `provisionTenant` only
+checks the live `tenants` table for an existing `hospitalId` — nothing stops a *purged* `hospitalId`
+from being reused by a brand-new, unrelated tenant. Combined with the FK removal above, a reused
+`hospitalId` would show the previous (purged) tenant's `subscriptions`/`subscription_invoices` rows
+mixed into the new tenant's billing views (`listSubscriptions`/`listInvoices` both filter only by
+`tenantId` string). This is a narrower, lower-severity version of the same "purged hospitalId is
+too freely reusable" theme as `claude-code-tasks.md` 2.23 (purge + stale refresh token 500s) — worth
+revisiting together with that item rather than each in isolation.
+
+**Testing a real mid-transaction DDL failure, not just a validation short-circuit.** To prove the
+transaction actually rolls back (not just that a `BadRequestException` fires before any DDL runs),
+`tenants.service.integration-spec.ts`'s purge tests force a genuine `DROP ROLE` failure: `ALTER
+TABLE public.<dummy> OWNER TO "tenant_<id>"` makes the tenant role own an object outside its own
+schema, so Postgres refuses to drop it ("role cannot be dropped because some objects depend on
+it") after `DROP SCHEMA` has already run earlier in the same transaction — exercising the actual
+rollback path.
