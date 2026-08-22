@@ -2004,3 +2004,96 @@ array-valued `patientId` (from a repeated query key, `?patientId=a&patientId=b`)
 `andWhere` unguarded (a likely 500 from the DB driver), now a clean 400 from the pipe — and a
 non-numeric `page` on `SearchAuditRecordsDto` (`@Type(() => Number) @IsInt()`), previously silently
 accepted since the decorator never ran.
+
+## 53. Global `ValidationPipe` — Phase B: decorate all 104 DTOs, enable `whitelist` (2026-08-22)
+
+Closed out `claude-code-tasks.md` 2.18, the deferred half of §52: decorated the remaining 95 DTOs
+under `apps/api/src` (plus the shared `PaginationQueryDto` in `libs/pagination`) and flipped
+`whitelist: true` in `apps/api/src/app/api-validation-pipe.ts`. `forbidNonWhitelisted` stays off —
+an unrecognized field is silently dropped, not rejected, the more conservative choice for a change
+touching every controller in the app at once.
+
+**Parallelized the mechanical decoration work, kept the security/money-sensitive DTOs personal.**
+19 DTOs under `auth/`, `accounts/`, `rbac/`, `tenants/`, `platform-billing/`, `platform-branding/`,
+and `billing/` were decorated by hand in this session rather than delegated; the other 76 were split
+across 4 parallel background agents given an identical, deliberately strict rule set (map each TS
+type to its decorator, `@IsOptional()` only on `?`-marked fields, never invent a business-rule
+constraint like `@Min`/`@MaxLength` unless the owning service already enforces it, skip and report
+nested-object/array-of-DTO fields rather than guess at `@ValidateNested` wiring). Two of the first
+four agent launches hit a session-wide API rate limit partway through and had to be relaunched with
+recomputed remaining-file lists — every agent's output was spot-checked against its own diff before
+being trusted, catching one real bug an agent introduced (see below) before it reached typecheck.
+
+**The recurring bug across almost every agent batch: `import type` for type-only enum imports.**
+`tsconfig.base.json`'s `isolatedModules` + `emitDecoratorMetadata` means a value imported purely as
+a type annotation (a string-literal union like `AccountType`, or an entity's exported type alias)
+must be `import type { X }`, not a plain `import { X }`, the moment any property in the class gets a
+decorator — `emitDecoratorMetadata` tries to emit `design:type` for every decorated property, and a
+type-only value can't satisfy that as a normal import (`TS1272`). Every agent batch produced at
+least one of these; all were straightforward one-line fixes once `tsc --build` pointed at the exact
+line. This is the same class of gotcha `new/code/CLAUDE.md` already documents for constructor
+parameters — it turns out to apply identically to any class property once a decorator is present.
+
+**`@IsIn([...])` vs `@IsEnum(X)` — string-literal unions are not runtime enums.** Nearly every
+"enum-like" field in this codebase (`AccountType`, `InsurancePayerType`, `SterilizationMethod`,
+`EmploymentType`, `FixedAssetCondition`, `HelpdeskTicketPriority`, `NotificationType`, `DeliveryType`,
+etc.) is `export type X = 'A' | 'B' | 'C'`, not a TypeScript `enum`. `@IsEnum()` needs a real runtime
+object to validate against; these get `@IsIn([...])` with the literal values instead, and the type
+import must be `import type` per the point above. Zero real TS `enum`s existed anywhere in the DTOs
+touched by this pass — worth knowing before reaching for `@IsEnum` reflexively on the next one.
+
+**Nested arrays of DTOs need `@ValidateNested({ each: true }) + @Type(() => X) + @IsArray()` on the
+parent field, not just decorators on the child class.** `whitelist: true` only recurses into a
+nested object if the pipe is told to validate it there in the first place — decorating
+`CreateInvoiceItemDto`'s own fields does nothing for `CreateInvoiceDto.items: CreateInvoiceItemDto[]`
+unless the array field itself carries this three-decorator combination. Six fields across
+`accounting.dto.ts`, `create-patient.dto.ts` (×2), `create-purchase-order.dto.ts`,
+`create-stock-requisition.dto.ts`, `create-order.dto.ts`, and `create-invoice.dto.ts` needed this;
+every agent was told to skip-and-report rather than guess at nested wiring, and one (`accounting.dto.ts`)
+was missed by an agent that failed before it could file its report — caught by grepping the whole
+tree for `: \w+Dto\[\]` and cross-checking each hit had the three decorators, after the agent batches
+finished, not by trusting any single batch's self-reported completeness.
+
+**Controllers using an inline `@Query()` intersection type (`PaginationQueryDto & SomeDto`, or
+`PaginationQueryDto & { foo?: string }`) get zero validation regardless of decorators or `whitelist`
+— found in 3 places (`cssd`, `fixed-assets`, `insurance`), fixed by making the DTO class itself
+`extends PaginationQueryDto`.** An intersection of two classes (or a class and an inline object
+type) has no single runtime constructor, so Nest's `ValidationPipe` can't resolve a `metatype` for
+it and silently skips the parameter entirely — not a `whitelist`-specific regression, since this
+was already broken before Phase A, but the review that closed out this task is what surfaced it
+(grep for `@Query() query: .*&` across `*.controller.ts` to check for recurrence).
+
+**Risk-gated `/code-review high` on a ~100-file, whole-app-touching diff is worth running even
+though most of the diff is mechanical.** 9 parallel review agents found: 3 fields typed `@IsNumber()`
+where the DB column is `int` (an ED triage queue's `acuityLevel`, a prescription's `durationDays`,
+CSSD `quantity` — all capable of corrupting sort order or counts with a negative/decimal value
+that would've otherwise slipped through); 2 DTOs that hand-rolled `page`/`limit` with `@IsNumber()`
+instead of extending `PaginationQueryDto` (a non-integer `limit` reaches Postgres as a fractional
+`LIMIT`/`OFFSET` and 500s); a radiology create-path missing the non-negative-price guard its own
+update path already enforces; and — on DTOs written by hand, not by an agent — an empty-string
+password bypassing the "generate a strong password when none is supplied" fallback in both
+`accounts.service.ts` and `tenants.service.ts` (`input.password ?? generated` only catches
+`null`/`undefined`, never `""`; fixed by adding `@IsNotEmpty()` alongside `@IsString()` on every
+optional password field). The review also reached into already-shipped, unrelated code by scanning
+the whole branch rather than just this diff's files — real findings there (a platform-billing
+concurrency bug, a tenant-purge atomicity gap, an SVG-logo stored-XSS vector, unbounded branding
+`displayName`, a `/branding` path-suffix collision suppressing a security warning) were triaged: the
+branding/middleware ones were small and severity-appropriate to fix inline anyway (see below);
+the platform-billing and tenant-purge ones were logged as new backlog items (2.19–2.21) rather than
+folded into this task's diff, to keep 2.18 scoped to DTO validation.
+
+**Fixed inline despite being outside 2.18's nominal scope, because they were small, high-severity,
+and directly adjacent:** `platform-branding`'s `ALLOWED_LOGO_MIME_TYPES` no longer accepts
+`image/svg+xml` — the service only checks the client-declared mimetype (never inspects content)
+and writes that same value back as the served object's `Content-Type`, so an uploaded SVG was
+stored XSS against anyone opening the presigned logo URL directly; `UpsertBrandingDto.displayName`
+gained a `@MaxLength(200)` (unbounded `varchar` column, echoed on every login-page read); and
+`tenant-context.middleware.ts`'s `EXPECTED_FALLBACK_PATH_SUFFIXES` `/branding` entry — a plain
+`.endsWith()` suffix match — was silently also matching `PlatformBrandingController`'s *authenticated*
+admin routes (`platform/tenants/:hospitalId/branding`), which would suppress the "tenant context
+fallback to headers" security warning on a permission-gated write path if `AuthContextMiddleware`
+ever failed to populate `req.authContext` there. Replaced with a regex requiring at most one path
+segment before `/branding`, which matches the public route (`/branding` in tests with no global
+prefix, `/api/branding` in production) but not the nested admin one — see the file's own comment for
+the reasoning, since this exact bug class (a suffix match over-matching a same-named nested route)
+can recur if a future feature's route also happens to end in one of these three suffixes.

@@ -486,6 +486,18 @@ after the refactor; no new test cases needed unless 2.15 is folded in at the sam
 
 ### 2.18 Audit and decorate the remaining ~95 DTOs, then enable `whitelist`/`forbidNonWhitelisted` (2.14 Phase B)
 
+**Status: done.** All 104 DTOs decorated (76 via 4 parallel agents, 19 security/money-sensitive
+DTOs by hand, 9 already done in Phase A); `whitelist: true` flipped in
+`apps/api/src/app/api-validation-pipe.ts` (`forbidNonWhitelisted` stays off — see §53 in
+`Development-Standards.md`). Full backend suite green (696/697, 1 pre-existing skip). A `/code-review
+high` pass surfaced several real findings fixed inline (integer-column fields that were `@IsNumber()`
+instead of `@IsInt()`, two hand-rolled pagination DTOs that should've extended `PaginationQueryDto`,
+a missing non-negative-price guard, an empty-string password bypass, an unbounded branding
+display-name field, an SVG-logo stored-XSS vector, and a `/branding` path-suffix collision
+suppressing a security-monitoring warning) — see §53 for the full list. Findings on **other,
+already-shipped features** surfaced by the same review are logged as 2.19–2.21 below rather than
+fixed here, to keep this task's diff scoped to DTO validation.
+
 **Context:** 2.14 Phase A (done — see that section above and
 `new/docs/superpowers/specs/2026-08-22-global-validation-pipe-design.md`) wired a global
 `ValidationPipe` but deliberately left `whitelist`/`forbidNonWhitelisted` off, because only 9 of 104
@@ -504,6 +516,77 @@ brainstorm→plan pass to decide sequencing (all-at-once vs. per-module) rather 
 real request shape; an unexpected/extra field on a request now 400s (if `forbidNonWhitelisted` is
 also enabled) or is silently stripped (if not) instead of reaching a query builder or entity save.
 **Test:** `cd new/code && CI=true pnpm exec nx run api:test` (full suite — this change is app-wide).
+
+---
+
+### 2.19 `markInvoicePaid` can silently resurrect a concurrently-canceled subscription
+
+**Context:** Found during 2.18's code review, in already-shipped platform-billing code (not
+touched by 2.18 itself). `SubscriptionBillingService.markInvoicePaid`
+(`new/code/apps/api/src/platform-billing/subscription-billing.service.ts:171-209`) takes only the
+invoice-scoped advisory lock (`platform_billing_invoice:${invoiceId}`), not the tenant-scoped lock
+(`platform_billing:${tenantId}`) that `subscribe`/`cancelSubscription`/`issueInvoice` use — the
+comment there asserts mark-paid "never contends" with tenant-locked operations, but it reads the
+full `Subscription` entity into memory, then unconditionally `.save()`s it (line 205), which
+TypeORM writes every column of, not just the changed ones.
+**Failure scenario:** Thread A starts `markInvoicePaid` and reads a subscription (`status:
+'active'`) before Thread B's `cancelSubscription` (holding the tenant lock) commits `status:
+'canceled'`. Thread A then saves its stale in-memory object, overwriting the cancellation and
+reactivating billing for a tenant that just canceled.
+**What to do:** have `markInvoicePaid` also acquire the tenant-scoped advisory lock (or re-read the
+subscription's current status inside the same locked transaction before deciding what to persist,
+and only write the fields that actually changed rather than the whole entity).
+**Verify:** a concurrent cancel + mark-paid pair against the same tenant never results in a
+`canceled` subscription reverting to `active`.
+**Test:** extend `subscription-billing.service.integration-spec.ts` with a `Promise.allSettled`
+race test mirroring the existing concurrent-upsert pattern in `platform-branding.integration-spec.ts`.
+
+---
+
+### 2.20 Tenant purge: non-atomic delete ordering (cross-tenant PHI leak risk) + cascades away platform revenue records
+
+**Context:** Found during 2.18's code review, in already-shipped tenant-lifecycle code (§47, not
+touched by 2.18). Two related issues in `TenantsService.purgeTenant`
+(`new/code/apps/api/src/tenants/tenants.service.ts:535` area):
+1. **Non-atomic, wrong-order deletes.** `remove(tenant)` (deletes the `tenants` registry row) runs
+   *before* `DROP SCHEMA .../DROP ROLE`, outside a transaction. If the schema drop fails or hangs
+   (e.g. a lock held by an in-flight query), the registry row is already gone — `hospitalId` is
+   immediately reusable, and `provisionTenant`'s `CREATE SCHEMA IF NOT EXISTS` silently succeeds
+   against the still-populated old schema, exposing the previous tenant's full PHI/financial data
+   to the new tenant's admin.
+2. **Cascade deletes platform revenue records.** `subscriptions`/`subscription_invoices`
+   (migration `0051`) both `REFERENCES tenants("hospitalId") ON DELETE CASCADE`, so purging a
+   tenant permanently deletes the platform's own billing/revenue history for that tenant —
+   unlike `tenant___platform.audit_records`, which the purge docstring explicitly says survives.
+**What to do:** wrap the drop-schema/drop-role/remove-registry-row sequence in a transaction with
+schema+role dropped *before* the registry row (so a failure leaves the row intact, blocking
+hospitalId reuse, rather than freeing it); decide whether `subscription_invoices`/`subscriptions`
+should be preserved (change the FK to `ON DELETE SET NULL` or archive them) instead of cascading.
+**Verify:** a purge that fails partway through the schema drop leaves the registry row in place; a
+successful purge either preserves or intentionally archives the tenant's billing history.
+**Test:** extend the existing purge integration spec with a schema-drop-failure simulation and a
+post-purge check of `subscription_invoices`.
+
+---
+
+### 2.21 Lower-priority platform-billing gaps: no runtime `billingCycle` guard, unscoped `listInvoices`
+
+**Context:** Found during 2.18's code review, in already-shipped platform-billing code.
+- `SubscriptionBillingService.subscribe`/`resolvePrice` (`subscription-billing.service.ts:39,105`)
+  trust the TypeScript `BillingCycle` type with no runtime check — only the DTO's `@IsIn(...)`
+  enforces valid values. A caller reaching the service directly (a future cron/auto-renew job)
+  with an invalid value hits `CYCLE_MS[billingCycle]` → `undefined` → `Invalid Date`, silently
+  persisted; `resolvePrice` compounds this by silently falling back to monthly pricing instead of
+  rejecting.
+- `listInvoices(tenantId?: string)` (`subscription-billing.service.ts:211`) returns *all* tenants'
+  invoices when called without an argument. Not currently exploitable (the only caller always
+  passes `hospitalId`), but a live cross-tenant billing-data-exposure footgun for any future caller.
+**What to do:** add a runtime guard in `subscribe`/`resolvePrice` that throws on an unrecognized
+`billingCycle` instead of silently defaulting; make `tenantId` required on `listInvoices` (or split
+into `listInvoicesForTenant`/an explicitly-named cross-tenant admin variant).
+**Verify:** an invalid `billingCycle` reaching the service throws instead of persisting a corrupted
+row; no code path can call `listInvoices` without an explicit tenant scope.
+**Test:** extend `subscription-billing.service.integration-spec.ts`.
 
 ---
 
@@ -548,6 +631,36 @@ root fails with "ignored by .gitignore" for frontend paths — a recurring sourc
 inside `frontend/`. Add this reminder to `new/code/CLAUDE.md` if not already there.
 **Verify:** n/a.
 **Test:** n/a.
+
+### 3.5 Reuse cleanups surfaced by 2.18's code review (advisory-lock pattern, auth.service.ts duplication)
+**Context:** found in already-shipped code, not urgent enough for its own numbered item:
+- `pg_advisory_xact_lock(hashtext($1))` per-tenant/per-row locking is hand-copied 4 times
+  (`subscription-billing.service.ts` ×2, `platform-branding.service.ts`, pre-existing
+  `invoices.service.ts:261`), each with its own explanatory comment. A shared `withAdvisoryLock(manager,
+  key)` helper would collapse these to one line each.
+- `auth.service.ts`'s `tenant?.status === 'suspended' || tenant?.status === 'archived'` check is
+  written out twice (`login()` line 85, `refresh()` line 174) — extract a private
+  `isTenantInactive(tenant)` helper so a future third status can't be added to one copy and
+  forgotten on the other.
+**What to do:** low-priority — fold into whatever task next touches these files, not worth a
+standalone session.
+**Verify:** n/a.
+**Test:** n/a.
+
+### 3.6 No structural enforcement that every DTO field carries a class-validator decorator
+**Context:** 2.18 hand-decorated all 104 DTOs so `whitelist: true` is safe today, but nothing
+stops a future field added to any of them from shipping without a decorator — it would be
+silently stripped by the pipe in production with no test failure, no lint error, no 400.
+TypeScript property declarations have no runtime footprint to reflect on (only assigned or
+decorated properties do), so this needs either a custom ESLint rule or a small AST-based static
+check (e.g. via the TypeScript compiler API or `ts-morph`) run in CI/tests, not a simple
+reflection-based unit test — a non-trivial enough lift that it didn't fit inside 2.18 itself.
+**What to do:** write a static check (lint rule or a dedicated Jest test using `ts-morph` to parse
+every `*.dto.ts` file's class properties and cross-reference against
+`class-validator`'s `getMetadataStorage()`) that fails when a DTO field has zero validators.
+**Verify:** the check fails on a deliberately-undecorated test fixture field; passes on the
+current tree.
+**Test:** n/a until written.
 
 ---
 
