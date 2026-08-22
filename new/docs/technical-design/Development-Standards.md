@@ -1879,3 +1879,79 @@ which is the failure mode a review would otherwise be checking for on a pure con
 "Finance" section — Accounting and Fixed Assets are still frontend-less (per `pending-tasks.md`),
 so a dedicated Finance nav section would currently hold one item. Revisit grouping once a second
 finance-domain page ships.
+
+## 51. Per-tenant branding (2026-08-22)
+
+Platform-admin-configured, tenant-scoped white-label config — display name, primary color, logo —
+so each hospital's console and login page feel like their own product rather than all identically
+"Vaidya." Design per `claude-code-tasks.md` 2.12: public-schema table (`tenant_branding`, migration
+`0052`), gated by `system-admin.tenants.manage`; unconfigured tenants (and the platform tenant,
+always) fall back to the default Vaidya brand.
+
+**Two read paths, deliberately different trust models.** Platform-admin CRUD
+(`GET/PUT /platform/tenants/:hospitalId/branding`, `POST/DELETE .../logo`) is authenticated and can
+target any hospitalId explicitly. The tenant-facing read (`GET /branding`) is public and
+unauthenticated — resolved from `x-tenant-id` (not a JWT), because the login page needs to render
+branding *before* any session exists, the same problem `/auth/login` already solves by being
+excluded from `AuthContextMiddleware`. This is not a cross-tenant leak: the header only ever names
+the caller's own tenant (same trust model login/refresh already rely on), and what it exposes
+(display name, a color, a logo) is exactly what an anonymous visitor to that hospital's login page
+already sees — no different in sensitivity than a company's public homepage branding.
+
+**Two disconnected route-exclusion lists, not one — a real gap this feature exposed.**
+`AuthContextMiddleware`'s exclusion list lives in `app.module.ts`; a *second*, independent list
+(`TenantContextMiddleware`'s `EXPECTED_FALLBACK_PATH_SUFFIXES`,
+`libs/tenant-context/src/lib/tenant-context.middleware.ts`) exists purely to suppress a security-
+monitoring warning log for routes where header-based tenant fallback is expected rather than
+suspicious. Adding `/branding` to only the first list (needed for the route to work at all) still
+left every legitimate login-page load logging a spurious "tenant context fallback to headers
+detected" warning, because the second list didn't know about the new exclusion. Both are now
+updated, cross-referenced by comment. **Any future `AuthContextMiddleware` exclusion needs the same
+second edit** — a `@Public()`-style route-metadata decorator read by both middlewares (matching the
+`RequirePermission`/`PermissionGuard` `Reflector` idiom `@hospital/auth-guards` already
+establishes) would collapse this to one declaration instead of two files to remember; not done here
+since this is the second-ever exclusion pair (after login/refresh) and a single follow-up comment
+was deemed enough for now. Revisit if a third public route needs one.
+
+**Money-adjacent concurrency pattern reused from §48's post-review hardening, applied proactively
+this time.** `upsertBranding`/`uploadLogo`/`removeLogo` serialize per tenant with the same
+transaction-scoped `pg_advisory_xact_lock(hashtext('platform_branding:<tenantId>'))` pattern
+`subscription-billing.service.ts` was hardened with after its own first-cut review — `tenantId` is
+this table's primary key, so two concurrent first-time writes (a double-clicked Save, two open
+admin tabs) would otherwise race a plain find-then-insert into a raw primary-key violation instead
+of a clean update. Applied from the start here rather than found by a second review pass.
+
+**File upload: this is the first multipart endpoint in this backend**, and both memory-safety
+layers matter, not just one. `MAX_LOGO_BYTES` (2MB) is enforced twice: once at
+`FileInterceptor('file', { limits: { fileSize: MAX_LOGO_BYTES } })` so multer itself refuses to
+buffer an oversized upload into memory in the first place, and again in the service layer as a
+defensive re-check. The interceptor-level limit is the one that actually bounds memory pressure — a
+service-layer-only check still lets an attacker's full oversized payload get buffered before
+rejection, a real (if minor) DoS-shaped gap that a review pass on the first cut of this file caught.
+Also: no `@types/multer` — this app's `tsconfig.app.json` restricts `types` to `["node"]` (a
+protected file), so the package's global `Express.Multer.File` augmentation never gets included
+regardless of whether it's installed; a local `{ buffer, mimetype, size }` interface covering only
+the fields actually read is simpler than fighting that restriction.
+
+**Not consolidated (flagged, not fixed): three independent "is this tenant real, non-platform,
+brandable/billable" guards now exist** — `TenantsService.loadMutableTenant` (archive/restore/purge),
+`SubscriptionBillingService.tenantRow` (§48), and `PlatformBrandingService.assertBrandableTenant`
+(this section) — each with slightly different wording and, in billing's case, a different data-
+access path entirely (`PackagesService.getTenantPackageCode`'s raw query builder, not
+`TenantsService`). A shared `TenantsService.assertRealTenant()` promoted to `public` would collapse
+this to one source of truth. Not done in this pass — noted as a follow-up rather than expanding this
+feature's diff into a cross-module refactor.
+
+**Frontend: CSS custom-property override, not a rebuilt PrimeNG preset.** `VaidyaTealPreset`
+(`app.config.ts`) is a static `providePrimeNG` DI provider configured at bootstrap — it can't be
+reconstructed per-tenant after an async branding fetch without a bootstrap-order chicken-and-egg
+problem. Instead, `BrandingService.applyCssVariables()` generates a full 50-950 tint/shade ramp from
+the tenant's one chosen hex (a small local color-mixing utility, not a dependency) and overrides the
+same `--p-primary-*`/`--p-highlight-*` custom properties the preset defines — confirmed these are
+genuinely live CSS variables, not baked literals, because this app's own hand-rolled Tailwind
+classes (`accent-bg`, `nav-item-active` in `styles.css`) already resolve `bg-primary-600` etc. from
+these same variables via `tailwindcss-primeui`, so one override re-themes both PrimeNG components
+and this app's own classes at once. Loaded via `provideBrandingBootstrap()` (`provideAppInitializer`,
+mirroring `provideAuthBootstrap`'s exact pattern) so there's no flash of the wrong brand before the
+real one applies, and the platform console (admin subdomain) skips the fetch entirely rather than
+relying on the response resolving to nulls.

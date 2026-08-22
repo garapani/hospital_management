@@ -287,6 +287,18 @@ existing modules it touches (auth/PII, audit trail, lab reporting).
 **Test:** n/a.
 
 ### 2.12 Per-tenant branding (white-label look)
+**Status: done (2026-08-22).** Backend commit `102f0d8`, frontend commit `029d3e5`. See
+`Development-Standards.md` §51. Live-verified end to end (upsert → public read reflects it →
+logo upload/retrieve/remove → reset to default → 403 without permission → 400 on unsupported
+mime type → 413 on oversized upload, not a raw 500 → concurrent first-time writes both succeed
+instead of one hitting a raw primary-key violation). Full backend (95 relevant) and frontend
+(311) suites green; production build succeeds. Passed a high-effort `/code-review` (8 angles) —
+4 real findings fixed inline (missing advisory lock, missing multer size limit, a second
+disconnected route-exclusion list, two duplicated code blocks); 3 more routed to new backlog
+items below rather than expanding this task's diff (a tenant-status check on
+billing/branding-admin actions, a `changeInitialPassword` auth-boundary gap, and consolidating
+3 independent tenant-validation-guard implementations).
+
 **Context:** the product is sold to hospitals as a SaaS, but every tenant console looks
 identical: "Vaidya" (the product brand — teal `#006D77` on `#F0FDFD`, see PRD §1 and
 `new/docs/branding/vaidya-*.png`) is **hardcoded** in the frontend:
@@ -410,6 +422,57 @@ actually match its real request shape (audit pass); a request with a malformed/w
 now 400s instead of reaching a query builder or entity save.
 **Test:** `cd new/code && CI=true pnpm exec nx run api:test` (full suite, not just payroll —
 this change is app-wide by nature).
+
+---
+
+### 2.15 Archived/suspended tenants can still be billed and re-branded via platform-admin routes
+
+**Context:** Found during the 2.12 (per-tenant branding) code review. Neither
+`SubscriptionBillingService`'s `tenantRow` lookup nor `PlatformBrandingService`'s
+`assertBrandableTenant` (both in `new/code/apps/api/src/platform-billing/` and
+`.../platform-branding/` respectively) check the tenant's `status` column — they only confirm the
+row exists and isn't the platform tenant. A platform admin can create/adjust a subscription or
+upload branding for a tenant that's already `archived`/`suspended`.
+**What to do:** Decide the intended behavior first (block entirely vs. allow with a warning — an
+archived tenant may legitimately need billing cleanup after the fact) before writing a guard.
+Likely a shared status check reused by both services (see 2.17 below — this may fold into that
+consolidation rather than being fixed twice).
+**Verify:** an admin request against an archived/suspended tenant either 409s with a clear message
+or is explicitly allowed with a documented reason — not silently permitted by omission.
+**Test:** extend the existing `subscription-billing.integration-spec.ts` and
+`platform-branding.integration-spec.ts` with an archived-tenant case each.
+
+---
+
+### 2.16 `AuthService.changeInitialPassword` bypasses the tenant-status gate that `login`/`refresh` already enforce
+
+**Context:** Found during the 2.12 code review. `login` and `refresh` (in
+`new/code/apps/api/src/auth/auth.service.ts`) both check tenant status before issuing tokens;
+`changeInitialPassword` — the must-change-password onboarding flow, excluded from
+`AuthContextMiddleware` the same way `login` is (see `app.module.ts`) — does not, so a suspended or
+archived tenant's onboarding account could still complete its first password change.
+**What to do:** Add the same tenant-status check `login` uses to `changeInitialPassword`, before it
+issues any token.
+**Verify:** a `changeInitialPassword` call for an account under a suspended/archived tenant is
+rejected the same way `login` would reject it.
+**Test:** extend the existing auth integration spec covering `changeInitialPassword` with a
+suspended-tenant case, mirroring the existing `login` suspended-tenant test.
+
+---
+
+### 2.17 Three independent "assert real, non-platform tenant" guards should consolidate
+
+**Context:** Found during the 2.12 code review. `TenantsService.loadMutableTenant`,
+`SubscriptionBillingService`'s `tenantRow`, and `PlatformBrandingService.assertBrandableTenant` each
+reimplement "look up the tenant row, reject the platform tenant, reject if not found" independently
+— same shape, three copies, already drifting slightly (see 2.15: only some check status).
+**What to do:** Extract one shared method (likely on `TenantsService`, injected into the other two)
+that the other two call instead of reimplementing. Natural to do alongside 2.15 once that decides
+what status check belongs in the shared version.
+**Verify:** all three call sites use the same guard; existing tests for each still pass unchanged
+(behavior-preserving refactor, not a scope change on its own — 2.15 is where behavior changes).
+**Test:** run the existing `tenants`, `platform-billing`, and `platform-branding` integration specs
+after the refactor; no new test cases needed unless 2.15 is folded in at the same time.
 
 ---
 
