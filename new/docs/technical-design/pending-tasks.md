@@ -403,8 +403,13 @@ Follow the PRD's own phase ordering as-is:
   (requisitions workflow + imaging catalog), Pharmacy (dispensing + dispense), Inventory (items,
   purchase orders, stock requisitions with fulfillment), Admissions/ADT (transfer/discharge +
   discharge summaries), Orders (place + detail), and Reporting (dashboard + events). 249 frontend
-  tests pass; production build succeeds (commit `b89ad01` in the frontend repo). Not yet built:
-  a notifications page, vitals/encounters pages, and patient-portal.
+  tests pass; production build succeeds (commit `b89ad01` in the frontend repo). **Correction
+  (2026-08-22):** a notifications page (list + mark-read/mark-all-read + the shell's notification
+  bell wired to `GET /notifications/summary`) and vitals/encounters pages (patient-scoped vitals
+  entry; notes/diagnoses/prescriptions tabs) turned out to already be built and routed too — this
+  line was stale, found and corrected while picking up `claude-code-tasks.md` 2.6. **Not built:**
+  patient-portal — a distinct product decision (`patient-portal` app scaffold, patient-facing auth
+  path), not started, needs scope confirmation before any work begins.
 - Phase 3: Verification — not started (its payer/eligibility checks substantially overlap the
   insurance module's `checkCoverage`). **Fixed Asset**, **Insurance & Claims**, and **Accounting**
   are done for their MVP scopes.

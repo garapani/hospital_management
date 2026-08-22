@@ -218,13 +218,22 @@ permission.
 **Test:** `cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="reporting"`.
 
 ### 2.6 Frontend pages still missing (Phase 6 note)
-**Context:** tenant console pages built for Lab/Radiology/Pharmacy/Inventory/Admissions/
-Orders/Reporting. **Not yet built:** a notifications page (feature folder exists, no routed
-page), vitals/encounters pages, and patient-portal.
-**What to do (pick one):** build the notifications page first (backend module + in-app
-subscribers exist: CRUD, summary, mark-read/mark-all-read; wire into the shell's
-notification bell). Then vitals/encounters (encounters module exists backend-side). Patient
-portal is a bigger product decision — confirm scope with the human before starting.
+**Status (2026-08-22): stale — notifications, vitals, and encounters were already built.**
+Checked while picking this item up: `apps/staff-console/src/app/notifications/` (list +
+mark-read/mark-all-read, routed at `/notifications`), the shell's notification bell
+(`shell-chrome.ts` wired to `GET /notifications/summary`, `markAllAsRead`), `.../vitals/`
+(patient-scoped vitals entry, routed at `/clinical/vitals`), and `.../encounters/`
+(notes/diagnoses/prescriptions tabs, routed at `/clinical/encounters`) all exist, are routed
+with permission guards, and use real API calls (no fake data) — 13/13 tests green, live-verified
+against the dev API (notifications list/summary, vitals-by-patient, encounter-notes-by-patient
+all 200). Corrected in `pending-tasks.md`'s Phase 6 frontend-pages note too.
+
+**Only remaining piece: patient-portal** — not started, and per the original write-up below, a
+bigger product decision needing scope confirmation before any work begins. Not picked up.
+
+**Original context (kept for reference):** tenant console pages built for
+Lab/Radiology/Pharmacy/Inventory/Admissions/Orders/Reporting. Patient portal is a bigger product
+decision — confirm scope with the human before starting.
 **Verify:** routed page renders real data from the API; no fake data; toasts on actions.
 **Test:** `cd frontend && CI=true pnpm exec nx run staff-console:test && CI=true pnpm exec nx run staff-console:build`.
 
@@ -460,11 +469,9 @@ open invoice on the second run without duplicates.
 **Test:** `cd new/code && CI=true pnpm exec nx run api:seed-demo-data`.
 
 ### 4.2 Notifications shell wiring (do 2.6 first)
-**Context:** the shell's notification bell has no data source yet.
-**What to do:** after 2.6, wire the bell to `GET /notifications/summary` and route to the
-new page.
-**Verify:** bell badge reflects unread count; clicking navigates.
-**Test:** frontend spec + build.
+**Status: done** — found already built while picking up 2.6 (2026-08-22). `shell-chrome.ts`'s
+`unreadCount` signal is set from `GET /notifications/summary` and rendered as a badge on the bell
+(`shell-chrome.html`, `@if (unreadCount() > 0)`); "View all notifications" routes to `/notifications`.
 
 ### 4.3 Self-serve package upgrade path (backend-ready)
 **Context:** `PATCH /tenants/:hospitalId/package` + `GET /packages` exist; product chose
