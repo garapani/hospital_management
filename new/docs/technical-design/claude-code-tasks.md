@@ -394,6 +394,14 @@ cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="payroll"
 ```
 
 ### 2.14 No `ValidationPipe` registered anywhere — `class-validator` decorators on ~9 DTOs are dead code
+**Status: Phase A done** (commits `e2e5e66` spec, `ecf3dcc` implementation). Split into two phases
+during design — see `new/docs/superpowers/specs/2026-08-22-global-validation-pipe-design.md`: a
+re-audit found only 9 of 104 DTOs carry any `class-validator` decorator, and `whitelist: true`
+strips any field with zero decorators, so enabling it now would have silently emptied the other 95
+DTOs' request bodies. Phase A (done) wires a global `ValidationPipe` with `whitelist`/
+`forbidNonWhitelisted` off — activates the 9 already-decorated DTOs, coerces typed-but-undecorated
+numeric/boolean fields via `enableImplicitConversion`, changes zero behavior elsewhere. Phase B
+(the actual "every controller validated, whitelist on" hardening) is deferred — see 2.18 below.
 **Context (found while fixing 2.13):** grepped `apps/api/src/main.ts` and the whole `apps/api/src`
 tree for `ValidationPipe`/`APP_PIPE` — neither appears anywhere, global or per-route. NestJS only
 invokes `class-validator`/`class-transformer` (`@IsOptional()`, `@IsInt()`, `@Type(() => Number)`,
@@ -473,6 +481,29 @@ what status check belongs in the shared version.
 (behavior-preserving refactor, not a scope change on its own — 2.15 is where behavior changes).
 **Test:** run the existing `tenants`, `platform-billing`, and `platform-branding` integration specs
 after the refactor; no new test cases needed unless 2.15 is folded in at the same time.
+
+---
+
+### 2.18 Audit and decorate the remaining ~95 DTOs, then enable `whitelist`/`forbidNonWhitelisted` (2.14 Phase B)
+
+**Context:** 2.14 Phase A (done — see that section above and
+`new/docs/superpowers/specs/2026-08-22-global-validation-pipe-design.md`) wired a global
+`ValidationPipe` but deliberately left `whitelist`/`forbidNonWhitelisted` off, because only 9 of 104
+DTOs under `apps/api/src` carry any `class-validator` decorator — `whitelist: true` strips any field
+with zero decorators, so turning it on today would silently empty the other 95 DTOs' request bodies
+(`PaginationQueryDto` included). This is the actual "every controller gets validated for real,
+unexpected fields get rejected" hardening the original 2.14 write-up described, deferred out of
+Phase A because of its size and risk.
+**What to do:** per-module pass auditing each undecorated DTO against its real request payload
+(frontend call sites + Swagger), adding the validators its fields warrant, then flipping
+`whitelist: true` (and evaluating `forbidNonWhitelisted: true`) once the audit is complete —
+globally in `apps/api/src/app/api-validation-pipe.ts`, or per-module if a staged rollout is safer.
+Given the size (95 DTOs across every module), this likely wants its own heavyweight
+brainstorm→plan pass to decide sequencing (all-at-once vs. per-module) rather than one sitting.
+**Verify:** full backend suite green with `whitelist: true` active; every DTO's decorators match its
+real request shape; an unexpected/extra field on a request now 400s (if `forbidNonWhitelisted` is
+also enabled) or is silently stripped (if not) instead of reaching a query builder or entity save.
+**Test:** `cd new/code && CI=true pnpm exec nx run api:test` (full suite — this change is app-wide).
 
 ---
 

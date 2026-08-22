@@ -1955,3 +1955,52 @@ and this app's own classes at once. Loaded via `provideBrandingBootstrap()` (`pr
 mirroring `provideAuthBootstrap`'s exact pattern) so there's no flash of the wrong brand before the
 real one applies, and the platform console (admin subdomain) skips the fetch entirely rather than
 relying on the response resolving to nulls.
+
+## 52. Global `ValidationPipe` — Phase A, whitelist deliberately deferred (2026-08-22)
+
+Closed the gap flagged by `claude-code-tasks.md` 2.14 (found while fixing 2.13's payroll 500): no
+`ValidationPipe` — global or per-route — was registered anywhere in `apps/api`, so every
+`class-validator`/`class-transformer` decorator on every DTO was dead code, compiling and
+typechecking but never running. Design in
+`new/docs/superpowers/specs/2026-08-22-global-validation-pipe-design.md`.
+
+**Re-auditing the blast radius changed the design.** Only 9 of 104 `*.dto.ts` files under
+`apps/api/src` carry any `class-validator` decorator — the other 95, including the widely-reused
+`PaginationQueryDto` (`libs/pagination`), are plain classes with typed-but-undecorated fields.
+`ValidationPipe`'s `whitelist: true` strips any field with **zero** validation decorators, not just
+unrecognized ones — so enabling it globally today would have silently reduced all 95 undecorated
+DTOs' request bodies to `{}`. That's the real reason this needed the heavyweight pipeline rather
+than a one-line fix: not "the pipe rejects some requests" but "the pipe deletes almost every request
+body in the app." Split into two phases; only Phase A is done:
+
+- **Phase A (done):** `app.useGlobalPipes(new ValidationPipe({ transform: true, transformOptions: {
+  enableImplicitConversion: true }, whitelist: false, forbidNonWhitelisted: false }))`. Activates
+  the 9 already-decorated DTOs' validators for real, and coerces typed-but-undecorated numeric/
+  boolean fields (via reflected `design:type` metadata, `emitDecoratorMetadata` already being
+  repo-wide) without adding a single decorator anywhere. Zero behavior change on the other 95 DTOs.
+- **Phase B (deferred, `claude-code-tasks.md` 2.18):** audit and decorate the remaining 95 DTOs
+  against their real request payloads, then flip `whitelist`/`forbidNonWhitelisted` on. That's the
+  actual "every controller validated, unexpected fields rejected" hardening — kept separate because
+  of its size and risk, not because it's optional.
+
+**Shared pipe factory, not inline construction — because integration specs bypass `main.ts`
+entirely.** Every existing integration spec builds its own `INestApplication` via
+`Test.createTestingModule(...).createNestApplication()` and never calls the production
+`bootstrap()` in `main.ts`, so a pipe registered only there is invisible to every test. Extracted
+`createApiValidationPipe()` (`apps/api/src/app/api-validation-pipe.ts`), imported by both `main.ts`
+and the new `global-validation-pipe.integration-spec.ts` (which boots the real `AppModule` the same
+way `app-module-auth-wiring.integration-spec.ts` does, then explicitly adds
+`app.useGlobalPipes(createApiValidationPipe())` — matching what `main.ts` does, not assuming it).
+Same shape as `resolveJwtSecret()` in `auth/jwt-secret.ts`: a small function shared between
+production bootstrap and tests, rather than either duplicating config or leaving it untested.
+
+**Test-writing lesson: check for redundant service-level guards before claiming a pipe test proves
+anything.** The three `UpdatePriceDto` price-update services (lab/radiology/inventory) already had
+their own manual `Number.isFinite(price) && price >= 0` checks predating this pipe — so a test
+asserting "negative price returns 400" passes identically whether the pipe exists or not, and
+doesn't actually demonstrate the fix. The tests that do are ones with no redundant guard: an
+array-valued `patientId` (from a repeated query key, `?patientId=a&patientId=b`) on
+`ListInvoicesDto`'s `@IsString()` — previously reaching `InvoicesService.list()`'s TypeORM
+`andWhere` unguarded (a likely 500 from the DB driver), now a clean 400 from the pipe — and a
+non-numeric `page` on `SearchAuditRecordsDto` (`@Type(() => Number) @IsInt()`), previously silently
+accepted since the decorator never ran.
