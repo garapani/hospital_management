@@ -519,7 +519,7 @@ also enabled) or is silently stripped (if not) instead of reaching a query build
 
 ---
 
-### 2.19 `markInvoicePaid` can silently resurrect a concurrently-canceled subscription
+### 2.19 `markInvoicePaid` can silently resurrect a concurrently-canceled subscription (done)
 
 **Context:** Found during 2.18's code review, in already-shipped platform-billing code (not
 touched by 2.18 itself). `SubscriptionBillingService.markInvoicePaid`
@@ -540,6 +540,11 @@ and only write the fields that actually changed rather than the whole entity).
 `canceled` subscription reverting to `active`.
 **Test:** extend `subscription-billing.service.integration-spec.ts` with a `Promise.allSettled`
 race test mirroring the existing concurrent-upsert pattern in `platform-branding.integration-spec.ts`.
+
+**Done (2026-08-23):** `markInvoicePaid` now also takes the tenant-scoped `platform_billing:${tenantId}`
+lock (after the invoice lock, before touching the subscription) and re-reads the subscription only
+after acquiring it. New `2.19:` race test verified to fail 4/5 runs against the pre-fix code and
+pass 5/5 against the fix, before committing. Full detail: `Development-Standards.md` §57.
 
 ---
 

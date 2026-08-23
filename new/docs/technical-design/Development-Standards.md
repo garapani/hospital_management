@@ -2259,3 +2259,33 @@ auto-renew job, would have bypassed that). Now throws `BadRequestException` inst
 mispricing. `listInvoices(tenantId?: string)` accepted an omitted tenant and returned *every*
 tenant's invoices — not exploitable today (the only caller always passes one), but a live
 cross-tenant billing-data-exposure footgun for any future caller; `tenantId` is now required.
+
+## 57. A narrower lock scope than a sibling method's read-modify-write footprint is a silent race (2026-08-23)
+
+`claude-code-tasks.md` 2.19. `markInvoicePaid` took only an invoice-scoped advisory lock
+(`platform_billing_invoice:${invoiceId}`), reasoning (in its own comment) that it "never contends"
+with `subscribe`/`cancelSubscription`/`issueInvoice`, which take a tenant-scoped lock instead. That
+reasoning covered the invoice row it directly modifies, but missed that `markInvoicePaid` *also*
+reads, then unconditionally `.save()`s, the `Subscription` row (to advance the period on renewal) —
+exactly the row the tenant-scoped lock exists to protect. A concurrent `cancelSubscription`
+committing between that read and write got silently overwritten back to `'active'` by
+`markInvoicePaid`'s stale in-memory copy.
+
+**General pattern:** when a method takes a narrower lock than a sibling method's lock scope,
+audit that method's *entire* read-modify-write footprint, not just the row named in the lock's key
+— any TypeORM `.save()` on a fully-loaded entity is a full-column write of whatever was in memory
+at load time, so a lock that doesn't cover every entity the method touches leaves a real race, no
+matter how "obviously" invoice-scoped the operation looks from its name.
+
+**Fix:** `markInvoicePaid` now acquires the tenant-scoped lock too (`invoice.tenantId`, taken after
+the invoice lock, before touching the subscription), and re-reads the subscription only *after*
+acquiring it — never the pre-lock snapshot. No deadlock risk: `markInvoicePaid` is the only method
+that ever holds both locks at once, always in the same order (invoice lock, then tenant lock).
+
+**Verifying a race fix actually closes the race, not just that a test passes:** before committing,
+the new `2.19:` test (concurrent `cancelSubscription` + `markInvoicePaid`) was run 5x against the
+pre-fix code (git-stashing the service change while keeping the test) — it failed 4/5 times,
+confirming it reliably reproduces the bug rather than passing vacuously — then 5/5 against the fix.
+A race test that has never been observed to fail against the bug it claims to catch hasn't proven
+anything; deliberately reverting the fix and re-running is cheap insurance against a false-negative
+regression test.
