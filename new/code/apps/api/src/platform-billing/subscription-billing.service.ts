@@ -177,9 +177,8 @@ export class SubscriptionBillingService {
   /** Marks an invoice paid and advances the subscription to its next period (renewal). */
   async markInvoicePaid(invoiceId: string): Promise<SubscriptionInvoice> {
     return this.dataSource.transaction(async (manager) => {
-      // Invoice-scoped, not tenant-scoped: mark-paid is keyed by invoiceId and never contends
-      // with subscribe/cancel/issue-invoice (which lock per-tenant) — serializes concurrent
-      // mark-paid calls on the very same invoice (e.g. a double-clicked "Mark Paid" button).
+      // Invoice-scoped lock first: serializes concurrent mark-paid calls on the very same invoice
+      // (e.g. a double-clicked "Mark Paid" button) before we've even read it.
       await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
         `platform_billing_invoice:${invoiceId}`,
       ]);
@@ -192,10 +191,22 @@ export class SubscriptionBillingService {
       if (invoice.status === 'paid') {
         return invoice;
       }
+
+      // Also take the tenant-scoped lock subscribe/cancelSubscription/issueInvoice use. This
+      // method reads-then-writes the Subscription row (below) via a full-entity save(), same as
+      // those methods — without this lock, a concurrent cancelSubscription could commit between
+      // our read and write, and our stale in-memory copy would silently overwrite the
+      // cancellation back to 'active' when saved (2.19). No deadlock risk: this is the only
+      // method that ever holds both locks at once, always in this same order.
+      await this.lockTenantBilling(manager, invoice.tenantId);
+
       invoice.status = 'paid';
       invoice.paidAt = new Date();
       await manager.getRepository(SubscriptionInvoice).save(invoice);
 
+      // Re-read after acquiring the tenant lock, not the copy fetched before it — a concurrent
+      // cancelSubscription may have committed while we were waiting on the lock, and this must
+      // see that result rather than a pre-lock snapshot.
       const subscription = await manager.getRepository(Subscription).findOne({
         where: { id: invoice.subscriptionId },
       });

@@ -202,4 +202,27 @@ describe('SubscriptionBillingService (integration)', () => {
     expect(second.status).toBe('paid');
     expect(first.paidAt).toEqual(second.paidAt);
   });
+
+  it('2.19: concurrent cancelSubscription + markInvoicePaid never resurrects a canceled subscription', async () => {
+    await provision(`${PREFIX}race_cancel`, 'basic');
+    await service.subscribe(`${PREFIX}race_cancel`, 'monthly');
+    const invoice = await service.issueInvoice(`${PREFIX}race_cancel`);
+
+    await Promise.allSettled([
+      service.cancelSubscription(`${PREFIX}race_cancel`),
+      service.markInvoicePaid(invoice.id),
+    ]);
+
+    // Whichever operation's tenant-scoped lock wins the race, the end state must be consistent:
+    // cancelSubscription always wins the write (it unconditionally sets 'canceled', and
+    // markInvoicePaid only touches the subscription if it re-reads 'active' after acquiring the
+    // lock) — so the subscription must never come back as 'active' regardless of interleave
+    // order. Before the fix, a markInvoicePaid that read the subscription before cancel's commit
+    // but wrote after it would silently overwrite the cancellation back to 'active'.
+    const sub = await service.getSubscription(`${PREFIX}race_cancel`);
+    expect(sub).toBeNull();
+
+    const invoices = await service.listInvoices(`${PREFIX}race_cancel`);
+    expect(invoices.find((i) => i.id === invoice.id)?.status).toBe('paid');
+  });
 });
