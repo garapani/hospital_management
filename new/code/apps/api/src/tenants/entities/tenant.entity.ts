@@ -10,7 +10,7 @@ export class Tenant {
   hospitalName!: string;
 
   @Column({ type: 'varchar', length: 20, default: 'active' })
-  status!: 'active' | 'suspended' | 'archived';
+  status!: 'active' | 'suspended' | 'archived' | 'purged';
 
   /** The SaaS package this tenant was provisioned under; gates which module permissions its
    *  JWTs carry (see PackagesService.filterPermissions). New tenants default to 'basic'; rows
@@ -31,6 +31,11 @@ export class Tenant {
    *  cannot log in, and can be restored or hard-purged. */
   @Column({ type: 'timestamptz', nullable: true })
   archivedAt!: Date | null;
+
+  /** When the tenant was purged (soft-delete acting as a tombstone). Purged tenants have their
+   *  schema and role dropped, but the registry row remains to block hospitalId reuse. */
+  @Column({ type: 'timestamptz', nullable: true })
+  purgedAt!: Date | null;
 
   // Free-text actor field, not a uuid FK — can hold non-account values like 'ops.alice' or
   // 'seed-initial-setup' (see resolveActor() in tenants.service.ts). This is why Tenant does NOT

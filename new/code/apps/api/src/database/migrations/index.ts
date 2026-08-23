@@ -53,6 +53,7 @@ import { CreatePackagesTable0048 } from './0048-create-packages-table.js';
 import { AddAuditColumnsToTenantTables1000000000053 } from './0053-add-audit-columns-to-tenant-tables.js';
 import { AddAuditColumnsToPlatformTables1000000000054 } from './0054-add-audit-columns-to-platform-tables.js';
 import { DropSubscriptionsTenantFkCascade1000000000055 } from './0055-drop-subscriptions-tenant-fk-cascade.js';
+import { AddTenantPurged1000000000056 } from './0056-add-tenant-purged.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -68,6 +69,7 @@ export const PLATFORM_MIGRATIONS = [
   CreateTenantBranding1000000000052,
   AddAuditColumnsToPlatformTables1000000000054,
   DropSubscriptionsTenantFkCascade1000000000055,
+  AddTenantPurged1000000000056,
 ];
 
 // Tenant-scoped migrations: create per-tenant-schema tables. Run once per tenant by

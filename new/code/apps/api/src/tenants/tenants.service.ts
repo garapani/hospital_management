@@ -567,12 +567,14 @@ export class TenantsService {
       throw new BadRequestException(`Tenant ${hospitalId} has an invalid hospitalId; refusing to purge`);
     }
 
+    const tenantName = `tenant_${hospitalId}`;
     await this.dataSource.transaction(async (manager) => {
-      await manager.query(`DROP SCHEMA IF EXISTS "tenant_${hospitalId}" CASCADE`);
-      await manager.query(`DROP ROLE IF EXISTS "tenant_${hospitalId}"`);
-      // Loaded-entity remove() (not repository.delete()) so the audit subscriber records the
-      // destructive purge as a 'delete' event in the platform trail. tenant_roles cascades.
-      await manager.getRepository(Tenant).remove(tenant);
+      await manager.query(`DROP SCHEMA IF EXISTS "${tenantName}" CASCADE`);
+      await manager.query(`DROP ROLE IF EXISTS "${tenantName}"`);
+      await manager.getRepository(Tenant).update(
+        { hospitalId },
+        { status: 'purged', purgedAt: new Date() }
+      );
     });
     return { purged: hospitalId };
   }

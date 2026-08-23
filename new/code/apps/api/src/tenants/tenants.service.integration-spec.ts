@@ -254,11 +254,12 @@ describe('TenantsService (integration)', () => {
       const result = await tenantsService.purgeTenant(hospitalId, hospitalId);
       expect(result).toEqual({ purged: hospitalId });
 
-      const [registryRow] = await ctx.dataSource.query(
-        `SELECT 1 FROM tenants WHERE "hospitalId" = $1`,
+      const registryRow = await ctx.dataSource.query(
+        `SELECT status, "purgedAt" FROM tenants WHERE "hospitalId" = $1`,
         [hospitalId],
       );
-      expect(registryRow).toBeUndefined();
+      expect(registryRow[0].status).toBe('purged');
+      expect(registryRow[0].purgedAt).not.toBeNull();
 
       const [schemaRow] = await ctx.dataSource.query(
         `SELECT 1 FROM information_schema.schemata WHERE schema_name = $1`,
@@ -290,11 +291,11 @@ describe('TenantsService (integration)', () => {
       try {
         await expect(tenantsService.purgeTenant(hospitalId, hospitalId)).rejects.toThrow();
 
-        const [registryRow] = await ctx.dataSource.query(
-          `SELECT 1 FROM tenants WHERE "hospitalId" = $1`,
+        const registryRow = await ctx.dataSource.query(
+          `SELECT status FROM tenants WHERE "hospitalId" = $1`,
           [hospitalId],
         );
-        expect(registryRow).toBeDefined();
+        expect(registryRow[0].status).toBe('archived');
 
         const [schemaRow] = await ctx.dataSource.query(
           `SELECT 1 FROM information_schema.schemata WHERE schema_name = $1`,
