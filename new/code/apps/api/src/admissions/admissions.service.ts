@@ -334,6 +334,16 @@ export class AdmissionsService {
     });
   }
 
+  async getDischargeSummary(id: string): Promise<DischargeSummary> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const summary = await manager.getRepository(DischargeSummary).findOne({ where: { id } });
+      if (!summary) {
+        throw new NotFoundException(`Discharge summary ${id} not found`);
+      }
+      return summary;
+    });
+  }
+
   async listDischargeSummaries(patientId?: string): Promise<DischargeSummary[]> {
     return this.tenantConnection.runInTenantSchema((manager) => {
       const qb = manager.getRepository(DischargeSummary).createQueryBuilder('ds');

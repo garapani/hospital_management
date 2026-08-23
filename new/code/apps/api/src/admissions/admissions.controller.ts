@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { AdmissionsService } from './admissions.service.js';
 import { CreateAdmissionDto } from './dto/create-admission.dto.js';
@@ -72,13 +72,7 @@ export class AdmissionsController {
   @Get('discharge-summaries/:id')
   @RequirePermission('admission.read')
   async getDischargeSummary(@Param('id') id: string) {
-    const summary = await this.admissionsService.listDischargeSummaries().then(summaries => 
-      summaries.find(s => s.id === id)
-    );
-    if (!summary) {
-      throw new NotFoundException(`Discharge summary ${id} not found`);
-    }
-    return summary;
+    return this.admissionsService.getDischargeSummary(id);
   }
 
   @Patch('discharge-summaries/:id')
