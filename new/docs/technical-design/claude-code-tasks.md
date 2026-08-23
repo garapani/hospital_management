@@ -885,6 +885,9 @@ separate fix task.
 **Test:** `cd new/code && CI=true pnpm exec nx run api:test` ×3.
 
 ### 3.2 `.claude/` session files keep leaking into commits
+
+**Status: done.** `.claude/` is in root `.gitignore` and cached session files untracked.
+
 **Context:** an auto-committer process swept in-flight work + `.claude/session-context.md`
 / `session-end.md` into a garbled multi-subject commit (`de9cf86`) that was **not**
 rewritten (convention: never `--amend`, never rewrite history).
@@ -948,6 +951,8 @@ current tree.
 **Test:** n/a until written.
 
 ### 3.7 Two independently-maintained "no-auth-context-expected" route lists could drift
+
+**Status: done.** Consolidated into `UNAUTHENTICATED_ROUTES` exported by `@hospital/tenant-context` and consumed by both `TenantContextMiddleware` and `AppModule`.
 
 **Context:** found during the entity-audit-columns task's code review. `app.module.ts`'s
 `AuthContextMiddleware.exclude()` call and `tenant-context.middleware.ts`'s
