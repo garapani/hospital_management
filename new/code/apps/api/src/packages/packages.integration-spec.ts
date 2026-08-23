@@ -56,8 +56,18 @@ describe('SaaS packages (integration)', () => {
     await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, [hospitalId]);
   }
 
+  async function cleanMatchingTenants(): Promise<void> {
+    const hospitalIds: { hospitalId: string }[] = await ctx.dataSource.query(
+      `SELECT "hospitalId" FROM tenants WHERE "hospitalId" LIKE 'test_pkg_%'`,
+    );
+    for (const { hospitalId } of hospitalIds) {
+      await dropProvisionedTenant(hospitalId);
+    }
+  }
+
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'packages', seedRbac: true });
+    await cleanMatchingTenants();
     packagesService = new PackagesService(ctx.dataSource);
     tenantsService = new TenantsService(
       ctx.dataSource,
@@ -94,11 +104,12 @@ describe('SaaS packages (integration)', () => {
   afterAll(async () => {
     // Cleanup must run before app.close(): the app's DatabaseModule owns (and destroys) the
     // overridden DataSource on close, so any query after close() hits a dead connection.
+    await cleanMatchingTenants();
     for (const hospitalId of registryOnlyTenantIds) {
       await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, [hospitalId]);
     }
     await teardownTenantTestContext(ctx);
-    await app.close();
+    await app?.close();
   });
 
   describe('PackagesService.filterPermissions', () => {

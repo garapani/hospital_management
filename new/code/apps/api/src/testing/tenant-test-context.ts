@@ -113,8 +113,8 @@ export async function setupTenantTestContext(
   return ctx;
 }
 
-export async function teardownTenantTestContext(ctx: TenantTestContext): Promise<void> {
-  if (ctx.dataSource.isInitialized) {
+export async function teardownTenantTestContext(ctx?: TenantTestContext): Promise<void> {
+  if (ctx?.dataSource?.isInitialized) {
     const tenantIds = tenantRegistry.get(ctx.dataSource) ?? [ctx.tenantId];
     for (const tenantId of tenantIds) {
       await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${tenantId}" CASCADE`);
