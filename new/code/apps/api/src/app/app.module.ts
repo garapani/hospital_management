@@ -3,7 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { ObservabilityLoggerModule, ObservabilityMetricsModule, MetricsService, metricsMiddleware } from '@hospital/observability';
-import { TenantContextModule, TenantContextMiddleware } from '@hospital/tenant-context';
+import { TenantContextModule, TenantContextMiddleware, UNAUTHENTICATED_ROUTES } from '@hospital/tenant-context';
 import { AuthContextMiddleware } from '@hospital/auth-guards';
 import { AuthModule } from '../auth/auth.module.js';
 import { TenantsModule } from '../tenants/tenants.module.js';
@@ -141,20 +141,10 @@ export class AppModule implements NestModule {
     consumer
       .apply(AuthContextMiddleware)
       .exclude(
-        { path: 'auth/login', method: RequestMethod.POST },
-        { path: 'auth/refresh', method: RequestMethod.POST },
-        // The must-change-password onboarding: accounts flagged needsPasswordUpdate get no tokens
-        // at login, so this endpoint authenticates with username + current password instead.
-        { path: 'auth/change-password', method: RequestMethod.POST },
-        // Prometheus scrapers cannot carry JWTs; /metrics exposes only aggregate counters.
-        { path: 'metrics', method: RequestMethod.GET },
-        // The login page renders branding before any session exists — resolved from
-        // x-tenant-id (TenantContextMiddleware, which runs on every route below), not a JWT.
-        // Also listed in @hospital/tenant-context's TenantContextMiddleware
-        // (EXPECTED_FALLBACK_PATH_SUFFIXES) — that's a separate list keyed by path suffix, not
-        // wired to this one, so a route added only here still logs a spurious "fallback to
-        // headers" warning on every legitimate call until added there too.
-        { path: 'branding', method: RequestMethod.GET },
+        ...UNAUTHENTICATED_ROUTES.map((r) => ({
+          path: r.path,
+          method: RequestMethod[r.method as keyof typeof RequestMethod],
+        })),
       )
       .forRoutes('*');
     consumer.apply(TenantContextMiddleware).forRoutes('*');

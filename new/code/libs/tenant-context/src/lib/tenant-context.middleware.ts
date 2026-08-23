@@ -4,21 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type {} from '@hospital/auth-guards';
 import { TenantContextService } from './tenant-context.service.js';
 
-// The routes where AuthContextMiddleware never runs (see its own .exclude() list in
-// app.module.ts — keep this list in sync with that one), so header-based fallback here is
-// expected, not suspicious — matched by suffix since this list is prefix-agnostic to main.ts's
-// app.setGlobalPrefix('api').
-//
-// '/branding' can't be a plain suffix like the other two: PlatformBrandingController's
-// JWT-protected admin routes (@Controller('platform/tenants/:hospitalId/branding')) also end in
-// '/branding', so a naive .endsWith() match would silently suppress this exact security warning
-// on a permission-gated write path if AuthContextMiddleware ever failed to populate
-// req.authContext there. TenantBrandingController's public route is a single top-level segment
-// (@Controller('branding')), so requiring at most one path segment before it excludes the nested
-// admin routes while still matching with (`/api/branding`, production) or without (`/branding`,
-// integration specs, which don't go through main.ts's app.setGlobalPrefix('api')) the prefix.
-const EXPECTED_FALLBACK_PATH_SUFFIXES = ['/auth/login', '/auth/refresh'];
-const isExpectedBrandingFallback = (originalUrl: string): boolean => /^(\/[^/]+)?\/branding$/.test(originalUrl);
+import { isExpectedUnauthenticatedFallback } from './unauthenticated-routes.js';
 
 @Injectable()
 export class TenantContextMiddleware implements NestMiddleware {
@@ -28,23 +14,17 @@ export class TenantContextMiddleware implements NestMiddleware {
 
   use(req: Request, res: Response, next: NextFunction): void {
     // req.authContext is set by AuthContextMiddleware, which runs first on every route except
-    // POST /auth/login and POST /auth/refresh (excluded — no prior JWT can exist at login, and
-    // refresh derives its own tenant from the refresh token's own claim). Keying the fallback on
-    // the presence of req.authContext itself (rather than per-field truthiness) guarantees headers
+    // those excluded in UNAUTHENTICATED_ROUTES (app.module.ts). Keying the fallback on the
+    // presence of req.authContext itself (rather than per-field truthiness) guarantees headers
     // are never consulted once AuthContextMiddleware has run, even if it somehow produced an
-    // authContext with a falsy hospitalId/accountId — that fallback is ONLY ever reached on those
-    // two excluded routes, never on an authenticated one.
+    // authContext with a falsy hospitalId/accountId.
     const tenantId = req.authContext ? req.authContext.hospitalId : (req.header('x-tenant-id') || undefined);
     const accountId = req.authContext ? req.authContext.accountId : (req.header('x-account-id') || undefined);
     
-    // Log when header fallback is used on any route other than the two where it's expected —
-    // that's the actual anomaly worth security monitoring; login/refresh fall back on every call
-    // by design (see the comment above) and would otherwise drown this out. Uses originalUrl, not
-    // path, since path was observed to report the pre-global-prefix-stripped value here ('/').
+    // Log when header fallback is used on any route other than the ones where it's expected —
+    // that's the anomaly worth security monitoring.
     const originalUrl = req.originalUrl.split('?')[0];
-    const isExpectedFallbackRoute =
-      EXPECTED_FALLBACK_PATH_SUFFIXES.some((suffix) => originalUrl.endsWith(suffix)) ||
-      isExpectedBrandingFallback(originalUrl);
+    const isExpectedFallbackRoute = isExpectedUnauthenticatedFallback(originalUrl);
     if (!req.authContext && !isExpectedFallbackRoute && (req.header('x-tenant-id') || req.header('x-account-id'))) {
       this.logger.warn(`Tenant context fallback to headers detected for path: ${originalUrl}, tenantId: ${req.header('x-tenant-id')}`);
     }
