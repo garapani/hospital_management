@@ -724,6 +724,8 @@ decoration code (2.14/2.18). Low severity, no security impact.
 
 ### 2.26 Reporting PDF export can block the event loop; CSV/PDF row-mapping is duplicated
 
+**Status: done.** PDF row limit is now 500, and row-mapping logic is deduplicated across CSV and PDF exports.
+
 **Context:** found during the entity-audit-columns task's code review, in already-shipped reporting
 code (`reporting-query.service.ts`).
 - `exportEventsPdf` (line ~142) loads up to 10,000 rows and hands them to `pdfmake`, which lays out
@@ -799,6 +801,8 @@ case asserting the chosen behavior.
 
 ### 2.29 More DTO-decorator gaps: `@IsNumber()` where the column needs an integer, one missing `@Min(0)`
 
+**Status: done (already fixed in previous commit `82cbf2b`).**
+
 **Context:** found during `/code-review high` on 2.21/2.22, in already-shipped DTO code (same class
 of bug as 2.25, different files).
 - `@IsNumber()` should be `@IsInt()` (decimal passes validation, then either corrupts a business
@@ -824,6 +828,8 @@ of bug as 2.25, different files).
 
 ### 2.30 Tenant-provisioning `adminPassword` empty string bypasses the generated-password fallback
 
+**Status: done (already fixed in previous commit `82cbf2b` via `@IsNotEmpty`).**
+
 **Context:** found during `/code-review high` on 2.21/2.22, in already-shipped tenant-provisioning
 code. `tenants/dto/provision-tenant.dto.ts:25-27`'s `adminPassword?: string` has only
 `@IsOptional() @IsString()`, no length/non-empty guard. `TenantsService.createBootstrapAdmin` does
@@ -842,6 +848,8 @@ account with an empty password.
 ---
 
 ### 2.31 Platform branding: unbounded `displayName`, SVG logo accepted as an unsniffed content-type (stored-XSS risk)
+
+**Status: done (already fixed in previous commit `82cbf2b` via `@MaxLength(200)` and blocking SVG).**
 
 **Context:** found during `/code-review high` on 2.21/2.22, in already-shipped platform-branding
 code (§51).
