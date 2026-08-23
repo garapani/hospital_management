@@ -133,3 +133,8 @@ During this audit, we identified two pagination-related bugs that could crash th
   await manager.getRepository(Tenant).save(tenant);
   ```
   This forces the update through the `AuditSubscriber` pipeline, ensuring that every tenant purge is permanently logged for compliance and security auditing.
+
+### 4. Admissions Controller In-Memory Discharge Summary Lookup
+- **File**: `new/code/apps/api/src/admissions/admissions.controller.ts`
+- **Bug**: To fetch a single discharge summary by ID, the controller endpoint loaded *all* discharge summaries for the entire tenant using `listDischargeSummaries()`, then performed an in-memory `.find(s => s.id === id)` search. This is an O(N) memory and CPU performance bottleneck that scales poorly as the database grows.
+- **Fix**: Added a dedicated `getDischargeSummary(id)` method to `AdmissionsService` to perform a direct O(1) indexed SQL lookup, and updated the controller to call it directly.
