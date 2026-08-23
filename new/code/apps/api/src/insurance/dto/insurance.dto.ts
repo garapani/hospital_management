@@ -1,7 +1,7 @@
 import { IsDateString, IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import type { InsurancePayerType } from '../entities/insurance-payer.entity.js';
-import type { InsuranceClaimStatus } from '../entities/insurance-claim.entity.js';
+import { INSURANCE_CLAIM_STATUSES, type InsuranceClaimStatus } from '../entities/insurance-claim.entity.js';
 
 export class CreatePayerDto {
   @IsString()
@@ -161,6 +161,6 @@ export class ListClaimsQueryDto {
   patientId?: string;
 
   @IsOptional()
-  @IsIn(['Draft', 'Submitted', 'Approved', 'Paid', 'Rejected'])
+  @IsIn(INSURANCE_CLAIM_STATUSES)
   status?: InsuranceClaimStatus;
 }

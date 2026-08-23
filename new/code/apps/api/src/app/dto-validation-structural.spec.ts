@@ -34,8 +34,6 @@ const VALIDATION_DECORATOR_PREFIXES = [
   'Allow',
   'Equals',
   'NotEquals',
-  'IsEmpty',
-  'IsNotEmpty',
 ];
 
 function isValidationDecorator(decoratorName: string): boolean {

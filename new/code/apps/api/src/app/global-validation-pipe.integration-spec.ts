@@ -26,7 +26,13 @@ describe('Global ValidationPipe (integration)', () => {
     token = await signTestToken({
       sub: 'validation-pipe-spec-user',
       hospitalId: ctx.tenantId,
-      permissions: ['lab.catalog.manage', 'reporting.read', 'billing.manage'],
+      permissions: [
+        'lab.catalog.manage',
+        'reporting.read',
+        'billing.manage',
+        'maternity.manage',
+        'inventory.catalog.manage',
+      ],
     });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -135,5 +141,33 @@ describe('Global ValidationPipe (integration)', () => {
       .send({ price: 42, notPartOfTheDto: 'should be stripped, not rejected' });
 
     expect(response.status).not.toBe(400);
+  });
+
+  // 2.25: CreateMaternityRecordDto.lmp/edd were @IsString(), so a malformed date reached
+  // maternity.service.ts's string-ordering comparison (`lmp > edd`) instead of 400ing cleanly.
+  it('rejects a malformed lmp date on CreateMaternityRecordDto with 400 (2.25)', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/maternity/records')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({
+        admissionId: '00000000-0000-0000-0000-000000000000',
+        patientId: '00000000-0000-0000-0000-000000000000',
+        lmp: 'not-a-date',
+      });
+
+    expect(response.status).toBe(400);
+  });
+
+  // 2.25: CreateInventoryItemCategoryDto.displaySequence was @IsNumber(), so a decimal value
+  // passed validation and would 500 at the Postgres int-column insert instead of 400ing cleanly.
+  it('rejects a decimal displaySequence on CreateInventoryItemCategoryDto with 400 (2.25)', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/inventory/categories')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({ name: 'Test Category', displaySequence: 1.5 });
+
+    expect(response.status).toBe(400);
   });
 });

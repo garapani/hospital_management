@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
 
 import type { DeliveryType } from '../entities/maternity-record.entity.js';
 
@@ -20,11 +20,11 @@ export class CreateMaternityRecordDto {
   para?: number;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   lmp?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   edd?: string;
 
   @IsOptional()
@@ -42,11 +42,11 @@ export class UpdateMaternityRecordDto {
   para?: number;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   lmp?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   edd?: string;
 
   @IsOptional()
@@ -55,7 +55,7 @@ export class UpdateMaternityRecordDto {
 }
 
 export class RecordDeliveryDto {
-  @IsString()
+  @IsDateString()
   deliveryDate!: string;
 
   @IsIn(DELIVERY_TYPES)

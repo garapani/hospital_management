@@ -1,10 +1,10 @@
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsInt, IsOptional, IsString } from 'class-validator';
 
 export class CreateInventoryItemCategoryDto {
   @IsString()
   name!: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   displaySequence?: number;
 }
