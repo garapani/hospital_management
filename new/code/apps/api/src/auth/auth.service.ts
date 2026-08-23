@@ -47,6 +47,19 @@ export class AuthService {
     private readonly tenantsService: TenantsService,
   ) {}
 
+  /**
+   * Enforces the tenant status gate for authentication operations. A suspended or archived hospital
+   * cannot log in, refresh, or change their initial password. Test tenants without a registry row
+   * fail open. The platform tenant is always active (getTenant returns null).
+   */
+  private async checkTenantStatusGate(hospitalId: string | undefined): Promise<{ packageCode: string | null } | { tenantInactive: true; reason: 'suspended' | 'archived' }> {
+    const tenant = hospitalId ? await this.tenantsService.getTenant(hospitalId) : null;
+    if (hospitalId && (tenant?.status === 'suspended' || tenant?.status === 'archived')) {
+      return { tenantInactive: true, reason: tenant.status };
+    }
+    return { packageCode: tenant?.packageCode ?? null };
+  }
+
   async login(input: LoginInput): Promise<LoginResult> {
     const found = await this.accountsService.findByUsernameWithRoles(input.username);
     if (!found) {
@@ -75,15 +88,11 @@ export class AuthService {
     await this.accountsService.resetFailedLogins(account.id);
 
     // A suspended or archived hospital cannot log in at all — credentials are verified first so
-    // the tenant state is not leaked to a wrong-password attempt. Registry-gated (test tenants
-    // without a registry row fail open, like the role-membership checks). The platform tenant is
-    // always active (getTenant special-cases it, returning null). One fetch serves both this gate
-    // and the package lookup below — filterPermissions takes the already-fetched packageCode
-    // instead of re-querying `tenants` for it.
+    // the tenant state is not leaked to a wrong-password attempt.
     const hospitalId = this.tenantContext.getTenantId();
-    const tenant = hospitalId ? await this.tenantsService.getTenant(hospitalId) : null;
-    if (hospitalId && (tenant?.status === 'suspended' || tenant?.status === 'archived')) {
-      return { tenantInactive: true, reason: tenant.status };
+    const statusGate = await this.checkTenantStatusGate(hospitalId);
+    if ('tenantInactive' in statusGate) {
+      return statusGate;
     }
 
     // A freshly created account with an initial/generated password has no full access until it
@@ -93,12 +102,10 @@ export class AuthService {
       return { mustChangePassword: true };
     }
 
-    // Package-scoped: only permissions whose modules are in the tenant's package reach the JWT,
-    // so out-of-package features 403 and never render in the console.
     const permissions = await this.packagesService.filterPermissions(
       hospitalId,
       await this.accountsService.getPermissionNamesForRoles(roleIds),
-      tenant?.packageCode ?? null,
+      statusGate.packageCode,
     );
     const payload = this.buildAccessPayload(account.id, roleNames, permissions, hospitalId);
 
@@ -130,6 +137,13 @@ export class AuthService {
     if (!found.account.needsPasswordUpdate) {
       throw new BadRequestException('This account is not required to change its password');
     }
+
+    const hospitalId = this.tenantContext.getTenantId();
+    const statusGate = await this.checkTenantStatusGate(hospitalId);
+    if ('tenantInactive' in statusGate) {
+      throw new UnauthorizedException(`Tenant is ${statusGate.reason}`);
+    }
+
     await this.accountsService.changePasswordByUsername(
       username,
       currentPassword,
@@ -183,17 +197,16 @@ export class AuthService {
     }
 
     // Same tenant-status gate as login: a suspended/archived hospital cannot refresh either,
-    // otherwise an existing session would keep working after suspension. One fetch serves both
-    // this gate and the package lookup below, same as login.
-    const tenant = await this.tenantsService.getTenant(payload.hospitalId);
-    if (tenant?.status === 'suspended' || tenant?.status === 'archived') {
+    // otherwise an existing session would keep working after suspension.
+    const statusGate = await this.checkTenantStatusGate(payload.hospitalId);
+    if ('tenantInactive' in statusGate) {
       return { invalidToken: true };
     }
 
     const permissions = await this.packagesService.filterPermissions(
       payload.hospitalId,
       await this.accountsService.getPermissionNamesForRoles(found.roleIds),
-      tenant?.packageCode ?? null,
+      statusGate.packageCode,
     );
     const accessPayload = this.buildAccessPayload(
       found.account.id,

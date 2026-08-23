@@ -290,6 +290,16 @@ describe('AuthService (integration)', () => {
           roleName: 'Nurse',
         }),
       );
+      await ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: 'status.fresh',
+          email: 'status.fresh@example.com',
+          displayName: 'Status Fresh',
+          password: 'status-pass-123',
+          needsPasswordUpdate: true,
+          roleName: 'Nurse',
+        }),
+      );
       await ctx.dataSource.query(
         `INSERT INTO tenants ("hospitalId", "hospitalName", "status", "packageCode", "createdBy", "activatedAt")
          VALUES ($1, 'Status Gate Hospital', 'suspended', 'basic', 'auth-spec', NOW())`,
@@ -316,6 +326,24 @@ describe('AuthService (integration)', () => {
         authService.login({ username: 'status.user', password: 'status-password-123' }),
       );
       expect(result).toEqual({ tenantInactive: true, reason: 'archived' });
+    });
+
+    it('blocks changeInitialPassword for a suspended tenant', async () => {
+      await ctx.dataSource.query(`UPDATE tenants SET status = 'suspended' WHERE "hospitalId" = $1`, [
+        ctx.tenantId,
+      ]);
+      await expect(
+        ctx.inTenant(() => authService.changeInitialPassword('status.fresh', 'status-pass-123', 'new-pass-456'))
+      ).rejects.toThrow(/Tenant is suspended/);
+    });
+
+    it('blocks changeInitialPassword for an archived tenant', async () => {
+      await ctx.dataSource.query(`UPDATE tenants SET status = 'archived' WHERE "hospitalId" = $1`, [
+        ctx.tenantId,
+      ]);
+      await expect(
+        ctx.inTenant(() => authService.changeInitialPassword('status.fresh', 'status-pass-123', 'new-pass-456'))
+      ).rejects.toThrow(/Tenant is archived/);
     });
 
     it('allows login once the tenant is active again, and refresh is also blocked while inactive', async () => {
