@@ -2442,3 +2442,57 @@ lines below it explaining why the code resolves the *real* primary key instead o
 or evidence of a bug being papered over — trace whether the condition is actually reachable before
 keeping the fallback; if a test needs it, fix the test's fixture instead of loosening the production
 code's contract.**
+
+## 61. Closing the confirmed gaps: 2.32, 2.25, 3.8, and a fix introducing its own ordering bug (2026-08-23)
+
+`claude-code-tasks.md` 2.32/2.25/3.8. Four independent fixes, one of them worth its own lesson.
+
+**2.32 — `login()`/`changeInitialPassword()` raw-500 on a purged tenant.** The sibling gap 2.23
+deliberately left open (`Development-Standards.md` §58): both call `findByUsernameWithRoles()`
+before any status check, so a purged tenant's dropped schema/role throws a raw Postgres error.
+Unlike `refresh()`, the caught failure folds into `invalidCredentials` (not a distinct outcome) for
+`login()` specifically, because its status gate is deliberately placed *after* password
+verification to avoid leaking tenant state to an unauthenticated caller — the fix has to preserve
+that property, not just copy `refresh()`'s shape. Also added `Logger.warn` to all three catches
+(this one, `changeInitialPassword`'s, and retroactively `refresh()`'s): a bare `catch {}` here was
+originally silent, meaning a genuine infrastructure fault (DB pool exhaustion, an unrelated bug)
+would read to monitoring as ordinary failed-login traffic with zero trace to diagnose from — four
+independent review-agent passes converged on flagging this same gap unprompted.
+
+**2.25 — three DTO-decorator gaps** (maternity dates as `@IsString()` instead of `@IsDateString()`,
+inventory `displaySequence` as `@IsNumber()` instead of `@IsInt()`, insurance hardcoding its
+`@IsIn()` list instead of reusing the exported constant). Mechanical, matching the established
+pattern from the same DTO-decoration pass elsewhere in the codebase — the only actual judgment call
+was where to put the HTTP-level regression tests, since maternity/inventory have no controller-level
+integration spec of their own: added to `global-validation-pipe.integration-spec.ts`, the
+established home for "does this decorator actually reject bad input end-to-end" checks that don't
+have a natural per-module HTTP spec to live in.
+
+**3.8 — a test that only cleaned up on success.** `try { ...; await dropProvisionedTenant(hospitalId); }`
+with the cleanup call as the last line of the try block: any assertion failure anywhere above it
+skipped cleanup entirely, leaving a real provisioned tenant behind that made every subsequent run
+409 deterministically — not flaky, a genuine leftover. Fixed with `try { ... } finally { await
+dropProvisionedTenant(hospitalId); }`, plus a pre-emptive `dropProvisionedTenant()` call *before*
+provisioning (idempotent — `DROP SCHEMA/ROLE IF EXISTS`, `DELETE FROM tenants WHERE ...` — safe to
+call speculatively), so the test also self-heals past a leftover from *any* prior failed run,
+including ones from before this fix existed. **General pattern: a cleanup step written as "the last
+line of the try block" isn't cleanup at all if anything above it can throw — it only ever runs on
+the happy path. `finally` (or an `afterEach`) is the only shape that actually guarantees it.**
+
+**The purgeTenant object-storage-removal ordering bug — introduced by 2.20/2.28's own review fix,
+caught by reviewing that fix.** Earlier this session (§60), `purgeTenant` was extended to remove a
+purged tenant's logo from object storage. The fix fetched the branding row and called
+`objectStorage.removeObject()` *before* the DB transaction — reasoning (correctly) that object
+storage isn't transactional with Postgres either way. But "not transactional with the DB" doesn't
+mean "order doesn't matter relative to the DB": if the transaction failed and rolled back afterward
+(e.g. `DROP SCHEMA` hitting a lingering lock), the DB was left `archived` with the branding row
+still intact and pointing at a logo file that had already been deleted — a broken image with no
+clean retry path, strictly worse than the bug being fixed. **Lesson: when a fix spans a
+transactional store and a non-transactional side effect, the side effect must run *after* the
+transaction commits, not before it starts — "not transactional with the DB" is a reason the ordering
+matters, not a reason it's safe to ignore.** Fixed by moving the object-storage removal after the
+transaction, and moving the branding-row lookup *inside* the transaction (closing an unrelated
+stale-read window the same review caught). Four independent review-agent passes converged on this
+same finding unprompted, the same pattern seen with the 2.32 logging gap above — when several
+independently-primed reviewers converge on the identical finding without cross-talk, treat that as
+a strong signal to actually fix it, not just note it.

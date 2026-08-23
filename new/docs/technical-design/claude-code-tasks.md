@@ -738,7 +738,7 @@ restoring it).
 
 ---
 
-### 2.25 Minor DTO-decorator gaps from the earlier ValidationPipe Phase B pass
+### 2.25 Minor DTO-decorator gaps from the earlier ValidationPipe Phase B pass (done)
 
 **Context:** found during the entity-audit-columns task's code review, in already-shipped DTO
 decoration code (2.14/2.18). Low severity, no security impact.
@@ -758,6 +758,12 @@ decoration code (2.14/2.18). Low severity, no security impact.
 `POST /inventory/item-categories` with a decimal `displaySequence` 400s; `insurance.dto.ts` imports
 `INSURANCE_CLAIM_STATUSES` instead of duplicating the list.
 **Test:** one-line additions to each module's existing DTO/controller integration specs.
+
+**Done (2026-08-23):** all three fixed as described. Neither maternity nor inventory has a
+controller-level integration spec, so the two new HTTP-level assertions were added to
+`global-validation-pipe.integration-spec.ts` instead — the established home for "decorator actually
+rejects bad input end-to-end" checks with no natural per-module spec to live in. Full detail:
+`Development-Standards.md` §61.
 
 ---
 
@@ -915,7 +921,7 @@ malicious-SVG upload case.
 
 ---
 
-### 2.32 `AuthService.login()`/`changeInitialPassword()` raw-500 on a purged tenant (login's sibling of 2.23's refresh fix)
+### 2.32 `AuthService.login()`/`changeInitialPassword()` raw-500 on a purged tenant (login's sibling of 2.23's refresh fix) (done)
 
 **Context:** found while fixing 2.23. `AuthService.refresh()` had a raw-500 bug when a
 still-cryptographically-valid token was presented for a purged tenant — its dropped schema/role
@@ -937,6 +943,13 @@ account.
 a 500; same for `changeInitialPassword`.
 **Test:** extend `auth.service.integration-spec.ts` with a provision→archive→purge→login case and a
 provision→archive→purge→changeInitialPassword case.
+
+**Done (2026-08-23):** both wrapped as described, verified against real pre-fix failures
+(`git stash`-based negative-case proof, same discipline as 2.23). Both catches also log the
+underlying error before returning the folded-in outcome — a bare silent `catch {}` here would
+otherwise make a genuine infrastructure fault indistinguishable from ordinary failed-login traffic
+in monitoring; `refresh()`'s existing catch got the same logging retroactively. Full detail:
+`Development-Standards.md` §61.
 
 ---
 
@@ -1022,7 +1035,7 @@ raises the priority of the consolidation above whenever this item is next picked
 
 ---
 
-### 3.8 `packages.integration-spec.ts`'s `test_pkg_roles` test never cleans up its real-provisioned tenant
+### 3.8 `packages.integration-spec.ts`'s `test_pkg_roles` test never cleans up its real-provisioned tenant (done)
 
 **Context:** found while verifying 3.1's flake-mitigation changes. `packages.integration-spec.ts`'s
 "provisions the package role set and adds the new package roles on upgrade" test calls
@@ -1040,6 +1053,16 @@ tenants` is sufficient) or call `tenantsService.archiveTenant`+`purgeTenant` in 
 registry row).
 **Verify:** running this spec's full file twice in a row (no DB reset in between) passes both times.
 **Test:** the fix's own verification is running the spec twice consecutively.
+
+**Done (2026-08-23):** by the time this was picked up, a `dropProvisionedTenant(hospitalId)` call
+already existed at the end of the test body — this write-up's original "never cleans up" framing
+was already slightly stale. The real remaining gap was narrower but still live: that call was the
+*last line of the try block*, so any assertion failure anywhere above it skipped cleanup entirely —
+not flaky, a genuine leftover on any failed run. Fixed with `try { ... } finally { await
+dropProvisionedTenant(hospitalId); }`, plus a pre-emptive `dropProvisionedTenant()` call before
+provisioning so the test also self-heals past a leftover from any run before this fix existed (the
+exact stale row blocking full-suite runs this write-up describes). Verified passing twice
+consecutively. Full detail: `Development-Standards.md` §61.
 
 ---
 
