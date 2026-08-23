@@ -122,3 +122,14 @@ During this audit, we identified two pagination-related bugs that could crash th
   const parsedLimit = limit && !isNaN(Number(limit)) ? Math.max(1, Math.min(100, Number(limit))) : 50;
   ```
   This guarantees that positive, valid integers reach the query execution block, preventing database crashes.
+
+### 3. Tenant Purge Audit-Trail Bypass
+- **File**: `new/code/apps/api/src/tenants/tenants.service.ts`
+- **Bug**: When a tenant is hard-purged, its status in the tenant registry is updated to `'purged'`. However, this was implemented using `repository.update()`, which executes a direct query and bypasses TypeORM's entity subscribers. As a result, the tenant purge status transition was never recorded in the audit trail.
+- **Fix**: Replaced the direct `.update()` call with `.save()` on the loaded tenant entity instance:
+  ```typescript
+  tenant.status = 'purged';
+  tenant.purgedAt = new Date();
+  await manager.getRepository(Tenant).save(tenant);
+  ```
+  This forces the update through the `AuditSubscriber` pipeline, ensuring that every tenant purge is permanently logged for compliance and security auditing.
