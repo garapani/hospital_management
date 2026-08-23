@@ -3,6 +3,7 @@ import { OtService } from './ot.service.js';
 import { OtSurgeryNumberGeneratorService } from './ot-surgery-number-generator.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
+import { AccountsService } from '../accounts/accounts.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -27,6 +28,7 @@ describe('OtService (integration)', () => {
     patientsService = new PatientsService(
       ctx.tenantConnection,
       new PatientNumberGeneratorService(ctx.tenantConnection),
+      new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext),
     );
   });
 

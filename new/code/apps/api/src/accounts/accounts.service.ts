@@ -47,6 +47,18 @@ export interface CreateStaffAccountResult extends Account {
   initialPassword?: string;
 }
 
+export interface CreatePatientAccountInput {
+  patientId: string;
+  username: string;
+  email: string | null;
+  displayName: string;
+}
+
+export interface CreatePatientAccountResult extends Account {
+  /** Set once, at creation — never returned again. The patient sets their own password from this. */
+  initialPassword: string;
+}
+
 export interface AccountWithRoles {
   account: Account;
   roleIds: string[];
@@ -150,6 +162,52 @@ export class AccountsService {
     });
 
     return generatedPassword ? { ...account, initialPassword: generatedPassword } : account;
+  }
+
+  /**
+   * Staff-initiated patient-portal invite: creates a login-capable account linked to exactly one
+   * existing Patient record. Always generates the initial password (never admin-supplied — staff
+   * must never know a patient's credential) and always forces a change on first use, reusing the
+   * same needsPasswordUpdate/changeInitialPassword flow already built for staff onboarding. No
+   * role assignment: patient accounts are gated by PatientAuthGuard (accountType === 'patient'),
+   * not the staff RBAC catalog.
+   */
+  async createPatientAccount(input: CreatePatientAccountInput): Promise<CreatePatientAccountResult> {
+    const generatedPassword = generateInitialPassword();
+    const passwordHash = await bcrypt.hash(generatedPassword, BCRYPT_SALT_ROUNDS);
+
+    const account = await this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const existing = await repository.findOne({ where: { patientId: input.patientId } });
+      if (existing) {
+        throw new ConflictException(`Patient ${input.patientId} already has a portal account`);
+      }
+      try {
+        return await repository.save(
+          repository.create({
+            accountType: 'patient',
+            patientId: input.patientId,
+            username: input.username,
+            email: input.email,
+            displayName: input.displayName,
+            passwordHash,
+            needsPasswordUpdate: true,
+          }),
+        );
+      } catch (error) {
+        // The partial unique index on patientId (and the plain unique constraint on username)
+        // close the same race the proactive check above can't: concurrent invites for the same
+        // patient, or a username collision with any other account.
+        if ((error as { code?: string }).code === '23505') {
+          throw new ConflictException(
+            `Could not create the portal account — username or patient already has one`,
+          );
+        }
+        throw error;
+      }
+    });
+
+    return { ...account, initialPassword: generatedPassword };
   }
 
   async findByUsernameWithRoles(username: string): Promise<AccountWithRoles | null> {

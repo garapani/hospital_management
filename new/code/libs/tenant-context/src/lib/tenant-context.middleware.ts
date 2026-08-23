@@ -20,7 +20,10 @@ export class TenantContextMiddleware implements NestMiddleware {
     // authContext with a falsy hospitalId/accountId.
     const tenantId = req.authContext ? req.authContext.hospitalId : (req.header('x-tenant-id') || undefined);
     const accountId = req.authContext ? req.authContext.accountId : (req.header('x-account-id') || undefined);
-    
+    // patientId has no unauthenticated-route meaning (unlike tenantId/accountId, which the login
+    // flow itself needs pre-auth) — it comes from the verified JWT only, never a client header.
+    const patientId = req.authContext?.patientId;
+
     // Log when header fallback is used on any route other than the ones where it's expected —
     // that's the anomaly worth security monitoring.
     const originalUrl = req.originalUrl.split('?')[0];
@@ -31,7 +34,7 @@ export class TenantContextMiddleware implements NestMiddleware {
     
     const correlationId = req.header('x-correlation-id') || randomUUID();
 
-    this.tenantContext.run({ tenantId, accountId, correlationId }, () =>
+    this.tenantContext.run({ tenantId, accountId, patientId, correlationId }, () =>
       next(),
     );
   }

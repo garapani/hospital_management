@@ -40,4 +40,8 @@ export class Account extends SoftDeletableEntity {
 
   @Column({ type: 'timestamptz', nullable: true })
   phoneVerifiedAt!: Date | null;
+
+  /** Set iff accountType === 'patient': the one Patient record this portal account may access. */
+  @Column({ type: 'uuid', nullable: true })
+  patientId!: string | null;
 }

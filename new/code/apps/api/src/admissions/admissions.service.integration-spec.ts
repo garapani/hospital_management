@@ -7,6 +7,7 @@ import { TriageService } from '../clinical/triage/triage.service.js';
 import { AdmissionsService } from './admissions.service.js';
 import { Admission } from './entities/admission.entity.js';
 import { BedTransfer } from './entities/bed-transfer.entity.js';
+import { AccountsService } from '../accounts/accounts.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -27,7 +28,7 @@ describe('AdmissionsService (integration)', () => {
     ctx2 = await ctx.createTenant();
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
-    patientsService = new PatientsService(ctx.tenantConnection, patientSequence);
+    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
     masterDataService = new MasterDataService(ctx.tenantConnection);
     appointmentsService = new AppointmentsService(ctx.tenantConnection);
     triageService = new TriageService(ctx.tenantConnection, ctx.tenantContext);

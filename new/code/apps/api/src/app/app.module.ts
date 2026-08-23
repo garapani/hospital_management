@@ -14,6 +14,7 @@ import { AuditModule } from '../audit/audit.module.js';
 import { RbacModule } from '../rbac/rbac.module.js';
 import { MasterDataModule } from '../master-data/master-data.module.js';
 import { PatientsModule } from '../patients/patients.module.js';
+import { PatientPortalModule } from '../patient-portal/patient-portal.module.js';
 import { AppointmentsModule } from '../appointments/appointments.module.js';
 import { VitalsModule } from '../clinical/vitals/vitals.module.js';
 import { EncountersModule } from '../clinical/encounters/encounters.module.js';
@@ -103,6 +104,7 @@ import { VaccinationModule } from '../vaccination/vaccination.module.js';
     RbacModule,
     MasterDataModule,
     PatientsModule,
+    PatientPortalModule,
     AppointmentsModule,
     VitalsModule,
     EncountersModule,

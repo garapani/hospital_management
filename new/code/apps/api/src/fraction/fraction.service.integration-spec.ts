@@ -3,6 +3,7 @@ import { FractionService } from './fraction.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { InvoicesService } from '../billing/invoices.service.js';
+import { AccountsService } from '../accounts/accounts.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -21,7 +22,7 @@ describe('FractionService (integration)', () => {
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'fraction', seedRbac: true });
     fractionService = new FractionService(ctx.tenantConnection, ctx.tenantContext);
-    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection));
+    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
     invoicesService = new InvoicesService(ctx.tenantConnection, ctx.tenantContext);
   });
 

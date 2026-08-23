@@ -528,4 +528,52 @@ describe('AccountsService (integration)', () => {
       ).rejects.toThrow('last Super Admin');
     });
   });
+
+  describe('createPatientAccount', () => {
+    it('creates a login-capable account linked to the given patient, with no role assignment', async () => {
+      const patientId = '00000000-0000-0000-0000-0000000000f1';
+      const account = await ctx.inTenant(() =>
+        ctx.accountsService.createPatientAccount({
+          patientId,
+          username: `patient.portal.${Date.now()}`,
+          email: 'patient@example.com',
+          displayName: 'Jane Patient',
+        }),
+      );
+
+      expect(account.accountType).toBe('patient');
+      expect(account.patientId).toBe(patientId);
+      expect(account.needsPasswordUpdate).toBe(true);
+      expect(account.initialPassword).toBeTruthy();
+      expect(
+        await bcrypt.compare(account.initialPassword, account.passwordHash as string),
+      ).toBe(true);
+
+      const withRoles = await ctx.inTenant(() => ctx.accountsService.getAccountWithRoles(account.id));
+      expect(withRoles?.roleIds).toEqual([]);
+    });
+
+    it('rejects a second invite for a patient that already has a portal account', async () => {
+      const patientId = '00000000-0000-0000-0000-0000000000f2';
+      await ctx.inTenant(() =>
+        ctx.accountsService.createPatientAccount({
+          patientId,
+          username: `patient.portal.first.${Date.now()}`,
+          email: null,
+          displayName: 'First Invite',
+        }),
+      );
+
+      await expect(
+        ctx.inTenant(() =>
+          ctx.accountsService.createPatientAccount({
+            patientId,
+            username: `patient.portal.second.${Date.now()}`,
+            email: null,
+            displayName: 'Second Invite',
+          }),
+        ),
+      ).rejects.toThrow('already has a portal account');
+    });
+  });
 });

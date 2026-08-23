@@ -6,6 +6,8 @@ export interface TestTokenClaims {
   hospitalId: string;
   roles?: string[];
   permissions?: string[];
+  accountType?: 'staff' | 'patient';
+  patientId?: string;
 }
 
 export async function signTestToken(claims: TestTokenClaims): Promise<string> {
@@ -17,6 +19,8 @@ export async function signTestToken(claims: TestTokenClaims): Promise<string> {
       roles: claims.roles ?? [],
       permissions: claims.permissions ?? [],
       type: 'access',
+      accountType: claims.accountType,
+      patientId: claims.patientId,
     },
     { expiresIn: '15m' },
   );

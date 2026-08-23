@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { AccountsService, CreatePatientAccountResult } from '../accounts/accounts.service.js';
 import { PatientNumberGeneratorService } from './patient-number-generator.service.js';
 import { Patient } from './entities/patient.entity.js';
 import { PatientAddress } from './entities/patient-address.entity.js';
@@ -7,6 +8,7 @@ import { PatientKin } from './entities/patient-kin.entity.js';
 import { CreatePatientDto } from './dto/create-patient.dto.js';
 import { UpdatePatientDto } from './dto/update-patient.dto.js';
 import { SearchPatientsDto } from './dto/search-patients.dto.js';
+import { CreatePortalInviteDto } from './dto/create-portal-invite.dto.js';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 @Injectable()
@@ -14,6 +16,7 @@ export class PatientsService {
   constructor(
     private readonly tenantConnection: TenantConnectionService,
     private readonly patientNumberGenerator: PatientNumberGeneratorService,
+    private readonly accountsService: AccountsService,
   ) {}
 
   async checkDuplicates(dto: { phoneNumber?: string; firstName?: string; lastName?: string; dateOfBirth?: string }): Promise<Patient[]> {
@@ -138,6 +141,21 @@ export class PatientsService {
       if (dto.governmentIdNumber !== undefined) patient.governmentIdNumber = dto.governmentIdNumber;
 
       return manager.save(patient);
+    });
+  }
+
+  /**
+   * Front-desk-initiated patient-portal invite, anchored to an existing chart. findOne() (not a
+   * raw lookup) both confirms the patient exists and rejects a deactivated one — an inactive
+   * patient record shouldn't gain a fresh login path.
+   */
+  async createPortalInvite(id: string, dto: CreatePortalInviteDto): Promise<CreatePatientAccountResult> {
+    const patient = await this.findOne(id);
+    return this.accountsService.createPatientAccount({
+      patientId: patient.id,
+      username: dto.username,
+      email: dto.email ?? patient.email,
+      displayName: `${patient.firstName} ${patient.lastName}`,
     });
   }
 

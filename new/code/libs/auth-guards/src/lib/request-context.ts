@@ -6,6 +6,7 @@ export interface RequestContext {
   hospitalId?: string;
   roles: string[];
   permissions: string[];
+  accountType?: 'staff' | 'patient';
   patientId?: string;
 }
 

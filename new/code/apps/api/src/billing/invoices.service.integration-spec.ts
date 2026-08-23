@@ -3,6 +3,7 @@ import { InvoicesService, getFinancialYearStart } from './invoices.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { DepositsService } from './deposits.service.js';
+import { AccountsService } from '../accounts/accounts.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -21,7 +22,7 @@ describe('InvoicesService (integration)', () => {
     tenantB = await ctx.createTenant();
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
-    patientsService = new PatientsService(ctx.tenantConnection, patientSequence);
+    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
     invoicesService = new InvoicesService(ctx.tenantConnection, ctx.tenantContext);
     depositsService = new DepositsService(ctx.tenantConnection, ctx.tenantContext);
   });

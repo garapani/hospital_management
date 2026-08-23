@@ -54,6 +54,7 @@ import { AddAuditColumnsToTenantTables1000000000053 } from './0053-add-audit-col
 import { AddAuditColumnsToPlatformTables1000000000054 } from './0054-add-audit-columns-to-platform-tables.js';
 import { DropSubscriptionsTenantFkCascade1000000000055 } from './0055-drop-subscriptions-tenant-fk-cascade.js';
 import { AddTenantPurged1000000000056 } from './0056-add-tenant-purged.js';
+import { AddAccountPatientLink3000000000057 } from './0057-add-account-patient-link.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -122,4 +123,5 @@ export const TENANT_MIGRATIONS = [
   CreateVaccinationTables0047,
   AddInvoiceItemChargeUnique0049,
   AddAuditColumnsToTenantTables1000000000053,
+  AddAccountPatientLink3000000000057,
 ];

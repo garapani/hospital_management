@@ -4,6 +4,7 @@ import { PatientsService } from './patients.service.js';
 import { CreatePatientDto } from './dto/create-patient.dto.js';
 import { UpdatePatientDto } from './dto/update-patient.dto.js';
 import { SearchPatientsDto } from './dto/search-patients.dto.js';
+import { CreatePortalInviteDto } from './dto/create-portal-invite.dto.js';
 
 @Controller('patients')
 @UseGuards(PermissionGuard)
@@ -45,5 +46,15 @@ export class PatientsController {
   async deactivate(@Param('id') id: string) {
     await this.patientsService.deactivate(id);
     return { success: true };
+  }
+
+  @Post(':id/portal-invite')
+  @RequirePermission('patients.portal-invite')
+  async createPortalInvite(@Param('id') id: string, @Body() dto: CreatePortalInviteDto) {
+    const account = await this.patientsService.createPortalInvite(id, dto);
+    // initialPassword is disclosed exactly once, in this response — same one-time-disclosure
+    // rule as staff account creation. passwordHash never leaves the service layer.
+    const { passwordHash: _passwordHash, initialPassword, ...rest } = account;
+    return { ...rest, initialPassword };
   }
 }

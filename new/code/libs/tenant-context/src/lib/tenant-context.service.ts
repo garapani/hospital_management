@@ -4,6 +4,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export interface RequestContextStore {
   tenantId?: string;
   accountId?: string;
+  /** Set only for a patient-portal account's request; never derived from a client header. */
+  patientId?: string;
   correlationId: string;
 }
 
@@ -21,6 +23,10 @@ export class TenantContextService {
 
   getAccountId(): string | undefined {
     return this.storage.getStore()?.accountId;
+  }
+
+  getPatientId(): string | undefined {
+    return this.storage.getStore()?.patientId;
   }
 
   getCorrelationId(): string | undefined {

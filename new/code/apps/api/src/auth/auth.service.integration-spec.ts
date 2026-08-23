@@ -465,4 +465,42 @@ describe('AuthService (integration)', () => {
       ),
     ).rejects.toThrow('Invalid credentials');
   });
+
+  describe('patient-portal accounts', () => {
+    it('logs a patient account in with accountType/patientId claims and no permissions', async () => {
+      const patientId = '00000000-0000-0000-0000-0000000000f5';
+      const created = await ctx.inTenant(() =>
+        ctx.accountsService.createPatientAccount({
+          patientId,
+          username: `patient.login.${Date.now()}`,
+          email: null,
+          displayName: 'Portal Login Patient',
+        }),
+      );
+
+      // Onboarding mirrors staff: the generated password only works through
+      // changeInitialPassword, which clears needsPasswordUpdate.
+      await ctx.inTenant(() =>
+        authService.changeInitialPassword(
+          created.username as string,
+          created.initialPassword,
+          'a-new-portal-password-123',
+        ),
+      );
+
+      const result = await ctx.inTenant(() =>
+        authService.login({ username: created.username as string, password: 'a-new-portal-password-123' }),
+      );
+
+      expect(result).toMatchObject({ accessToken: expect.any(String), refreshToken: expect.any(String) });
+      const decoded = jwtService.decode((result as { accessToken: string }).accessToken) as Record<
+        string,
+        unknown
+      >;
+      expect(decoded['accountType']).toBe('patient');
+      expect(decoded['patientId']).toBe(patientId);
+      expect(decoded['permissions']).toEqual([]);
+      expect(decoded['roles']).toEqual([]);
+    });
+  });
 });

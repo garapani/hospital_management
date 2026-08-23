@@ -22,6 +22,7 @@ import {
 } from '../testing/tenant-test-context.js';
 import { signTestToken } from '../testing/test-jwt.js';
 import { resolveJwtSecret } from '../auth/jwt-secret.js';
+import { AccountsService } from '../accounts/accounts.service.js';
 
 describe('Radiology report PDF export (integration)', () => {
   let app: INestApplication;
@@ -70,6 +71,7 @@ describe('Radiology report PDF export (integration)', () => {
     patientsService = new PatientsService(
       ctx.tenantConnection,
       new PatientNumberGeneratorService(ctx.tenantConnection),
+      new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext),
     );
   });
 

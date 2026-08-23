@@ -7,6 +7,7 @@ import { LabRequisitionNumberGeneratorService } from './lab-requisition-number-g
 import { OrdersService } from '../orders/orders.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
+import { AccountsService } from '../accounts/accounts.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -33,7 +34,7 @@ describe('LabCatalogService catalog update/deactivate (integration)', () => {
       new PdfService(),
       new ObjectStorageService(),
     );
-    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection));
+    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
   });
 
   afterAll(() => teardownTenantTestContext(ctx));

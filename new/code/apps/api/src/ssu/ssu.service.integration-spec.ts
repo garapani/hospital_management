@@ -3,6 +3,7 @@ import { SsuService } from './ssu.service.js';
 import { SsuCaseNumberGeneratorService } from './ssu-case-number-generator.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
+import { AccountsService } from '../accounts/accounts.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -27,6 +28,7 @@ describe('SsuService (integration)', () => {
     patientsService = new PatientsService(
       ctx.tenantConnection,
       new PatientNumberGeneratorService(ctx.tenantConnection),
+      new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext),
     );
   });
 

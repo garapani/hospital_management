@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { TriageService } from './triage.service.js';
 import { PatientsService } from '../../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../../patients/patient-number-generator.service.js';
+import { AccountsService } from '../../accounts/accounts.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -19,7 +20,7 @@ describe('TriageService (integration)', () => {
     tenantB = await ctx.createTenant();
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
-    patientsService = new PatientsService(ctx.tenantConnection, patientSequence);
+    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
     triageService = new TriageService(ctx.tenantConnection, ctx.tenantContext);
   });
 

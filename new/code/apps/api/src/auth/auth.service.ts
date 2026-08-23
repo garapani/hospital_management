@@ -139,7 +139,14 @@ export class AuthService {
       await this.accountsService.getPermissionNamesForRoles(roleIds),
       statusGate.packageCode,
     );
-    const payload = this.buildAccessPayload(account.id, roleNames, permissions, hospitalId);
+    const payload = this.buildAccessPayload(
+      account.id,
+      roleNames,
+      permissions,
+      hospitalId,
+      account.accountType,
+      account.patientId,
+    );
 
     const accessToken = await this.jwtService.signAsync(payload, { expiresIn: ACCESS_TOKEN_TTL });
     const refreshToken = await this.jwtService.signAsync(
@@ -258,6 +265,8 @@ export class AuthService {
       found.roleNames,
       permissions,
       payload.hospitalId,
+      found.account.accountType,
+      found.account.patientId,
     );
 
     const accessToken = await this.jwtService.signAsync(accessPayload, { expiresIn: ACCESS_TOKEN_TTL });
@@ -277,6 +286,8 @@ export class AuthService {
     roles: string[],
     permissions: string[],
     hospitalId: string | undefined,
+    accountType: 'staff' | 'patient',
+    patientId: string | null,
   ) {
     return {
       sub: accountId,
@@ -284,6 +295,10 @@ export class AuthService {
       permissions,
       hospitalId,
       type: 'access' as const,
+      accountType,
+      // Omitted rather than null: keeps the JWT payload consistent with AccessTokenPayload's
+      // optional-string shape (auth-context.middleware.ts) for the common staff-account case.
+      patientId: patientId ?? undefined,
     };
   }
 }
