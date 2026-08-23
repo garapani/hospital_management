@@ -149,10 +149,25 @@ export class AuthService {
       return { invalidToken: true };
     }
 
-    const found = await this.tenantContext.run(
-      { tenantId: payload.hospitalId, correlationId: 'auth-refresh' },
-      () => this.accountsService.getAccountWithRoles(payload.sub),
-    );
+    // A purged tenant's schema/role are dropped (TenantsService.purgeTenant), so resolving the
+    // account below fails inside runInTenantSchema's `SET LOCAL ROLE` with a raw "role does not
+    // exist" Postgres error for a still-cryptographically-valid refresh token issued before the
+    // purge. Deliberately NOT a pre-check via tenantsService.getTenant()==null: schema-only test
+    // tenants (no registry row — the established fail-open convention this codebase's other
+    // registry-gated checks share) would then also be wrongly rejected, since a missing registry
+    // row is indistinguishable from a purged one by that signal alone. The tenant schema itself is
+    // the ground truth either way, so catching its actual failure here is both correct and doesn't
+    // disturb that convention: a schema-only test tenant's schema genuinely still exists and this
+    // call succeeds for it exactly as before.
+    let found: Awaited<ReturnType<AccountsService['getAccountWithRoles']>>;
+    try {
+      found = await this.tenantContext.run(
+        { tenantId: payload.hospitalId, correlationId: 'auth-refresh' },
+        () => this.accountsService.getAccountWithRoles(payload.sub),
+      );
+    } catch {
+      return { invalidToken: true };
+    }
     if (!found) {
       return { invalidToken: true };
     }

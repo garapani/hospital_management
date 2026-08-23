@@ -13,23 +13,25 @@ describe('AuthService (integration)', () => {
   let ctx: TenantTestContext;
   const jwtService = new JwtService({ secret: 'test-secret' });
   let authService: AuthService;
+  let tenantsService: TenantsService;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'auth_service', seedRbac: true });
     const packagesService = new PackagesService(ctx.dataSource);
+    tenantsService = new TenantsService(
+      ctx.dataSource,
+      new TenantProvisioningService(ctx.dataSource),
+      ctx.tenantConnection,
+      ctx.tenantContext,
+      packagesService,
+      ctx.accountsService,
+    );
     authService = new AuthService(
       ctx.accountsService,
       jwtService,
       ctx.tenantContext,
       packagesService,
-      new TenantsService(
-        ctx.dataSource,
-        new TenantProvisioningService(ctx.dataSource),
-        ctx.tenantConnection,
-        ctx.tenantContext,
-        packagesService,
-        ctx.accountsService,
-      ),
+      tenantsService,
     );
 
     await ctx.inTenant(() =>
@@ -334,5 +336,40 @@ describe('AuthService (integration)', () => {
       const refreshResult = await authService.refresh({ refreshToken: loginResult.refreshToken });
       expect(refreshResult).toEqual({ invalidToken: true });
     });
+  });
+
+  it('2.23: refresh with a token for a purged tenant returns invalidToken, not a raw 500', async () => {
+    // provisionTenant end-to-end (real schema/registry row/enabled roles/bootstrap admin) rather
+    // than the lighter-weight ctx.createTenant() helper: this test needs the tenant to have a
+    // real registry row so purgeTenant is reachable, and a real registry row also switches on
+    // createStaffAccount's role-membership enforcement (fail-open only applies to registry-less
+    // test tenants), so the bootstrap admin's role must actually be enabled — provisionTenant
+    // handles all of that itself instead of hand-rolling it.
+    const hospitalId = 'test_auth_purge_refresh';
+    const provisioned = await tenantsService.provisionTenant({
+      hospitalId,
+      hospitalName: 'Purge Refresh Hospital',
+      // Explicit password so needsPasswordUpdate is false (a generated one forces a
+      // mustChangePassword response on login instead of issuing tokens).
+      adminPassword: 'a-purge-refresh-password',
+    });
+
+    const loginResult = await ctx.tenantContext.run({ tenantId: hospitalId, correlationId: 'test' }, () =>
+      authService.login({
+        username: provisioned.adminCredentials.username,
+        password: provisioned.adminCredentials.password,
+      }),
+    );
+    if (!('refreshToken' in loginResult)) {
+      throw new Error('expected a successful login');
+    }
+
+    await tenantsService.archiveTenant(hospitalId);
+    await tenantsService.purgeTenant(hospitalId, hospitalId);
+
+    // The still-cryptographically-valid refresh token issued before the purge must be rejected
+    // cleanly, not throw — the purged tenant's schema/role no longer exist to query against.
+    const refreshResult = await authService.refresh({ refreshToken: loginResult.refreshToken });
+    expect(refreshResult).toEqual({ invalidToken: true });
   });
 });

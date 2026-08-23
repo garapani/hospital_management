@@ -67,6 +67,37 @@ describe('TenantsService (integration)', () => {
     ).rejects.toThrow();
   });
 
+  it('2.23: a provisioning failure partway through leaves no orphaned registry row, and retry succeeds', async () => {
+    const hospitalId = 'test_tenant_svc_provision_fail';
+    const [nurseRole] = await ctx.dataSource.query(`SELECT id FROM roles WHERE name = 'Nurse'`);
+
+    // Enabling only "Nurse" (never "Hospital Admin") forces createBootstrapAdmin's unconditional
+    // "Hospital Admin" role assignment to fail its role-membership check — reliably failing
+    // provisioning at its LAST step, after the registry row/tenant_roles have already committed.
+    await expect(
+      tenantsService.provisionTenant({
+        hospitalId,
+        hospitalName: 'Provision Fail Hospital',
+        roleIds: [nurseRole.id],
+      }),
+    ).rejects.toThrow(/not enabled/);
+
+    const [registryRow] = await ctx.dataSource.query(
+      `SELECT 1 FROM tenants WHERE "hospitalId" = $1`,
+      [hospitalId],
+    );
+    expect(registryRow).toBeUndefined();
+
+    // Retrying with the SAME hospitalId must not 409 — the whole point of the cleanup. Without
+    // it, the only recovery from a partial failure was archive+purge.
+    const retried = await tenantsService.provisionTenant({
+      hospitalId,
+      hospitalName: 'Provision Fail Hospital (retry)',
+    });
+    expect(retried.hospitalId).toBe(hospitalId);
+    expect(retried.status).toBe('active');
+  });
+
   it('lists provisioned tenants', async () => {
     await tenantsService.provisionTenant({
       hospitalId: 'test_tenant_svc_list',

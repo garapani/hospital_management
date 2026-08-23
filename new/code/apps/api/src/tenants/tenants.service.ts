@@ -125,71 +125,91 @@ export class TenantsService {
       roles = await this.resolvePackageDefaultRoles(packageCode);
     }
 
-    const tenant = await repository.save(
-      repository.create({
-        hospitalId: input.hospitalId,
-        hospitalName: input.hospitalName,
-        status: 'active',
-        packageCode,
-        activatedAt: new Date(),
-        suspendedAt: null,
-        createdBy: this.resolveActor(input.createdBy),
-      }),
-    );
-
-    // Persist the enabled roles explicitly — the ManyToMany cascade on save() silently no-ops
-    // for these detached Role rows (tenant_roles stayed empty), so this raw insert is the same
-    // path setTenantRoles() already uses and cannot be skipped.
-    if (roles.length > 0) {
-      await this.dataSource.query(
-        `INSERT INTO tenant_roles ("tenantId", "roleId")
-         SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
-        [input.hospitalId, roles.map((role) => role.id)],
+    // Registry-row insert through bootstrap-admin creation isn't atomic as one DB transaction —
+    // tenant_roles' FK to tenants("hospitalId") requires the registry row to exist first, and
+    // department-seed/bootstrap-admin both run in their OWN tenant-schema transaction via
+    // runInTenantSchema (SET LOCAL ROLE/search_path), which can't be nested inside this
+    // platform-schema transaction. So instead: on any failure in this block, best-effort delete
+    // the registry row we just inserted (tenant_roles cascades away with it) before rethrowing.
+    // That keeps `hospitalId` immediately retryable — the alternative (leaving the row behind)
+    // is what previously forced archive+purge just to retry a transient failure. The schema/role
+    // created above are deliberately left behind: provisionTenantSchema's CREATE SCHEMA IF NOT
+    // EXISTS + idempotent migration runner make re-running it on retry a safe no-op/resume.
+    let tenant: Tenant;
+    let adminCredentials: AdminCredentials;
+    try {
+      tenant = await repository.save(
+        repository.create({
+          hospitalId: input.hospitalId,
+          hospitalName: input.hospitalName,
+          status: 'active',
+          packageCode,
+          activatedAt: new Date(),
+          suspendedAt: null,
+          createdBy: this.resolveActor(input.createdBy),
+        }),
       );
-    }
-    tenant.roles = roles;
 
-    // Seed local departments
-    if (input.departmentCatalogIds && input.departmentCatalogIds.length > 0) {
-      const catalogs = await this.dataSource.getRepository(DepartmentCatalog)
-        .createQueryBuilder('catalog')
-        .where('catalog.id IN (:...ids)', { ids: input.departmentCatalogIds })
-        .getMany();
-      
-      if (catalogs.length > 0) {
-        // provisionTenant runs outside any per-request tenant context (it's what CREATES the
-        // tenant), so runInTenantSchema has no ambient schema to resolve — establish one for
-        // just this seeding call via TenantContextService.run(), the same pattern the test
-        // helper's inTenant() uses.
-        await this.tenantContext.run(
-          { tenantId: input.hospitalId, correlationId: 'tenant-provisioning' },
-          () =>
-            this.tenantConnection.runInTenantSchema(async (manager) => {
-              const deptRepo = manager.getRepository(Department);
-              const depts = catalogs.map((c) =>
-                deptRepo.create({
-                  departmentCode: c.departmentCode,
-                  departmentName: c.departmentName,
-                  description: c.description,
-                  isAppointmentApplicable: c.isAppointmentApplicable,
-                  isActive: c.isActive,
-                }),
-              );
-              await deptRepo.save(depts);
-            }),
+      // Persist the enabled roles explicitly — the ManyToMany cascade on save() silently no-ops
+      // for these detached Role rows (tenant_roles stayed empty), so this raw insert is the same
+      // path setTenantRoles() already uses and cannot be skipped.
+      if (roles.length > 0) {
+        await this.dataSource.query(
+          `INSERT INTO tenant_roles ("tenantId", "roleId")
+           SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
+          [input.hospitalId, roles.map((role) => role.id)],
         );
       }
-    }
+      tenant.roles = roles;
 
-    // Bootstrap the Hospital Admin account — the platform admin's only job for the new tenant;
-    // the hospital admin then creates all further staff accounts. Without this the tenant has no
-    // login path at all (account creation requires a session). A generated password is returned
-    // once in the response for handover.
-    const adminCredentials = await this.createBootstrapAdmin(input.hospitalId, {
-      username: input.adminUsername,
-      email: input.adminEmail,
-      password: input.adminPassword,
-    });
+      // Seed local departments
+      if (input.departmentCatalogIds && input.departmentCatalogIds.length > 0) {
+        const catalogs = await this.dataSource.getRepository(DepartmentCatalog)
+          .createQueryBuilder('catalog')
+          .where('catalog.id IN (:...ids)', { ids: input.departmentCatalogIds })
+          .getMany();
+
+        if (catalogs.length > 0) {
+          // provisionTenant runs outside any per-request tenant context (it's what CREATES the
+          // tenant), so runInTenantSchema has no ambient schema to resolve — establish one for
+          // just this seeding call via TenantContextService.run(), the same pattern the test
+          // helper's inTenant() uses.
+          await this.tenantContext.run(
+            { tenantId: input.hospitalId, correlationId: 'tenant-provisioning' },
+            () =>
+              this.tenantConnection.runInTenantSchema(async (manager) => {
+                const deptRepo = manager.getRepository(Department);
+                const depts = catalogs.map((c) =>
+                  deptRepo.create({
+                    departmentCode: c.departmentCode,
+                    departmentName: c.departmentName,
+                    description: c.description,
+                    isAppointmentApplicable: c.isAppointmentApplicable,
+                    isActive: c.isActive,
+                  }),
+                );
+                await deptRepo.save(depts);
+              }),
+          );
+        }
+      }
+
+      // Bootstrap the Hospital Admin account — the platform admin's only job for the new tenant;
+      // the hospital admin then creates all further staff accounts. Without this the tenant has
+      // no login path at all (account creation requires a session). A generated password is
+      // returned once in the response for handover.
+      adminCredentials = await this.createBootstrapAdmin(input.hospitalId, {
+        username: input.adminUsername,
+        email: input.adminEmail,
+        password: input.adminPassword,
+      });
+    } catch (err) {
+      await this.dataSource
+        .getRepository(Tenant)
+        .delete({ hospitalId: input.hospitalId })
+        .catch(() => undefined);
+      throw err;
+    }
 
     return { ...tenant, adminCredentials };
   }
