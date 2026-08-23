@@ -45,6 +45,7 @@ Lessons from building the shared libraries (`@hospital/tenant-context`, `@hospit
 
 - **Never `git commit --amend`.** Always create a new commit, even for a one-line fix. Amending has previously silently absorbed an unrelated file into a prior, already-reviewed commit.
 - **Never add a `Co-Authored-By: Claude` (or any AI attribution) trailer** to any commit — this repo's convention explicitly forbids it.
+- **Frontend nested repository**: `frontend/` is its own independent git repo. Always run git commands for frontend work from within the `frontend/` directory (root `git add` ignores frontend paths).
 
 ### Workspace layout
 

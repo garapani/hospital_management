@@ -906,13 +906,8 @@ cleanly.
 **Verify:** exactly one process on :3000, serving `/platform/billing/subscriptions`.
 
 ### 3.4 Frontend repo hygiene
-**Context:** the frontend is a separate git repo nested under the root; `git add` from the
-root fails with "ignored by .gitignore" for frontend paths — a recurring source of
-"didn't commit" confusion.
-**What to do:** nothing code-wise — but when committing frontend work, always run git from
-inside `frontend/`. Add this reminder to `new/code/CLAUDE.md` if not already there.
-**Verify:** n/a.
-**Test:** n/a.
+
+**Status: done.** Added reminder to `new/code/CLAUDE.md`.
 
 ### 3.5 Reuse cleanups surfaced by 2.18's code review (advisory-lock pattern, auth.service.ts duplication)
 **Context:** found in already-shipped code, not urgent enough for its own numbered item:
