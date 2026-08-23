@@ -316,6 +316,33 @@ describe('TenantsService (integration)', () => {
       expect(rawRow.deletedAt).not.toBeNull();
     });
 
+    it('2.28: blocks reprovisioning a purged hospitalId outright, and billing history stays attributed to it', async () => {
+      const hospitalId = 'test_tenant_svc_purge_reuse';
+      await tenantsService.provisionTenant({ hospitalId, hospitalName: 'Purge Reuse Hospital' });
+      await ctx.dataSource.query(
+        `INSERT INTO subscriptions ("tenantId", "packageCode", "billingCycle", "pricePerCycle",
+                                     "currentPeriodStart", "currentPeriodEnd")
+         VALUES ($1, 'basic', 'monthly', 1000, now(), now() + interval '30 days')`,
+        [hospitalId],
+      );
+      await tenantsService.archiveTenant(hospitalId);
+      await tenantsService.purgeTenant(hospitalId, hospitalId);
+
+      // The core promise of 2.28: a purged hospitalId is never reusable (the tombstoned registry
+      // row — status 'purged', never deleted — blocks provisionTenant's own-existing-row check
+      // outright), so a subsequent tenant can never inherit or get its billing views polluted by
+      // the previous, purged tenant's history under the same id.
+      await expect(
+        tenantsService.provisionTenant({ hospitalId, hospitalName: 'Reused Id Hospital' }),
+      ).rejects.toThrow(/already exists/);
+
+      const [survivingSubscription] = await ctx.dataSource.query(
+        `SELECT "tenantId" FROM subscriptions WHERE "tenantId" = $1`,
+        [hospitalId],
+      );
+      expect(survivingSubscription.tenantId).toBe(hospitalId);
+    });
+
     it('a failure partway through the drop leaves the registry row intact, blocking hospitalId reuse', async () => {
       const hospitalId = 'test_tenant_svc_purge_fail';
       const roleName = `tenant_${hospitalId}`;
