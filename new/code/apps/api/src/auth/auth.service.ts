@@ -21,7 +21,7 @@ export type LoginResult =
   | { locked: true; retryAfterSeconds: number }
   | { invalidCredentials: true }
   | { mustChangePassword: true }
-  | { tenantInactive: true; reason: 'suspended' | 'archived' };
+  | { tenantInactive: true; reason: 'suspended' | 'archived' | 'purged' };
 
 export interface RefreshInput {
   refreshToken: string;
@@ -48,13 +48,22 @@ export class AuthService {
   ) {}
 
   /**
-   * Enforces the tenant status gate for authentication operations. A suspended or archived hospital
-   * cannot log in, refresh, or change their initial password. Test tenants without a registry row
-   * fail open. The platform tenant is always active (getTenant returns null).
+   * Enforces the tenant status gate for authentication operations. A suspended, archived, or
+   * purged hospital cannot log in, refresh, or change their initial password. Test tenants
+   * without a registry row fail open. The platform tenant is always active (getTenant returns
+   * null).
+   *
+   * Allowlist of exactly 'active', not a denylist: unlike `TenantsService.
+   * assertValidHospitalTenant(hospitalId, ['active', 'suspended'], ...)` (billing/branding
+   * operations correctly continue during suspension, only archived/purged block them), a
+   * suspended tenant must NOT be able to log in — suspension blocking login is the whole point of
+   * the status. Rejecting everything except 'active' means a future new status value is rejected
+   * by default here too, not silently let through the way the old suspended/archived-only denylist
+   * let 'purged' through unnoticed when that status was added.
    */
-  private async checkTenantStatusGate(hospitalId: string | undefined): Promise<{ packageCode: string | null } | { tenantInactive: true; reason: 'suspended' | 'archived' }> {
+  private async checkTenantStatusGate(hospitalId: string | undefined): Promise<{ packageCode: string | null } | { tenantInactive: true; reason: 'suspended' | 'archived' | 'purged' }> {
     const tenant = hospitalId ? await this.tenantsService.getTenant(hospitalId) : null;
-    if (hospitalId && (tenant?.status === 'suspended' || tenant?.status === 'archived')) {
+    if (hospitalId && tenant && tenant.status !== 'active') {
       return { tenantInactive: true, reason: tenant.status };
     }
     return { packageCode: tenant?.packageCode ?? null };

@@ -1,4 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
+import { ObjectStorageService } from '@hospital/object-storage';
 import { AuthService } from './auth.service.js';
 import { PackagesService } from '../packages/packages.service.js';
 import { TenantsService } from '../tenants/tenants.service.js';
@@ -25,6 +26,7 @@ describe('AuthService (integration)', () => {
       ctx.tenantContext,
       packagesService,
       ctx.accountsService,
+      new ObjectStorageService(),
     );
     authService = new AuthService(
       ctx.accountsService,
@@ -330,6 +332,21 @@ describe('AuthService (integration)', () => {
         authService.login({ username: 'status.user', password: 'status-password-123' }),
       );
       expect(result).toEqual({ tenantInactive: true, reason: 'archived' });
+    });
+
+    it("blocks login for a 'purged' tenant via the status gate directly, not just the schema-access failure path", async () => {
+      // Raw status flip, schema left untouched (unlike a real purgeTenant() call) — this
+      // specifically proves checkTenantStatusGate's own 'active'-only allowlist rejects 'purged',
+      // independent of refresh()'s separate schema-access-failure catch (2.23). login() reaches
+      // this gate without ever touching the schema for a status this early, so this is the only
+      // path that exercises the gate's own handling of the status value in isolation.
+      await ctx.dataSource.query(`UPDATE tenants SET status = 'purged' WHERE "hospitalId" = $1`, [
+        ctx.tenantId,
+      ]);
+      const result = await ctx.inTenant(() =>
+        authService.login({ username: 'status.user', password: 'status-password-123' }),
+      );
+      expect(result).toEqual({ tenantInactive: true, reason: 'purged' });
     });
 
     it('blocks changeInitialPassword for a suspended tenant', async () => {

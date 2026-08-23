@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { ObjectStorageService } from '@hospital/object-storage';
 import { SubscriptionBillingService } from './subscription-billing.service.js';
 import { PackagesService } from '../packages/packages.service.js';
 import {
@@ -42,6 +43,7 @@ describe('SubscriptionBillingService (integration)', () => {
       ctx.tenantContext,
       packagesService,
       ctx.accountsService,
+      new ObjectStorageService(),
     );
     service = new SubscriptionBillingService(ctx.dataSource, tenantsService);
     await cleanup();
@@ -135,6 +137,19 @@ describe('SubscriptionBillingService (integration)', () => {
 
     await expect(service.issueInvoice(archivedId)).rejects.toThrow(/must have status active, suspended/);
     await expect(service.cancelSubscription(archivedId)).rejects.toThrow(/must have status active, suspended/);
+
+    // markInvoicePaid: create an open invoice directly (issueInvoice itself is already blocked
+    // above), then confirm marking it paid is blocked too — this is the renewal mechanism, not a
+    // read, so it must not be reachable for an archived (or purged) tenant.
+    const [archivedInvoice] = await ctx.dataSource.query(
+      `INSERT INTO subscription_invoices ("subscriptionId", "tenantId", "periodStart", "periodEnd", amount, status)
+       SELECT id, "tenantId", "currentPeriodStart", "currentPeriodEnd", "pricePerCycle", 'open'
+       FROM subscriptions WHERE "tenantId" = $1 RETURNING id`,
+      [archivedId],
+    );
+    await expect(service.markInvoicePaid(archivedInvoice.id)).rejects.toThrow(
+      /must have status active, suspended/,
+    );
   });
 
   it('2.21: rejects an unrecognized billingCycle at the service layer instead of persisting a corrupted row', async () => {

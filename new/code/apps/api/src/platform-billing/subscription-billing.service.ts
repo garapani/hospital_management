@@ -174,6 +174,13 @@ export class SubscriptionBillingService {
         return invoice;
       }
 
+      // markInvoicePaid is the renewal mechanism (it advances the subscription's period below) —
+      // unlike getSubscription/listInvoices (read-only, correctly ungated), this mutates state and
+      // must not be reachable for a tenant that shouldn't be billed. purgeTenant deliberately
+      // preserves subscriptions/subscription_invoices (2.20), so without this guard a purged
+      // tenant's still-open invoice could be marked paid and its subscription silently renewed.
+      await this.tenantsService.assertValidHospitalTenant(invoice.tenantId, ['active', 'suspended'], 'be billed');
+
       // Also take the tenant-scoped lock subscribe/cancelSubscription/issueInvoice use. This
       // method reads-then-writes the Subscription row (below) via a full-entity save(), same as
       // those methods — without this lock, a concurrent cancelSubscription could commit between

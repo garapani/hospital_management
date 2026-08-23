@@ -1,7 +1,9 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ObjectStorageService } from '@hospital/object-storage';
 import { TenantsService } from './tenants.service.js';
 import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
 import { PackagesService } from '../packages/packages.service.js';
+import { TenantBranding } from '../platform-branding/entities/tenant-branding.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -38,6 +40,7 @@ describe('TenantsService (integration)', () => {
       ctx.tenantContext,
       new PackagesService(ctx.dataSource),
       ctx.accountsService,
+      new ObjectStorageService(),
     );
   }, 120000);
 
@@ -283,6 +286,34 @@ describe('TenantsService (integration)', () => {
         [subscriptionId],
       );
       expect(survivingSubscription.tenantId).toBe(hospitalId);
+    });
+
+    it('soft-removes the tenant_branding row so a purged tenant stops appearing in public branding lookups', async () => {
+      const hospitalId = 'test_tenant_svc_purge_branding';
+      await tenantsService.provisionTenant({ hospitalId, hospitalName: 'Purge Branding Hospital' });
+      await tenantsService.archiveTenant(hospitalId);
+
+      await ctx.dataSource.query(
+        `INSERT INTO tenant_branding ("tenantId", "displayName", "logoObjectKey")
+         VALUES ($1, 'Purge Branding Test', 'branding/logo.png')`,
+        [hospitalId],
+      );
+
+      await tenantsService.purgeTenant(hospitalId, hospitalId);
+
+      // TenantBranding extends SoftDeletableEntity, so this only sets deletedAt — TypeORM's
+      // default find()/findOne() (no withDeleted) already excludes it, which is exactly what
+      // PlatformBrandingService.getPublicBranding relies on. Asserted directly against the
+      // repository here (not via PlatformBrandingService, which this spec doesn't wire up) to
+      // prove the row is genuinely excluded from a normal query, not just marked in some other way.
+      const found = await ctx.dataSource.getRepository(TenantBranding).findOne({ where: { tenantId: hospitalId } });
+      expect(found).toBeNull();
+
+      const [rawRow] = await ctx.dataSource.query(
+        `SELECT "deletedAt" FROM tenant_branding WHERE "tenantId" = $1`,
+        [hospitalId],
+      );
+      expect(rawRow.deletedAt).not.toBeNull();
     });
 
     it('a failure partway through the drop leaves the registry row intact, blocking hospitalId reuse', async () => {

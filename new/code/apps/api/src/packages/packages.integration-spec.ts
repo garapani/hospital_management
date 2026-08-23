@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { JwtService } from '@nestjs/jwt';
 import { AuthContextMiddleware } from '@hospital/auth-guards';
+import { ObjectStorageService } from '@hospital/object-storage';
 import { DataSource } from 'typeorm';
 import { DatabaseModule } from '../database/database.module.js';
 import { PackagesModule } from './packages.module.js';
@@ -65,6 +66,7 @@ describe('SaaS packages (integration)', () => {
       ctx.tenantContext,
       packagesService,
       ctx.accountsService,
+      new ObjectStorageService(),
     );
 
     platformToken = await signTestToken({
