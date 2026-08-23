@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../app/app.module.js';
+import { createApiValidationPipe } from './api-validation-pipe.js';
 import { setupTenantTestContext, teardownTenantTestContext, TenantTestContext } from '../testing/tenant-test-context.js';
 
 describe('Metrics endpoint (integration)', () => {
@@ -14,6 +15,7 @@ describe('Metrics endpoint (integration)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(createApiValidationPipe());
     await app.init();
 
     ctx = await setupTenantTestContext({ namePrefix: 'metrics' });

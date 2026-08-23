@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from './app.module.js';
+import { createApiValidationPipe } from './api-validation-pipe.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -97,6 +98,7 @@ describe('MVP end-to-end workflow (integration)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(createApiValidationPipe());
     await app.init();
   });
 

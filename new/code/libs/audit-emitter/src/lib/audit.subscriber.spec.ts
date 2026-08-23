@@ -35,7 +35,7 @@ describe('AuditSubscriber', () => {
       passwordHash: 'h',
     });
     const event = {
-      metadata: { tableName: 'account' },
+      metadata: { tableName: 'account', primaryColumns: [{ propertyName: 'id' }] },
       entity,
     } as unknown as InsertEvent<Record<string, unknown>>;
 
@@ -71,7 +71,7 @@ describe('AuditSubscriber', () => {
       passwordHash: 'new',
     });
     const event = {
-      metadata: { tableName: 'account' },
+      metadata: { tableName: 'account', primaryColumns: [{ propertyName: 'id' }] },
       entity,
       databaseEntity,
     } as unknown as UpdateEvent<Record<string, unknown>>;
@@ -101,7 +101,7 @@ describe('AuditSubscriber', () => {
       passwordHash: 'new',
     });
     const event = {
-      metadata: { tableName: 'account' },
+      metadata: { tableName: 'account', primaryColumns: [{ propertyName: 'id' }] },
       entity,
       databaseEntity,
     } as unknown as UpdateEvent<Record<string, unknown>>;
@@ -122,16 +122,16 @@ describe('AuditSubscriber', () => {
     const entity = { id: '1', username: 'alice2', passwordHash: 'new' };
 
     const insertEvent = {
-      metadata: { tableName: 'account' },
+      metadata: { tableName: 'account', primaryColumns: [{ propertyName: 'id' }] },
       entity,
     } as unknown as InsertEvent<Record<string, unknown>>;
     const updateEvent = {
-      metadata: { tableName: 'account' },
+      metadata: { tableName: 'account', primaryColumns: [{ propertyName: 'id' }] },
       entity,
       databaseEntity,
     } as unknown as UpdateEvent<Record<string, unknown>>;
     const removeEvent = {
-      metadata: { tableName: 'account' },
+      metadata: { tableName: 'account', primaryColumns: [{ propertyName: 'id' }] },
       databaseEntity,
     } as unknown as RemoveEvent<Record<string, unknown>>;
 
@@ -158,7 +158,7 @@ describe('AuditSubscriber', () => {
       passwordHash: 'h',
     });
     const event = {
-      metadata: { tableName: 'account' },
+      metadata: { tableName: 'account', primaryColumns: [{ propertyName: 'id' }] },
       databaseEntity,
     } as unknown as RemoveEvent<Record<string, unknown>>;
 
@@ -174,6 +174,30 @@ describe('AuditSubscriber', () => {
     ]);
   });
 
+  it('resolves recordId from the entity\'s real primary key column, not a hardcoded "id" (e.g. Tenant.hospitalId)', async () => {
+    class Tenant {
+      hospitalId!: string;
+      hospitalName!: string;
+    }
+    const { subscriber, tenantContext, published } = buildSubscriber();
+    const entity = Object.assign(new Tenant(), {
+      hospitalId: 'acme',
+      hospitalName: 'Acme General',
+    });
+    const event = {
+      metadata: { tableName: 'tenants', primaryColumns: [{ propertyName: 'hospitalId' }] },
+      entity,
+    } as unknown as InsertEvent<Record<string, unknown>>;
+
+    await tenantContext.run({ tenantId: '__platform', correlationId: 'corr-7' }, () =>
+      subscriber.afterInsert(event),
+    );
+
+    expect(published).toEqual([
+      expect.objectContaining({ tableName: 'tenants', recordId: 'acme' }),
+    ]);
+  });
+
   it('passes the active EntityManager through to the publisher so it can reuse the same connection', async () => {
     const publishedManagers: unknown[] = [];
     const publisher: AuditEventPublisher = {
@@ -186,7 +210,7 @@ describe('AuditSubscriber', () => {
     const fakeManager = { fake: 'manager' } as unknown as EntityManager;
     const entity = Object.assign(new Account(), { id: '1', username: 'alice', passwordHash: 'h' });
     const event = {
-      metadata: { tableName: 'account' },
+      metadata: { tableName: 'account', primaryColumns: [{ propertyName: 'id' }] },
       entity,
       manager: fakeManager,
     } as unknown as InsertEvent<Record<string, unknown>>;

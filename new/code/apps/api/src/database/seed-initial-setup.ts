@@ -9,7 +9,7 @@ import { TenantConnectionService } from './tenant-connection.service.js';
 import { TenantProvisioningService } from './tenant-provisioning.service.js';
 import { resolvePlatformTenantId } from '../tenants/platform-tenant.js';
 
-interface SeededAdminConfig {
+export interface SeededAdminConfig {
   tenantId: string;
   hospitalName: string;
   username: string;
@@ -42,8 +42,10 @@ function getPlatformAdminConfig(): SeededAdminConfig {
   };
 }
 
-/** The demo hospital's own administrator — a tenant user, deliberately NOT a Super Admin. */
-function getDemoHospitalAdminConfig(): SeededAdminConfig {
+/** The demo hospital's own administrator — a tenant user, deliberately NOT a Super Admin. Also
+ *  the single source of truth for the demo tenant's own identity (id/name/package) — seed-demo-
+ *  data.ts imports this rather than hardcoding its own copy, so the two seeders can't diverge. */
+export function getDemoHospitalAdminConfig(): SeededAdminConfig {
   return {
     tenantId: process.env['MASTER_ADMIN_TENANT_ID'] ?? 'demo',
     hospitalName: process.env['MASTER_ADMIN_TENANT_NAME'] ?? 'Demo Hospital',

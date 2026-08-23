@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { API_GLOBAL_PREFIX } from '@hospital/tenant-context';
 import { AppModule } from './app/app.module.js';
 import { createApiValidationPipe } from './app/api-validation-pipe.js';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -36,7 +37,9 @@ async function bootstrap() {
   // no ValidationPipe was ever registered) and coerces typed-but-undecorated fields (e.g.
   // PaginationQueryDto's page/limit) via reflected design:type metadata.
   app.useGlobalPipes(createApiValidationPipe());
-  const globalPrefix = 'api';
+  // Shared with unauthenticated-routes.ts's fallback matchers (@hospital/tenant-context) so they
+  // can't silently drift out of sync with whatever this is actually set to.
+  const globalPrefix = API_GLOBAL_PREFIX;
   app.setGlobalPrefix(globalPrefix);
 
   const config = new DocumentBuilder()

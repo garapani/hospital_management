@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { DataSource, EntityManager } from 'typeorm';
 import { TenantContextService } from '@hospital/tenant-context';
 import { AppModule } from '../app/app.module.js';
+import { getDemoHospitalAdminConfig } from './seed-initial-setup.js';
 import { TenantProvisioningService } from './tenant-provisioning.service.js';
 import { TenantConnectionService } from './tenant-connection.service.js';
 import { SubscriptionBillingService } from '../platform-billing/subscription-billing.service.js';
@@ -29,9 +30,6 @@ import { PLATFORM_TENANT_ID } from '../tenants/platform-tenant.js';
 
 const logger = new Logger('SeedDemoData');
 
-function demoId(): string {
-  return process.env['MASTER_ADMIN_TENANT_ID'] ?? 'demo';
-}
 
 /**
  * Seeds realistic demo data for the demo hospital so the MVP launch/demo isn't an empty shell:
@@ -63,7 +61,8 @@ export function demoStaffPassword(): string {
 }
 
 export async function seedDemoData(): Promise<void> {
-  const tenantId = demoId();
+  const demoConfig = getDemoHospitalAdminConfig();
+  const tenantId = demoConfig.tenantId;
   if (tenantId === PLATFORM_TENANT_ID) {
     throw new Error('Demo seeding is not allowed against the platform tenant');
   }
@@ -104,13 +103,20 @@ export async function seedDemoData(): Promise<void> {
         // --- SaaS Subscription & Invoice -----------------------------------------------------------
         const dataSource = app.get(DataSource);
         const tenantRepo = dataSource.getRepository(Tenant);
+        // hospitalName/packageCode come from the same getDemoHospitalAdminConfig() seed-initial-
+        // setup.ts uses — this seeder previously hardcoded its own divergent copy ('Demo
+        // Hospital'/'basic' vs the canonical 'enterprise'), and since a tenant registry row is
+        // never reconciled once it exists (only created if absent), running this seeder before
+        // seed-initial-setup on a fresh environment permanently pinned the demo tenant to Basic,
+        // silently hiding the Lab/Radiology/Inventory data this very seeder creates behind
+        // PackagesService.filterPermissions's module gating.
         let demoTenant = await tenantRepo.findOne({ where: { hospitalId: tenantId } });
         if (!demoTenant) {
           demoTenant = tenantRepo.create({
             hospitalId: tenantId,
-            hospitalName: 'Demo Hospital',
+            hospitalName: demoConfig.hospitalName,
             status: 'active',
-            packageCode: 'basic',
+            packageCode: demoConfig.packageCode,
             activatedAt: new Date(),
           });
           await tenantRepo.save(demoTenant);
