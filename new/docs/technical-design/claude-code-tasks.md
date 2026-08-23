@@ -150,7 +150,7 @@ git commit -m "feat(staff-console): global catalog edit + deactivate/reactivate"
 
 **Verify:** `git status` clean; spec still green (`--testPathPatterns="global-catalog"`).
 
-### 1.4 Docs + dev-server refresh
+### 1.4 Docs + dev-server refresh (done)
 **Context:** after 1.2, the running dev server (`nx serve api`, background job) predates the
 billing module — **restart it** so live verification hits the new routes. Also finish the
 docs pipeline for the billing feature: add `Development-Standards.md` §48 (platform
@@ -163,6 +163,15 @@ per period) and check off the new item in `pending-tasks.md` (Phase 5).
 audit picture shifts.
 
 **Test:** `curl -s localhost:3000/platform/billing/subscriptions -H "Authorization: Bearer <superadmin-token>"` returns JSON, not 404.
+
+**Done (2026-08-22):** §48 and the `pending-tasks.md` checkbox were already in place from
+earlier work. The only outstanding piece was operational: the background `nx serve api` job
+(PID 64879) predated this session's changes, so it was killed along with a stale parent
+wrapper process (PID 64770) blocking a clean restart, and a fresh instance started (PID
+80937). Verified against the stated test: logged in as `superadmin` and called
+`GET /api/platform/billing/subscriptions` with the bearer token — HTTP 200 with valid JSON,
+not 404. `mvp-status.md`'s audit picture is unchanged by this item (no code change), so no
+update needed there.
 
 ---
 
