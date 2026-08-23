@@ -979,13 +979,8 @@ raises the priority of the consolidation above whenever this item is next picked
 ## 4. Improvements (low-risk, opportunistic)
 
 ### 4.1 Seed-demo-data: add a subscription for the demo tenant
-**Context:** `nx run api:seed-demo-data` seeds patients/invoice/employees/payslips but the
-demo tenant has no subscription — the new Billing panel shows nothing to demo.
-**What to do:** in `database/seed-demo-data.ts`, subscribe `demo` (basic, monthly) and
-issue one open invoice, idempotent like the rest of the seeder.
-**Verify:** `nx run api:seed-demo-data` twice; Billing panel shows a subscription + one
-open invoice on the second run without duplicates.
-**Test:** `cd new/code && CI=true pnpm exec nx run api:seed-demo-data`.
+
+**Status: done.** In `database/seed-demo-data.ts`, provisions basic monthly subscription & issues one open invoice for demo tenant if not already present.
 
 ### 4.2 Notifications shell wiring (do 2.6 first)
 **Status: done** — found already built while picking up 2.6 (2026-08-22). `shell-chrome.ts`'s
