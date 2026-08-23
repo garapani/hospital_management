@@ -8,7 +8,6 @@ import { DataSource, EntityManager } from 'typeorm';
 import { Subscription, BillingCycle } from './entities/subscription.entity.js';
 import { SubscriptionInvoice } from './entities/subscription-invoice.entity.js';
 import { PACKAGE_CATALOG } from '../packages/package-catalog.js';
-import { PackagesService } from '../packages/packages.service.js';
 import { TenantsService } from '../tenants/tenants.service.js';
 
 const CYCLE_MS: Record<BillingCycle, number> = {
@@ -22,7 +21,6 @@ const VALID_BILLING_CYCLES = new Set<BillingCycle>(['monthly', 'annual']);
 export class SubscriptionBillingService {
   constructor(
     private readonly dataSource: DataSource,
-    private readonly packagesService: PackagesService,
     private readonly tenantsService: TenantsService,
   ) {}
 

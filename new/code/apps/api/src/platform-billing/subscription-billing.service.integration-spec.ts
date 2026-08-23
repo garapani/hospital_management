@@ -43,7 +43,7 @@ describe('SubscriptionBillingService (integration)', () => {
       packagesService,
       ctx.accountsService,
     );
-    service = new SubscriptionBillingService(ctx.dataSource, packagesService, tenantsService);
+    service = new SubscriptionBillingService(ctx.dataSource, tenantsService);
     await cleanup();
   });
 

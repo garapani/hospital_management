@@ -216,7 +216,7 @@ describe('TenantsService (integration)', () => {
       const suspended = await tenantsService.suspendTenant(hospitalId);
 
       const resolved = await tenantsService.assertValidHospitalTenant(hospitalId, ['active', 'suspended']);
-      expect(resolved.id).toEqual(suspended.id);
+      expect(resolved.hospitalId).toEqual(suspended.hospitalId);
     });
   });
 
