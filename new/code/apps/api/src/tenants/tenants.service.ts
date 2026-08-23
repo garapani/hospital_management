@@ -578,10 +578,9 @@ export class TenantsService {
     await this.dataSource.transaction(async (manager) => {
       await manager.query(`DROP SCHEMA IF EXISTS "${tenantName}" CASCADE`);
       await manager.query(`DROP ROLE IF EXISTS "${tenantName}"`);
-      await manager.getRepository(Tenant).update(
-        { hospitalId },
-        { status: 'purged', purgedAt: new Date() }
-      );
+      tenant.status = 'purged';
+      tenant.purgedAt = new Date();
+      await manager.getRepository(Tenant).save(tenant);
       // Soft-remove (not hard-delete): TenantBranding extends SoftDeletableEntity, so this only
       // sets deletedAt — TypeORM's default find()/findOne() already excludes soft-deleted rows,
       // so PlatformBrandingService.getPublicBranding needs zero changes to stop serving a purged
