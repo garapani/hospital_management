@@ -114,21 +114,22 @@ export class ReportingQueryService {
     });
   }
 
+  private mapEventToExportRow(e: ReportingEvent) {
+    return {
+      id: e.id,
+      occurredAt: e.occurredAt.toISOString(),
+      eventType: e.eventType,
+      entityId: e.entityId,
+      correlationId: e.correlationId ?? '',
+      payload: JSON.stringify(e.payload),
+    };
+  }
+
   /** Whole-set CSV export (capped at 10000 rows) of the events archive matching the filters. */
   async exportEventsCsv(params: ListEventsParams): Promise<string> {
     const { items } = await this.listEvents({ ...params, page: 1, limit: 10000 });
     const columns = ['id', 'occurredAt', 'eventType', 'entityId', 'correlationId', 'payload'];
-    return toCsv(
-      items.map((e) => ({
-        id: e.id,
-        occurredAt: e.occurredAt.toISOString(),
-        eventType: e.eventType,
-        entityId: e.entityId,
-        correlationId: e.correlationId ?? '',
-        payload: JSON.stringify(e.payload),
-      })),
-      columns,
-    );
+    return toCsv(items.map((e) => this.mapEventToExportRow(e)), columns);
   }
 
   /** CSV export of the daily revenue aggregates. */
@@ -137,20 +138,13 @@ export class ReportingQueryService {
     return toCsv(rows.map((r) => ({ date: r.date, totalAmount: r.totalAmount })), ['date', 'totalAmount']);
   }
 
-  /** Whole-set PDF export (same 10000-row cap as the CSV sibling) of the events archive matching
+  /** Whole-set PDF export (capped at 500 rows to prevent event-loop blocking) of the events archive matching
    *  the filters, via the shared `@hospital/pdf` lib. */
   async exportEventsPdf(params: ListEventsParams): Promise<Buffer> {
-    const { items } = await this.listEvents({ ...params, page: 1, limit: 10000 });
+    const { items } = await this.listEvents({ ...params, page: 1, limit: 500 });
     return this.pdfService.render(
       buildReportingEventsPdfDocument({
-        rows: items.map((e) => ({
-          id: e.id,
-          occurredAt: e.occurredAt.toISOString(),
-          eventType: e.eventType,
-          entityId: e.entityId,
-          correlationId: e.correlationId ?? '',
-          payload: JSON.stringify(e.payload),
-        })),
+        rows: items.map((e) => this.mapEventToExportRow(e)),
         eventType: params.eventType,
         from: params.from,
         to: params.to,
