@@ -1,10 +1,12 @@
 import { INestApplicationContext, Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { EntityManager } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { TenantContextService } from '@hospital/tenant-context';
 import { AppModule } from '../app/app.module.js';
 import { TenantProvisioningService } from './tenant-provisioning.service.js';
 import { TenantConnectionService } from './tenant-connection.service.js';
+import { SubscriptionBillingService } from '../platform-billing/subscription-billing.service.js';
+import { Tenant } from '../tenants/entities/tenant.entity.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { AppointmentsService } from '../appointments/appointments.service.js';
@@ -97,6 +99,29 @@ export async function seedDemoData(): Promise<void> {
             needsPasswordUpdate: false,
           });
           logger.log(`✓ Created demo staff account: ${staff.username} (${staff.roleName})`);
+        }
+
+        // --- SaaS Subscription & Invoice -----------------------------------------------------------
+        const dataSource = app.get(DataSource);
+        const tenantRepo = dataSource.getRepository(Tenant);
+        let demoTenant = await tenantRepo.findOne({ where: { hospitalId: tenantId } });
+        if (!demoTenant) {
+          demoTenant = tenantRepo.create({
+            hospitalId: tenantId,
+            hospitalName: 'Demo Hospital',
+            status: 'active',
+            packageCode: 'basic',
+            activatedAt: new Date(),
+          });
+          await tenantRepo.save(demoTenant);
+        }
+
+        const billing = app.get(SubscriptionBillingService);
+        const existingSub = await billing.getSubscription(tenantId);
+        if (!existingSub) {
+          await billing.subscribe(tenantId, 'monthly');
+          await billing.issueInvoice(tenantId);
+          logger.log(`✓ Seeded SaaS subscription & open invoice for tenant: ${tenantId}`);
         }
 
         // Count must run inside the tenant schema — a bare repository count() queries the
