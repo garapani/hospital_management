@@ -2373,3 +2373,72 @@ list of "sometimes this suite fails" if nobody's traced the exact cause yet. Wor
 before triaging a whole suite as "contention-flaky": check whether the specific failing assertion
 is timing-shaped (a timeout, a race) or state-shaped (an already-exists conflict, a row that should
 have been absent) — only the former is what parallel-load mitigation actually fixes.
+
+## 60. Reviewing an already-merged commit batch: what a fast pass over new code tends to miss (2026-08-23)
+
+A ~25-commit batch (`96d01bd..458b175`) landed this session covering 2.23/2.28/3.2-3.7/4.1 and
+several `/code-review high`-driven fixes, faster than it could be reviewed inline. A dedicated
+review pass afterward — two parallel finder agents plus a manual pass over `tenants.service.ts`/
+`auth.service.ts` — surfaced 9 genuine findings across money-handling, deploy safety, and
+observability, none caught by the tests that shipped alongside the original changes. What they had
+in common:
+
+**A guard added in 3 of 4 call sites, not audited against the full set.** `subscription-billing.
+service.ts`'s `subscribe`/`cancelSubscription`/`issueInvoice` all gained an `assertValidHospitalTenant`
+call in the same commit — `markInvoicePaid` didn't, despite mutating state (advancing the
+subscription's period) just as much as the other three. The test written alongside the change
+enumerated the guarded methods and happened to omit the same one. **Lesson: when adding a guard to
+"every mutating method in this service," grep the class for every public method first and check
+each one off, rather than trusting memory of which ones matter.**
+
+**A "safety upgrade" changed observable behavior without anyone checking the new behavior against
+the old.** `withAdvisoryLock`'s 2-arg form was intended to reduce hash-collision risk, but Postgres
+treats `pg_advisory_xact_lock(bigint)` and `pg_advisory_xact_lock(int,int)` as two entirely separate
+lock spaces — a hash collision was never a correctness risk (it just serializes two unrelated
+resources, never causes a missing lock), but the "upgrade" introduced a real one: an old-code and
+new-code instance running concurrently (a rolling deploy, exactly the scenario `Deployment-Guide.md`
+describes) would silently stop mutually excluding each other. **Lesson: verify a refactor framed as
+"strictly safer" against the actual documented semantics of what it's built on (here, Postgres's own
+docs on advisory-lock argument forms), not just against the tests that happen to already exist —
+tests written to prove the OLD behavior worked don't prove the NEW behavior is equivalent.**
+
+**A tombstone/status-model change (`Tenant.status` gained `'purged'`) wasn't propagated to every
+place that read the old two-value denylist.** `platform-billing`/`platform-branding` were updated in
+the same batch to the new allowlist pattern (`assertValidHospitalTenant(hospitalId, ['active',
+'suspended'], ...)`), which rejects `'purged'` by construction. `AuthService.checkTenantStatusGate`
+(written earlier, not touched by the status-model change) kept its old `status === 'suspended' ||
+status === 'archived'` denylist, which silently let `'purged'` through — not a live bug today (an
+unrelated schema-access failure happens to also catch it for `refresh()`), but exactly the kind of
+gap that becomes live the next time someone adds a new auth code path. **Lesson: when a status/enum
+gains a new value, grep for every existing denylist-shaped check against the old values, not just
+the call sites the current task happens to touch — an allowlist of "what's still OK" doesn't need
+this audit; a denylist of "what's now blocked" always does.**
+
+**A destructive/lifecycle operation (`purgeTenant`) was updated for its own primary table but not
+for every platform-schema table representing that tenant's footprint.** The tombstone refactor
+correctly handles `tenants`/`subscriptions`/`subscription_invoices`, but `tenant_branding` — a
+separate platform-schema table with no FK relationship enforcing cleanup — was never touched, so a
+purged tenant's display name and logo stayed servable via the unauthenticated `/branding` endpoint
+indefinitely. **Lesson: for any operation whose job is "destroy/lock down everything associated with
+X," grep for every table with a `tenantId`/`hospitalId` column, not just the ones the current task's
+own tests exercise.**
+
+**A "row cap" fix was verified against the wrong dimension of the actual risk.** 2.26's fix lowered
+the PDF export's row limit 10000→500 and was marked done — but the actual DoS-shaped cost (pdfmake's
+synchronous layout pass on an unbounded, attacker-controlled `correlationId`/`payload` string in an
+`auto`-width cell) scales with *bytes per cell*, not row count; the row cap barely moved the ceiling.
+**Lesson: when a finding describes a specific mechanism ("an unbroken multi-KB string in a
+layout-engine cell"), verify the fix addresses that mechanism specifically — a plausible-sounding
+adjacent fix (row count) can look complete without being complete.**
+
+**A defensive fallback (`?.`/`?? default`) was added without confirming the branch it guards is
+actually reachable — and the fallback's default silently reintroduced a bug the surrounding code was
+written to prevent.** `audit.subscriber.ts` added `event.metadata?.primaryColumns?.map(...) ?? ['id']`
+to "handle undefined primaryColumns," but TypeORM types `event.metadata` as non-optional and the real
+integration spec proves it's always populated — the only thing actually exercising the fallback was
+stale test doubles missing the field. The `['id']` default directly contradicted the comment three
+lines below it explaining why the code resolves the *real* primary key instead of assuming `'id'`.
+**Lesson: a defensive fallback for a condition the type system says can't happen is either dead code
+or evidence of a bug being papered over — trace whether the condition is actually reachable before
+keeping the fallback; if a test needs it, fix the test's fixture instead of loosening the production
+code's contract.**

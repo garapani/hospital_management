@@ -1019,6 +1019,56 @@ registry row).
 
 ---
 
+### 3.9 Code review of the 2.23/2.28/3.2-3.7/4.1 commit batch (done)
+
+**Status: done.** The ~25-commit batch that landed 2.23/2.28/3.2-3.7/4.1 this session (tombstone-
+purge refactor, allowlist-based tenant-status guards, advisory-lock consolidation, route-fallback
+consolidation, DTO validation sweep, PDF export row cap) was reviewed after the fact — two parallel
+finder agents plus a manual pass over `tenants.service.ts`/`auth.service.ts` — and every finding
+fixed:
+
+- `markInvoicePaid` had no tenant-status guard (the only mutating billing method missing one) —
+  fixed.
+- `withAdvisoryLock`'s 2-arg form silently moved every lock into a different Postgres lock space
+  than the old 1-arg form, breaking mutual exclusion across a rolling deploy — reverted to 1-arg,
+  added a transaction-active assertion.
+- `AuthService.checkTenantStatusGate` denylisted only suspended/archived, missing the newer
+  `'purged'` status — switched to an `'active'`-only allowlist.
+- `purgeTenant` never touched `tenant_branding` — a purged tenant's display name/logo stayed
+  publicly servable forever — now soft-removed + logo best-effort removed from storage.
+- 2.26 (reporting PDF DoS) was marked done but the row cap alone didn't address the actual
+  mechanism (unbounded `correlationId`/`payload` in a layout-engine cell) — now truncated, with a
+  "showing N of M" notice.
+- `unauthenticated-routes.ts`'s per-entry hand-authored `matchFallback` reintroduced the same
+  drift risk 3.7 existed to eliminate, and had zero test coverage — now derived mechanically from
+  `path` against a shared `API_GLOBAL_PREFIX` constant (`main.ts` imports the same constant
+  instead of a separately-hardcoded literal), with dedicated tests including the exact collision
+  case.
+- `audit.subscriber.ts`'s `?? ['id']` fallback for `event.metadata`/`primaryColumns` had no real
+  runtime path (TypeORM types it non-optional; the real integration spec proves it) and silently
+  contradicted the comment explaining why it resolves the real primary key instead of assuming
+  `'id'` — removed; fixed the stale test doubles that were the only thing exercising it.
+- `seed-demo-data.ts` hardcoded a divergent tenant config (`'basic'`/`'Demo Hospital'`) from
+  `seed-initial-setup.ts`'s canonical `getDemoHospitalAdminConfig()` (`'enterprise'`) — now reuses
+  the shared config.
+- 2.24's global-`ValidationPipe` sweep missed 2 of its 13 target specs
+  (`metrics.integration-spec.ts`, `mvp-workflow.integration-spec.ts`, the latter the highest-value
+  one) — wired.
+
+**Deliberately not fixed:** migration `0056-add-tenant-purged.ts` uses bare `ADD COLUMN`/`DROP
+COLUMN` instead of the `IF NOT EXISTS`/`IF EXISTS` guard its sibling (`0050-add-tenant-archive.ts`)
+uses — a low-severity edge case (only bites if the column was somehow already added out-of-band).
+Already committed and applied; per this repo's convention, an applied migration isn't edited in
+place, and a whole new migration purely to add a defensive `IF NOT EXISTS` redundantly isn't worth
+the overhead for this severity. Left as a known gap rather than fixed.
+
+**Verify:** typecheck clean; full backend suite 721/723 passing (the 2 non-passing are the
+already-tracked 3.8 gap and its own skip, both pre-existing and unrelated).
+**Test:** `cd new/code && CI=true pnpm exec nx run api:test`. Full detail: `Development-Standards.md`
+§60.
+
+---
+
 ## 4. Improvements (low-risk, opportunistic)
 
 ### 4.1 Seed-demo-data: add a subscription for the demo tenant
