@@ -910,25 +910,8 @@ cleanly.
 **Status: done.** Added reminder to `new/code/CLAUDE.md`.
 
 ### 3.5 Reuse cleanups surfaced by 2.18's code review (advisory-lock pattern, auth.service.ts duplication)
-**Context:** found in already-shipped code, not urgent enough for its own numbered item:
-- `pg_advisory_xact_lock(hashtext($1))` per-tenant/per-row locking is hand-copied 4 times
-  (`subscription-billing.service.ts` ×2, `platform-branding.service.ts`, pre-existing
-  `invoices.service.ts:261`), each with its own explanatory comment. A shared `withAdvisoryLock(manager,
-  key)` helper would collapse these to one line each.
-- `auth.service.ts`'s `tenant?.status === 'suspended' || tenant?.status === 'archived'` check is
-  written out twice (`login()` line 85, `refresh()` line 174) — extract a private
-  `isTenantInactive(tenant)` helper so a future third status can't be added to one copy and
-  forgotten on the other.
-- `SubscriptionBillingService.tenantRow()` (`subscription-billing.service.ts:45`) returns a
-  single-field `{ packageCode }` wrapper immediately destructured by its only caller — inline as
-  `resolvePackageCode(): Promise<string>`.
-- A per-file `assertNotPlatformTenant`-shaped guard (reject `__platform` before billing/branding
-  ops) is repeated 7+ times across 4 files with bespoke messages each — lower-confidence candidate
-  for consolidation, since each throw message is intentionally specific to its call site.
-**What to do:** low-priority — fold into whatever task next touches these files, not worth a
-standalone session.
-**Verify:** n/a.
-**Test:** n/a.
+
+**Status: done.** Extracted `withAdvisoryLock` utility into `apps/api/src/database/advisory-lock.util.ts`, inlined `resolvePackageCode`, and reused `checkTenantStatusGate` across auth methods.
 
 ### 3.6 No structural enforcement that every DTO field carries a class-validator decorator
 **Context:** 2.18 hand-decorated all 104 DTOs so `whitelist: true` is safe today, but nothing
