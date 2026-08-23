@@ -393,8 +393,9 @@ cd frontend && CI=true pnpm exec nx run staff-console:test -- --testPathPatterns
 cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="payroll"
 ```
 
-### 2.14 No `ValidationPipe` registered anywhere — `class-validator` decorators on ~9 DTOs are dead code
-**Status: Phase A done** (commits `e2e5e66` spec, `ecf3dcc` implementation). Split into two phases
+### 2.14 No `ValidationPipe` registered anywhere — `class-validator` decorators on ~9 DTOs are dead code (done)
+**Status: Phase A done** (commits `e2e5e66` spec, `ecf3dcc` implementation), **Phase B (2.18) also
+done — this item is fully complete.** Split into two phases
 during design — see `new/docs/superpowers/specs/2026-08-22-global-validation-pipe-design.md`: a
 re-audit found only 9 of 104 DTOs carry any `class-validator` decorator, and `whitelist: true`
 strips any field with zero decorators, so enabling it now would have silently emptied the other 95
@@ -433,7 +434,7 @@ this change is app-wide by nature).
 
 ---
 
-### 2.15 Archived/suspended tenants can still be billed and re-branded via platform-admin routes
+### 2.15 Archived/suspended tenants can still be billed and re-branded via platform-admin routes (done)
 
 **Context:** Found during the 2.12 (per-tenant branding) code review. Neither
 `SubscriptionBillingService`'s `tenantRow` lookup nor `PlatformBrandingService`'s
@@ -450,9 +451,15 @@ or is explicitly allowed with a documented reason — not silently permitted by 
 **Test:** extend the existing `subscription-billing.integration-spec.ts` and
 `platform-branding.integration-spec.ts` with an archived-tenant case each.
 
+**Done (Antigravity, verified 2026-08-23):** both services now call `TenantsService.
+assertValidHospitalTenant(hospitalId, ['active', 'suspended'], ...)` — archived tenants 400, active
+and suspended both proceed. Verified via `subscription-billing.service.integration-spec.ts`'s
+"rejects operations on archived tenants but allows them on suspended tenants" test and the
+analogous `platform-branding.integration-spec.ts` case.
+
 ---
 
-### 2.16 `AuthService.changeInitialPassword` bypasses the tenant-status gate that `login`/`refresh` already enforce
+### 2.16 `AuthService.changeInitialPassword` bypasses the tenant-status gate that `login`/`refresh` already enforce (done)
 
 **Context:** Found during the 2.12 code review. `login` and `refresh` (in
 `new/code/apps/api/src/auth/auth.service.ts`) both check tenant status before issuing tokens;
@@ -466,9 +473,14 @@ rejected the same way `login` would reject it.
 **Test:** extend the existing auth integration spec covering `changeInitialPassword` with a
 suspended-tenant case, mirroring the existing `login` suspended-tenant test.
 
+**Done (Antigravity, verified 2026-08-23):** `changeInitialPassword` now calls the shared
+`checkTenantStatusGate` helper before issuing anything, same as `login`/`refresh`. Verified via
+`auth.service.integration-spec.ts`'s "blocks changeInitialPassword for a suspended tenant" and
+"...for an archived tenant" tests.
+
 ---
 
-### 2.17 Three independent "assert real, non-platform tenant" guards should consolidate
+### 2.17 Three independent "assert real, non-platform tenant" guards should consolidate (done)
 
 **Context:** Found during the 2.12 code review. `TenantsService.loadMutableTenant`,
 `SubscriptionBillingService`'s `tenantRow`, and `PlatformBrandingService.assertBrandableTenant` each
@@ -481,6 +493,11 @@ what status check belongs in the shared version.
 (behavior-preserving refactor, not a scope change on its own — 2.15 is where behavior changes).
 **Test:** run the existing `tenants`, `platform-billing`, and `platform-branding` integration specs
 after the refactor; no new test cases needed unless 2.15 is folded in at the same time.
+
+**Done (Antigravity, verified 2026-08-23):** `TenantsService.loadMutableTenant` was renamed/promoted
+to public `assertValidHospitalTenant(hospitalId, allowedStatuses?, actionLabel)`, and both
+`SubscriptionBillingService` and `PlatformBrandingService` now call it (with `['active',
+'suspended']`) instead of their own reimplementations — folded together with 2.15 as anticipated.
 
 ---
 
