@@ -141,10 +141,11 @@ export class ReportingQueryService {
   /** Whole-set PDF export (capped at 500 rows to prevent event-loop blocking) of the events archive matching
    *  the filters, via the shared `@hospital/pdf` lib. */
   async exportEventsPdf(params: ListEventsParams): Promise<Buffer> {
-    const { items } = await this.listEvents({ ...params, page: 1, limit: 500 });
+    const { items, total } = await this.listEvents({ ...params, page: 1, limit: 500 });
     return this.pdfService.render(
       buildReportingEventsPdfDocument({
         rows: items.map((e) => this.mapEventToExportRow(e)),
+        totalMatching: total,
         eventType: params.eventType,
         from: params.from,
         to: params.to,

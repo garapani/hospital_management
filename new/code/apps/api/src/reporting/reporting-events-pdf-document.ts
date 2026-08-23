@@ -11,9 +11,26 @@ export interface ReportingEventPdfRow {
 
 export interface ReportingEventsPdfData {
   rows: ReportingEventPdfRow[];
+  /** Total matching rows before the row cap was applied — used to show a truncation notice when
+   *  it exceeds rows.length, rather than letting a capped export read as the complete set. */
+  totalMatching: number;
   from?: string;
   to?: string;
   eventType?: string;
+}
+
+// correlationId is attacker-controlled (an authenticated caller sets it via the X-Correlation-Id
+// request header — see tenant-context.middleware.ts — with no length cap at the DB column
+// either), and both it and payload feed straight into pdfmake's layout engine below. Lowering the
+// row cap (500, reporting-query.service.ts) alone doesn't bound the actual DoS-shaped cost: an
+// unbroken multi-KB string in an 'auto'-width table cell is what makes pdfmake's synchronous
+// layout pass expensive, independent of row count. Truncated here (PDF-only) rather than in the
+// shared mapEventToExportRow — CSV has no layout-engine cost, so it keeps full fidelity.
+const CORRELATION_ID_MAX_CHARS = 64;
+const PAYLOAD_MAX_CHARS = 2000;
+
+function truncate(value: string, maxChars: number): string {
+  return value.length > maxChars ? `${value.slice(0, maxChars)}… (truncated)` : value;
 }
 
 /**
@@ -35,8 +52,8 @@ export function buildReportingEventsPdfDocument(data: ReportingEventsPdfData): P
       { text: row.occurredAt, fontSize: 8 },
       { text: row.eventType, fontSize: 8 },
       { text: row.entityId, fontSize: 8 },
-      { text: row.correlationId || '', fontSize: 8 },
-      { text: row.payload, fontSize: 7 },
+      { text: truncate(row.correlationId || '', CORRELATION_ID_MAX_CHARS), fontSize: 8 },
+      { text: truncate(row.payload, PAYLOAD_MAX_CHARS), fontSize: 7 },
     ]),
   ];
 
@@ -54,7 +71,13 @@ export function buildReportingEventsPdfDocument(data: ReportingEventsPdfData): P
       ...(filterParts.length > 0
         ? [{ text: filterParts.join('  •  '), style: 'field' }, { text: '\n' }]
         : []),
-      { text: `${data.rows.length} event(s)`, style: 'field' },
+      {
+        text:
+          data.totalMatching > data.rows.length
+            ? `Showing ${data.rows.length} of ${data.totalMatching} matching event(s) (most recent first) — use CSV export for the full set`
+            : `${data.rows.length} event(s)`,
+        style: 'field',
+      },
       { text: '\n' },
       {
         table: {
