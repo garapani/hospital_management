@@ -10,6 +10,7 @@ import { Deposit } from './entities/deposit.entity.js';
 import { Return } from './entities/return.entity.js';
 import { roundMoney } from './money.util.js';
 import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
+import { withAdvisoryLock } from '../database/advisory-lock.util.js';
 
 export interface CreateInvoiceItemInput {
   description: string;
@@ -258,9 +259,7 @@ export class InvoicesService {
     // both see "no open invoice" and each create one. The advisory lock is transaction-scoped
     // (released on commit/rollback), so it only serializes concurrent captures of the same
     // patient, never holds across unrelated work, and needs no schema change.
-    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
-      `charge_capture:${patientId}`,
-    ]);
+    await withAdvisoryLock(manager, `charge_capture:${patientId}`);
 
     const alreadyCharged = await manager.query(
       `SELECT 1 FROM invoice_items WHERE "sourceOrderItemId" = $1 LIMIT 1`,

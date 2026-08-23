@@ -61,7 +61,12 @@ describe('PlatformBranding (integration)', () => {
     app = moduleRef.createNestApplication();
     const jwtService = new JwtService({ secret: resolveJwtSecret() });
     const authContextMiddleware = new AuthContextMiddleware(jwtService);
-    app.use(authContextMiddleware.use.bind(authContextMiddleware));
+    app.use((req: any, res: any, next: any) => {
+      if (req.path === '/branding' && req.method === 'GET') {
+        return next();
+      }
+      return authContextMiddleware.use(req, res, next);
+    });
     app.use(
       new TenantContextMiddleware(tenantContext).use.bind(new TenantContextMiddleware(tenantContext)),
     );

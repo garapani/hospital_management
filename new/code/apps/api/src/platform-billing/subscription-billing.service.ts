@@ -9,6 +9,7 @@ import { Subscription, BillingCycle } from './entities/subscription.entity.js';
 import { SubscriptionInvoice } from './entities/subscription-invoice.entity.js';
 import { PACKAGE_CATALOG } from '../packages/package-catalog.js';
 import { TenantsService } from '../tenants/tenants.service.js';
+import { withAdvisoryLock } from '../database/advisory-lock.util.js';
 
 const CYCLE_MS: Record<BillingCycle, number> = {
   monthly: 30 * 24 * 60 * 60 * 1000,
@@ -43,12 +44,10 @@ export class SubscriptionBillingService {
     return billingCycle === 'annual' ? pkg.priceAnnual : pkg.priceMonthly;
   }
 
-  /** Resolves the tenant's current package code via the shared `PackagesService` lookup, rather
-   *  than a second hand-rolled query against `tenants` — one source of truth for "how do you read
-   *  a tenant's package code" so the two never drift. */
-  private async tenantRow(hospitalId: string): Promise<{ packageCode: string }> {
+  /** Resolves the tenant's current package code via the shared lookup. */
+  private async resolvePackageCode(hospitalId: string): Promise<string> {
     const tenant = await this.tenantsService.assertValidHospitalTenant(hospitalId, ['active', 'suspended'], 'be billed');
-    return { packageCode: tenant.packageCode };
+    return tenant.packageCode;
   }
 
   async getSubscription(tenantId: string): Promise<Subscription | null> {
@@ -62,16 +61,8 @@ export class SubscriptionBillingService {
     return this.repository.find({ order: { createdAt: 'DESC' } });
   }
 
-  // Serializes subscribe/cancel/issue-invoice for one tenant: the find-then-write shape each of
-  // those methods uses (e.g. "no active subscription yet, so create one") is not otherwise
-  // race-safe — two concurrent calls could both see the same pre-write state and both act on it.
-  // Transaction-scoped (released on commit/rollback), same pattern as billing's charge-capture
-  // lock (`invoices.service.ts`) — serializes only this tenant's billing ops, needs no schema
-  // change.
-  private lockTenantBilling(manager: EntityManager, tenantId: string): Promise<unknown> {
-    return manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
-      `platform_billing:${tenantId}`,
-    ]);
+  private lockTenantBilling(manager: EntityManager, tenantId: string): Promise<void> {
+    return withAdvisoryLock(manager, `platform_billing:${tenantId}`);
   }
 
   /** Starts or updates a tenant's subscription: package comes from the tenant's current package,
@@ -82,7 +73,7 @@ export class SubscriptionBillingService {
   ): Promise<Subscription> {
     return this.dataSource.transaction(async (manager) => {
       await this.lockTenantBilling(manager, tenantId);
-      const { packageCode } = await this.tenantRow(tenantId);
+      const packageCode = await this.resolvePackageCode(tenantId);
       const pricePerCycle = this.resolvePrice(packageCode, billingCycle);
       const now = Date.now();
 
@@ -172,9 +163,7 @@ export class SubscriptionBillingService {
     return this.dataSource.transaction(async (manager) => {
       // Invoice-scoped lock first: serializes concurrent mark-paid calls on the very same invoice
       // (e.g. a double-clicked "Mark Paid" button) before we've even read it.
-      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
-        `platform_billing_invoice:${invoiceId}`,
-      ]);
+      await withAdvisoryLock(manager, `platform_billing_invoice:${invoiceId}`);
       const invoice = await manager.getRepository(SubscriptionInvoice).findOne({
         where: { id: invoiceId },
       });

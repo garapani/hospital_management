@@ -5,6 +5,7 @@ import { TenantsService } from '../tenants/tenants.service.js';
 import { PLATFORM_TENANT_ID } from '../tenants/platform-tenant.js';
 import { TenantBranding } from './entities/tenant-branding.entity.js';
 import { UpsertBrandingDto } from './dto/upsert-branding.dto.js';
+import { withAdvisoryLock } from '../database/advisory-lock.util.js';
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 /** Also enforced at the multer interceptor level (`platform-branding.controller.ts`) so an
@@ -79,10 +80,8 @@ export class PlatformBrandingService {
   // hits a raw primary-key violation instead of a clean update. Same transaction-scoped pattern
   // as billing's per-tenant lock (`subscription-billing.service.ts`, `Development-Standards.md`
   // §48's post-review hardening) and charge-capture's per-patient lock (§27).
-  private lockBrandingRow(manager: EntityManager, hospitalId: string): Promise<unknown> {
-    return manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
-      `platform_branding:${hospitalId}`,
-    ]);
+  private lockBrandingRow(manager: EntityManager, hospitalId: string): Promise<void> {
+    return withAdvisoryLock(manager, `platform_branding:${hospitalId}`);
   }
 
   private async getOrCreateBrandingRow(
