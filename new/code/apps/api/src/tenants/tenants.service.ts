@@ -570,19 +570,11 @@ export class TenantsService {
       throw new BadRequestException(`Tenant ${hospitalId} has an invalid hospitalId; refusing to purge`);
     }
 
-    // Best-effort logo removal from object storage, outside the DB transaction (not
-    // transactional with Postgres either way — same pattern PlatformBrandingService.uploadLogo/
-    // removeLogo already use). Without this, a purged tenant's branding row survives (see below)
-    // in tombstoned/soft-deleted form, but the actual logo file would stay orphaned in the bucket
-    // forever.
-    const brandingRow = await this.dataSource
-      .getRepository(TenantBranding)
-      .findOne({ where: { tenantId: hospitalId } });
-    if (brandingRow?.logoObjectKey) {
-      await this.objectStorage.removeObject(hospitalId, brandingRow.logoObjectKey).catch(() => undefined);
-    }
-
     const tenantName = `tenant_${hospitalId}`;
+    // The branding row is looked up and soft-removed *inside* this transaction (not fetched
+    // beforehand) so there's no stale-read window between reading it and acting on it, and so a
+    // rollback (e.g. DROP SCHEMA failing on a lingering lock) correctly leaves it untouched too.
+    let logoObjectKeyToRemove: string | null = null;
     await this.dataSource.transaction(async (manager) => {
       await manager.query(`DROP SCHEMA IF EXISTS "${tenantName}" CASCADE`);
       await manager.query(`DROP ROLE IF EXISTS "${tenantName}"`);
@@ -596,10 +588,23 @@ export class TenantsService {
       // tenant's display name/logo. Without this, that unauthenticated endpoint kept serving a
       // purged tenant's branding indefinitely, since purge never touched this platform-schema
       // table (only the tenant's own schema/role are dropped above).
+      const brandingRow = await manager
+        .getRepository(TenantBranding)
+        .findOne({ where: { tenantId: hospitalId } });
       if (brandingRow) {
+        logoObjectKeyToRemove = brandingRow.logoObjectKey;
         await manager.getRepository(TenantBranding).softRemove(brandingRow);
       }
     });
+
+    // Best-effort logo removal from object storage, deliberately AFTER the transaction commits
+    // (not transactional with Postgres either way, but ordered so a mid-transaction failure —
+    // e.g. DROP SCHEMA failing on a lingering lock — can never leave the logo file deleted while
+    // the DB rolls back to still-archived-with-branding-intact; that combination would have left
+    // a broken image with no clean way to retry).
+    if (logoObjectKeyToRemove) {
+      await this.objectStorage.removeObject(hospitalId, logoObjectKeyToRemove).catch(() => undefined);
+    }
     return { purged: hospitalId };
   }
 }
