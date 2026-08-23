@@ -1,3 +1,4 @@
+import { createApiValidationPipe } from '../app/api-validation-pipe.js';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -60,6 +61,7 @@ describe('Cross-tenant login isolation (integration)', () => {
     const jwtService = new JwtService({ secret: resolveJwtSecret() });
 
     app = moduleRef.createNestApplication();
+    app.useGlobalPipes(createApiValidationPipe());
     const authContextMiddleware = new AuthContextMiddleware(jwtService);
     app.use((req: Request, res: Response, next: NextFunction) => {
       if (isAuthContextExcludedRoute(req)) {

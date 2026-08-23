@@ -1,3 +1,4 @@
+import { createApiValidationPipe } from '../app/api-validation-pipe.js';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -36,6 +37,7 @@ describe('AccountsController (integration)', () => {
     const jwtService = new JwtService({ secret: resolveJwtSecret() });
 
     app = moduleRef.createNestApplication();
+    app.useGlobalPipes(createApiValidationPipe());
     const authContextMiddleware = new AuthContextMiddleware(jwtService);
     app.use(authContextMiddleware.use.bind(authContextMiddleware));
     app.use(

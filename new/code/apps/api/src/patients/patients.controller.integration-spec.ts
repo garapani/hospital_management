@@ -1,3 +1,4 @@
+import { createApiValidationPipe } from '../app/api-validation-pipe.js';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -45,6 +46,7 @@ describe('PatientsController (integration)', () => {
     const jwtService = new JwtService({ secret: resolveJwtSecret() });
 
     app = moduleRef.createNestApplication();
+    app.useGlobalPipes(createApiValidationPipe());
     app.setGlobalPrefix('api');
     const authContextMiddleware = new AuthContextMiddleware(jwtService);
     app.use(authContextMiddleware.use.bind(authContextMiddleware));

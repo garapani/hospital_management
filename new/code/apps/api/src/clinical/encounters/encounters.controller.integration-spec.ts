@@ -1,3 +1,4 @@
+import { createApiValidationPipe } from '../../app/api-validation-pipe.js';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -44,6 +45,7 @@ describe('EncountersController (integration)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(createApiValidationPipe());
     await app.init();
   });
 
