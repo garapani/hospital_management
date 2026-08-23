@@ -9,7 +9,7 @@ import { Subscription, BillingCycle } from './entities/subscription.entity.js';
 import { SubscriptionInvoice } from './entities/subscription-invoice.entity.js';
 import { PACKAGE_CATALOG } from '../packages/package-catalog.js';
 import { PackagesService } from '../packages/packages.service.js';
-import { PLATFORM_TENANT_ID } from '../tenants/platform-tenant.js';
+import { TenantsService } from '../tenants/tenants.service.js';
 
 const CYCLE_MS: Record<BillingCycle, number> = {
   monthly: 30 * 24 * 60 * 60 * 1000,
@@ -23,6 +23,7 @@ export class SubscriptionBillingService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly packagesService: PackagesService,
+    private readonly tenantsService: TenantsService,
   ) {}
 
   private get repository() {
@@ -48,16 +49,8 @@ export class SubscriptionBillingService {
    *  than a second hand-rolled query against `tenants` — one source of truth for "how do you read
    *  a tenant's package code" so the two never drift. */
   private async tenantRow(hospitalId: string): Promise<{ packageCode: string }> {
-    if (hospitalId === PLATFORM_TENANT_ID) {
-      throw new BadRequestException(
-        `${PLATFORM_TENANT_ID} is the platform tenant and cannot be billed`,
-      );
-    }
-    const packageCode = await this.packagesService.getTenantPackageCode(hospitalId);
-    if (packageCode === null) {
-      throw new NotFoundException(`Tenant ${hospitalId} not found`);
-    }
-    return { packageCode };
+    const tenant = await this.tenantsService.assertValidHospitalTenant(hospitalId, ['active', 'suspended'], 'be billed');
+    return { packageCode: tenant.packageCode };
   }
 
   async getSubscription(tenantId: string): Promise<Subscription | null> {
@@ -120,6 +113,7 @@ export class SubscriptionBillingService {
   }
 
   async cancelSubscription(tenantId: string): Promise<Subscription> {
+    await this.tenantsService.assertValidHospitalTenant(tenantId, ['active', 'suspended'], 'be modified');
     return this.dataSource.transaction(async (manager) => {
       await this.lockTenantBilling(manager, tenantId);
       const subscription = await manager.getRepository(Subscription).findOne({
@@ -138,6 +132,7 @@ export class SubscriptionBillingService {
    *  guarded by the per-tenant lock above plus a unique partial index as a DB-level backstop;
    *  re-issuing the same period is a 409. */
   async issueInvoice(tenantId: string): Promise<SubscriptionInvoice> {
+    await this.tenantsService.assertValidHospitalTenant(tenantId, ['active', 'suspended'], 'be billed');
     return this.dataSource.transaction(async (manager) => {
       await this.lockTenantBilling(manager, tenantId);
       const subscription = await manager.getRepository(Subscription).findOne({

@@ -11,9 +11,13 @@ import {
 // other shared-table specs.
 const PREFIX = 'test_billing_tenant_';
 
+import { TenantsService } from '../tenants/tenants.service.js';
+import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
+
 describe('SubscriptionBillingService (integration)', () => {
   let ctx: TenantTestContext;
   let service: SubscriptionBillingService;
+  let tenantsService: TenantsService;
 
   const cleanup = async () => {
     await ctx.dataSource.query(`DELETE FROM subscription_invoices WHERE "tenantId" LIKE '${PREFIX}%'`);
@@ -30,7 +34,16 @@ describe('SubscriptionBillingService (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'billing_svc' });
-    service = new SubscriptionBillingService(ctx.dataSource, new PackagesService(ctx.dataSource));
+    const packagesService = new PackagesService(ctx.dataSource);
+    tenantsService = new TenantsService(
+      ctx.dataSource,
+      new TenantProvisioningService(ctx.dataSource),
+      ctx.tenantConnection,
+      ctx.tenantContext,
+      packagesService,
+      ctx.accountsService,
+    );
+    service = new SubscriptionBillingService(ctx.dataSource, packagesService, tenantsService);
     await cleanup();
   });
 
@@ -87,8 +100,41 @@ describe('SubscriptionBillingService (integration)', () => {
   it('rejects subscribing an unknown tenant or the platform tenant', async () => {
     await expect(service.subscribe('no_such_tenant', 'monthly')).rejects.toThrow(NotFoundException);
     await expect(service.subscribe('__platform', 'monthly')).rejects.toThrow(
-      'platform tenant and cannot be billed',
+      'reserved system tenant and cannot be billed',
     );
+  });
+
+  it('rejects operations on archived tenants but allows them on suspended tenants', async () => {
+    const suspendedId = `${PREFIX}suspended`;
+    const archivedId = `${PREFIX}archived`;
+    await provision(suspendedId, 'basic');
+    await provision(archivedId, 'basic');
+
+    await ctx.dataSource.query(`UPDATE tenants SET status = 'suspended' WHERE "hospitalId" = $1`, [suspendedId]);
+    await ctx.dataSource.query(`UPDATE tenants SET status = 'archived' WHERE "hospitalId" = $1`, [archivedId]);
+
+    // Suspended should succeed
+    const sub = await service.subscribe(suspendedId, 'monthly');
+    expect(sub.tenantId).toBe(suspendedId);
+
+    const invoice = await service.issueInvoice(suspendedId);
+    await service.markInvoicePaid(invoice.id);
+    const canceled = await service.cancelSubscription(suspendedId);
+    expect(canceled.status).toBe('canceled');
+
+    // Archived should fail for subscribe
+    await expect(service.subscribe(archivedId, 'monthly')).rejects.toThrow(/must have status active, suspended/);
+
+    // Let's create a subscription via DB for the archived tenant to test issueInvoice and cancelSubscription
+    await ctx.dataSource.query(
+      `INSERT INTO subscriptions ("tenantId", "packageCode", "billingCycle", "pricePerCycle",
+                                   "currentPeriodStart", "currentPeriodEnd", "status")
+       VALUES ($1, 'basic', 'monthly', 1000, now(), now() + interval '30 days', 'active')`,
+      [archivedId],
+    );
+
+    await expect(service.issueInvoice(archivedId)).rejects.toThrow(/must have status active, suspended/);
+    await expect(service.cancelSubscription(archivedId)).rejects.toThrow(/must have status active, suspended/);
   });
 
   it('2.21: rejects an unrecognized billingCycle at the service layer instead of persisting a corrupted row', async () => {
