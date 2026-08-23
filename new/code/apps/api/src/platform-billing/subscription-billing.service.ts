@@ -16,6 +16,8 @@ const CYCLE_MS: Record<BillingCycle, number> = {
   annual: 365 * 24 * 60 * 60 * 1000,
 };
 
+const VALID_BILLING_CYCLES = new Set<BillingCycle>(['monthly', 'annual']);
+
 @Injectable()
 export class SubscriptionBillingService {
   constructor(
@@ -32,6 +34,9 @@ export class SubscriptionBillingService {
   }
 
   private resolvePrice(packageCode: string, billingCycle: BillingCycle): number {
+    if (!VALID_BILLING_CYCLES.has(billingCycle)) {
+      throw new BadRequestException(`Unknown billingCycle: ${billingCycle}`);
+    }
     const pkg = PACKAGE_CATALOG.find((p) => p.code === packageCode);
     if (!pkg) {
       throw new BadRequestException(`Unknown packageCode: ${packageCode}`);
@@ -94,16 +99,18 @@ export class SubscriptionBillingService {
         where: { tenantId, status: 'active' },
         order: { createdAt: 'DESC' },
       });
-      // Renewal/plan change reuses the existing row and keeps its current period; a first-time
-      // subscribe creates a fresh one — either way the terms (package/cycle/price/status) are the
-      // same shape, set once here rather than twice.
-      const target =
-        existing ??
-        manager.getRepository(Subscription).create({
-          tenantId,
-          currentPeriodStart: new Date(now),
-          currentPeriodEnd: new Date(now + CYCLE_MS[billingCycle]),
-        });
+      // Same-cycle plan change (e.g. re-confirming/package swap with billingCycle unchanged)
+      // reuses the existing row and keeps its current period; a first-time subscribe or an
+      // actual billingCycle switch starts a fresh period sized to the new cycle. Without this,
+      // switching monthly->annual mid-period left the 30-day period untouched while pricePerCycle
+      // jumped to the annual rate — issueInvoice billed the full annual price every 30 days
+      // (2.22). The terms themselves (package/cycle/price/status) are the same shape either way,
+      // set once here rather than twice.
+      const target = existing ?? manager.getRepository(Subscription).create({ tenantId });
+      if (!existing || existing.billingCycle !== billingCycle) {
+        target.currentPeriodStart = new Date(now);
+        target.currentPeriodEnd = new Date(now + CYCLE_MS[billingCycle]);
+      }
       target.packageCode = packageCode;
       target.billingCycle = billingCycle;
       target.pricePerCycle = pricePerCycle;
@@ -208,9 +215,9 @@ export class SubscriptionBillingService {
     });
   }
 
-  listInvoices(tenantId?: string): Promise<SubscriptionInvoice[]> {
+  listInvoices(tenantId: string): Promise<SubscriptionInvoice[]> {
     return this.invoiceRepository.find({
-      where: tenantId ? { tenantId } : {},
+      where: { tenantId },
       order: { issuedAt: 'DESC' },
     });
   }

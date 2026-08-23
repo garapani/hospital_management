@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { SubscriptionBillingService } from './subscription-billing.service.js';
 import { PackagesService } from '../packages/packages.service.js';
 import {
@@ -58,12 +58,30 @@ describe('SubscriptionBillingService (integration)', () => {
     await provision(`${PREFIX}ent`, 'enterprise');
     const annual = await service.subscribe(`${PREFIX}ent`, 'annual');
     expect(annual.pricePerCycle).toBe(216000);
+    expect(annual.currentPeriodEnd.getTime() - annual.currentPeriodStart.getTime()).toBe(
+      365 * 24 * 60 * 60 * 1000,
+    );
 
     const monthly = await service.subscribe(`${PREFIX}ent`, 'monthly');
     expect(monthly.pricePerCycle).toBe(19999);
     expect(monthly.billingCycle).toBe('monthly');
     // Re-subscribe keeps the same subscription row (same id).
     expect(monthly.id).toBe(annual.id);
+    // 2.22 regression: a billingCycle switch must start a fresh period sized to the NEW cycle,
+    // not keep the old (annual-length) period while pricePerCycle jumps to the monthly rate.
+    expect(monthly.currentPeriodEnd.getTime() - monthly.currentPeriodStart.getTime()).toBe(
+      30 * 24 * 60 * 60 * 1000,
+    );
+  });
+
+  it('re-subscribing with the SAME billingCycle keeps the current period (not a reset)', async () => {
+    await provision(`${PREFIX}same_cycle`, 'basic');
+    const first = await service.subscribe(`${PREFIX}same_cycle`, 'monthly');
+
+    const second = await service.subscribe(`${PREFIX}same_cycle`, 'monthly');
+    expect(second.id).toBe(first.id);
+    expect(second.currentPeriodStart.getTime()).toBe(first.currentPeriodStart.getTime());
+    expect(second.currentPeriodEnd.getTime()).toBe(first.currentPeriodEnd.getTime());
   });
 
   it('rejects subscribing an unknown tenant or the platform tenant', async () => {
@@ -71,6 +89,16 @@ describe('SubscriptionBillingService (integration)', () => {
     await expect(service.subscribe('__platform', 'monthly')).rejects.toThrow(
       'platform tenant and cannot be billed',
     );
+  });
+
+  it('2.21: rejects an unrecognized billingCycle at the service layer instead of persisting a corrupted row', async () => {
+    await provision(`${PREFIX}bad_cycle`, 'basic');
+    await expect(
+      service.subscribe(`${PREFIX}bad_cycle`, 'weekly' as unknown as 'monthly'),
+    ).rejects.toThrow(BadRequestException);
+
+    const sub = await service.getSubscription(`${PREFIX}bad_cycle`);
+    expect(sub).toBeNull();
   });
 
   it('issues an invoice for the current period and refuses a duplicate open invoice', async () => {
