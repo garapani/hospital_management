@@ -580,7 +580,7 @@ logged as 2.28 below rather than fixed in this pass.
 
 ---
 
-### 2.21 Lower-priority platform-billing gaps: no runtime `billingCycle` guard, unscoped `listInvoices`
+### 2.21 Lower-priority platform-billing gaps: no runtime `billingCycle` guard, unscoped `listInvoices` (done)
 
 **Context:** Found during 2.18's code review, in already-shipped platform-billing code.
 - `SubscriptionBillingService.subscribe`/`resolvePrice` (`subscription-billing.service.ts:39,105`)
@@ -599,9 +599,13 @@ into `listInvoicesForTenant`/an explicitly-named cross-tenant admin variant).
 row; no code path can call `listInvoices` without an explicit tenant scope.
 **Test:** extend `subscription-billing.service.integration-spec.ts`.
 
+**Done (2026-08-23):** `resolvePrice` now throws `BadRequestException` on an unrecognized
+`billingCycle` instead of silently pricing as monthly; `listInvoices(tenantId: string)` no longer
+accepts an omitted tenant. New tests in `subscription-billing.service.integration-spec.ts`.
+
 ---
 
-### 2.22 Billing-cycle switch doesn't adjust the billing period — recurring 10x overcharge/undercharge
+### 2.22 Billing-cycle switch doesn't adjust the billing period — recurring 10x overcharge/undercharge (done)
 
 **Context:** found during the entity-audit-columns task's code review, in already-shipped
 platform-billing code. `SubscriptionBillingService.subscribe()`
@@ -622,6 +626,11 @@ re-subscribing instead of an in-place cycle switch — a design decision, not ju
 invoice bills the correct amount for that period.
 **Test:** extend `subscription-billing.service.integration-spec.ts` with a monthly→annual and an
 annual→monthly switch, asserting period bounds and the next invoice amount.
+
+**Done (2026-08-23):** `subscribe()` now only resets `currentPeriodStart`/`currentPeriodEnd` when
+`billingCycle` actually differs from the existing active row's — a same-cycle re-subscribe still
+keeps its current period untouched. New tests cover both the cycle-switch (period resets, sized to
+the new cycle) and same-cycle (period preserved) paths.
 
 ---
 
@@ -783,6 +792,70 @@ case asserting the chosen behavior.
 
 ---
 
+### 2.29 More DTO-decorator gaps: `@IsNumber()` where the column needs an integer, one missing `@Min(0)`
+
+**Context:** found during `/code-review high` on 2.21/2.22, in already-shipped DTO code (same class
+of bug as 2.25, different files).
+- `@IsNumber()` should be `@IsInt()` (decimal passes validation, then either corrupts a business
+  value or 500s at the DB insert instead of a clean 400): `triage/dto/create-triage-entry.dto.ts:42`
+  + `update-triage-entry.dto.ts` (`acuityLevel`, sorts the live ED triage queue);
+  `encounters/dto/encounter.dto.ts:99-100` (`CreatePrescriptionDto.durationDays`);
+  `cssd/dto/cssd.dto.ts:18,32` (`quantity` on Create/UpdateInstrumentDto, sterile-instrument
+  inventory counts); `ot/dto/ot.dto.ts:38-46` (`ListSurgeriesQueryDto.page`/`limit`, doesn't extend
+  the shared `PaginationQueryDto` the way every sibling list DTO does);
+  `marketing/dto/marketing.dto.ts:44-52` (`ListReferralsQueryDto.page`/`limit`, same gap).
+- `radiology/dto/create-radiology-imaging-item.dto.ts:18-20` — `price?: number` has no `@Min(0)`,
+  unlike `RadiologyCatalogService.update`/`updateItemPrice`, which explicitly reject a negative
+  price; creation has no equivalent guard, so `POST /radiology/imaging-items` accepts a negative
+  price at creation time.
+**What to do:** switch the five `@IsNumber()` fields to `@IsInt()` (with an appropriate `@Min`); add
+`@Min(0)` to the radiology item price; have `ot.dto.ts`/`marketing.dto.ts`'s list DTOs extend
+`PaginationQueryDto` instead of hand-rolling `page`/`limit`.
+**Verify:** each endpoint 400s on a decimal/negative value that previously passed validation.
+**Test:** one-line additions to each module's existing DTO/controller integration specs, matching
+2.25's pattern.
+
+---
+
+### 2.30 Tenant-provisioning `adminPassword` empty string bypasses the generated-password fallback
+
+**Context:** found during `/code-review high` on 2.21/2.22, in already-shipped tenant-provisioning
+code. `tenants/dto/provision-tenant.dto.ts:25-27`'s `adminPassword?: string` has only
+`@IsOptional() @IsString()`, no length/non-empty guard. `TenantsService.createBootstrapAdmin` does
+`provided.password ?? generateBootstrapPassword()`, and `AccountsService.createStaffAccount` does
+`input.password ? undefined : generateInitialPassword()` then `input.password ?? generatedPassword`
+— both `??`/truthy checks only catch `null`/`undefined`, not `''`. `POST /tenants/provision` with
+`"adminPassword": ""` slips past both fallbacks and creates the bootstrap Hospital Admin account
+with an effectively empty (bcrypt-hashed empty string) password, bypassing the intended
+generate-a-strong-password-when-none-supplied path.
+**What to do:** add `@MinLength(n)` (or an explicit non-empty check) to `adminPassword` in
+`provision-tenant.dto.ts`, matching whatever minimum the generated passwords already satisfy.
+**Verify:** `POST /tenants/provision` with `adminPassword: ""` 400s instead of provisioning an
+account with an empty password.
+**Test:** one-line addition to `tenants.controller.integration-spec.ts`.
+
+---
+
+### 2.31 Platform branding: unbounded `displayName`, SVG logo accepted as an unsniffed content-type (stored-XSS risk)
+
+**Context:** found during `/code-review high` on 2.21/2.22, in already-shipped platform-branding
+code (§51).
+- `platform-branding/dto/upsert-branding.dto.ts:8` — `displayName` has no `@MaxLength`; unbounded
+  storage/echo risk.
+- `platform-branding.service.ts:13-18,159-161` — SVG is accepted as a logo mime type, trusting the
+  client-supplied content-type with no server-side sniffing/sanitization. An SVG can carry inline
+  `<script>`/event-handler payloads; served back via the presigned logo URL, this is a stored-XSS
+  vector against whoever views the tenant's branding (admin UI, and potentially the tenant's own
+  login page if branding renders there).
+**What to do:** add `@MaxLength` to `displayName`; either strip SVG from the accepted logo mime
+list, or sanitize uploaded SVGs server-side (e.g. strip `<script>`/`on*` attributes) before storing.
+**Verify:** an overlong `displayName` 400s; an SVG upload containing a `<script>` tag is rejected or
+sanitized, not stored/served as-is.
+**Test:** extend `platform-branding.integration-spec.ts` with an oversized-name case and a
+malicious-SVG upload case.
+
+---
+
 ## 3. Cleanups
 
 ### 3.1 Full-suite flake triage (infra, shared dev DB)
@@ -835,6 +908,12 @@ inside `frontend/`. Add this reminder to `new/code/CLAUDE.md` if not already the
   written out twice (`login()` line 85, `refresh()` line 174) — extract a private
   `isTenantInactive(tenant)` helper so a future third status can't be added to one copy and
   forgotten on the other.
+- `SubscriptionBillingService.tenantRow()` (`subscription-billing.service.ts:45`) returns a
+  single-field `{ packageCode }` wrapper immediately destructured by its only caller — inline as
+  `resolvePackageCode(): Promise<string>`.
+- A per-file `assertNotPlatformTenant`-shaped guard (reject `__platform` before billing/branding
+  ops) is repeated 7+ times across 4 files with bespoke messages each — lower-confidence candidate
+  for consolidation, since each throw message is intentionally specific to its call site.
 **What to do:** low-priority — fold into whatever task next touches these files, not worth a
 standalone session.
 **Verify:** n/a.
@@ -868,6 +947,14 @@ legitimate call to it, forever, until someone notices.
 imported by `app.module.ts`) so a new unauthenticated route only needs updating in one place.
 **Verify:** adding a new unauthenticated route requires exactly one code change, not two.
 **Test:** n/a — a refactor of existing wiring, covered by the existing auth-wiring integration specs.
+
+**Confirmed manifestation (2026-08-23, `/code-review high` on 2.21/2.22):** `PlatformBrandingController`'s
+JWT-protected admin route (`platform/tenants/:hospitalId/branding`) already collides with
+`EXPECTED_FALLBACK_PATH_SUFFIXES`' `endsWith('/branding')` check — meant only for the public
+unauthenticated tenant route — so a future `AuthContextMiddleware` failure on the admin path would
+have its spoofing-anomaly warning silently suppressed instead of logged. Not urgent (no live
+exploit today, `AuthContextMiddleware` has never failed to populate `authContext` there), but
+raises the priority of the consolidation above whenever this item is next picked up.
 
 ---
 

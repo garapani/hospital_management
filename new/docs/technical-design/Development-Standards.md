@@ -2230,3 +2230,32 @@ TABLE public.<dummy> OWNER TO "tenant_<id>"` makes the tenant role own an object
 schema, so Postgres refuses to drop it ("role cannot be dropped because some objects depend on
 it") after `DROP SCHEMA` has already run earlier in the same transaction — exercising the actual
 rollback path.
+
+## 56. Billing-cycle switch resets the period only when the cycle actually changes (2026-08-23)
+
+`claude-code-tasks.md` 2.21/2.22. `SubscriptionBillingService.subscribe()` reuses the tenant's
+existing active `Subscription` row for both a same-terms re-subscribe and an actual plan/cycle
+change — one code path, two different correct behaviors for `currentPeriodStart`/`currentPeriodEnd`.
+
+**The bug:** the row's period was left untouched unconditionally. A same-cycle re-subscribe
+correctly kept its period (intentional — re-confirming terms mid-period shouldn't reset the billing
+clock). But an actual `billingCycle` switch (monthly→annual or the reverse) *also* kept the old
+cycle's period while `pricePerCycle` jumped to the new rate — `issueInvoice()` then billed the full
+new-cycle price against the stale period length, recurring every time that period rolled over
+(2.22: a monthly→annual switch mid-period billed the full annual price every 30 days).
+
+**The fix:** reset the period only when `existing.billingCycle !== billingCycle` (or there's no
+existing row at all — first subscribe). Same-cycle resubmits are unaffected; a real cycle switch
+starts a fresh period sized to the new cycle from the moment of the switch. General pattern for any
+future "reuse or create" write like this one: when a single code path handles both "same terms,
+different call" and "actually changed something," identify exactly *which* fields the changed-vs-
+unchanged distinction affects, and gate only those fields on the comparison — don't assume "reuse
+the row" implies "reuse every field unconditionally."
+
+**Also fixed in the same pass (2.21, lower severity, same file):** `resolvePrice()` silently fell
+back to monthly pricing for a `billingCycle` value the TypeScript type didn't actually guarantee at
+runtime (only the DTO's `@IsIn(...)` enforced it — a future direct-service caller, e.g. a cron
+auto-renew job, would have bypassed that). Now throws `BadRequestException` instead of silently
+mispricing. `listInvoices(tenantId?: string)` accepted an omitted tenant and returned *every*
+tenant's invoices — not exploitable today (the only caller always passes one), but a live
+cross-tenant billing-data-exposure footgun for any future caller; `tenantId` is now required.
