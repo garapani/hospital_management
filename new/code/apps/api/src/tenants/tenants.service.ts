@@ -409,25 +409,32 @@ export class TenantsService {
     return this.dataSource.getRepository(Tenant).findOne({ where: { hospitalId } });
   }
 
-  /** Loads a tenant for a state-changing lifecycle operation (suspend/reactivate/archive/
-   *  restore/purge), rejecting the reserved platform tenant and a missing row with one shared
-   *  guard — these 5 call sites previously repeated this check independently. `verb` names the
-   *  attempted action in the platform-tenant rejection message (e.g. 'suspended', 'purged'). */
-  private async loadMutableTenant(hospitalId: string, verb: string): Promise<Tenant> {
+  /**
+   * Asserts that a hospitalId points to a valid customer tenant. Rejects the platform tenant,
+   * unknown IDs, and (optionally) statuses not in the allowed list.
+   *
+   * @param actionLabel The verb for the rejection message (e.g. 'be modified')
+   */
+  async assertValidHospitalTenant(hospitalId: string, allowedStatuses?: string[], actionLabel = 'be modified'): Promise<Tenant> {
     if (hospitalId === PLATFORM_TENANT_ID) {
       throw new BadRequestException(
-        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot be ${verb}`,
+        `${PLATFORM_TENANT_ID} is a reserved system tenant and cannot ${actionLabel}`,
       );
     }
     const tenant = await this.dataSource.getRepository(Tenant).findOne({ where: { hospitalId } });
     if (!tenant) {
       throw new NotFoundException(`Tenant ${hospitalId} not found`);
     }
+    if (allowedStatuses && !allowedStatuses.includes(tenant.status)) {
+      throw new BadRequestException(
+        `Tenant ${hospitalId} has status '${tenant.status}'; must have status ${allowedStatuses.join(', ')}`,
+      );
+    }
     return tenant;
   }
 
   async suspendTenant(hospitalId: string): Promise<Tenant> {
-    const tenant = await this.loadMutableTenant(hospitalId, 'suspended');
+    const tenant = await this.assertValidHospitalTenant(hospitalId, undefined, 'be suspended');
     // Archived is a distinct state machine (see archiveTenant/restoreTenant) — suspending an
     // archived tenant in place would flip status to 'suspended' while leaving archivedAt stale,
     // since only restoreTenant knows to clear it. Restore first, then suspend if still needed.
@@ -445,7 +452,7 @@ export class TenantsService {
   }
 
   async reactivateTenant(hospitalId: string): Promise<Tenant> {
-    const tenant = await this.loadMutableTenant(hospitalId, 'reactivated');
+    const tenant = await this.assertValidHospitalTenant(hospitalId, undefined, 'be reactivated');
     // Archived tenants go through restoreTenant instead, which clears archivedAt correctly —
     // reactivateTenant only sets activatedAt, so allowing it here would leave archivedAt stale
     // on an otherwise-active tenant.
@@ -504,7 +511,7 @@ export class TenantsService {
    * path for churned hospitals; hard purge is a separate, explicit, destructive step.
    */
   async archiveTenant(hospitalId: string): Promise<Tenant> {
-    const tenant = await this.loadMutableTenant(hospitalId, 'archived');
+    const tenant = await this.assertValidHospitalTenant(hospitalId, undefined, 'be archived');
     if (tenant.status === 'archived') {
       return tenant;
     }
@@ -515,7 +522,7 @@ export class TenantsService {
 
   /** Reverses an archive: back to active, cleared archive timestamp. */
   async restoreTenant(hospitalId: string): Promise<Tenant> {
-    const tenant = await this.loadMutableTenant(hospitalId, 'restored');
+    const tenant = await this.assertValidHospitalTenant(hospitalId, undefined, 'be restored');
     if (tenant.status === 'active') {
       return tenant;
     }
@@ -545,7 +552,7 @@ export class TenantsService {
     if (confirmHospitalId !== hospitalId) {
       throw new BadRequestException('Purge requires confirming the hospitalId exactly');
     }
-    const tenant = await this.loadMutableTenant(hospitalId, 'purged');
+    const tenant = await this.assertValidHospitalTenant(hospitalId, undefined, 'be purged');
     if (tenant.status !== 'archived') {
       throw new BadRequestException(
         `Tenant ${hospitalId} must be archived before it can be purged`,

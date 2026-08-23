@@ -191,6 +191,35 @@ describe('TenantsService (integration)', () => {
     });
   });
 
+  describe('assertValidHospitalTenant', () => {
+    it('rejects the platform tenant', async () => {
+      // Import PLATFORM_TENANT_ID at the top of the file
+      await expect(tenantsService.assertValidHospitalTenant('__platform')).rejects.toThrow(/reserved system tenant/);
+    });
+
+    it('rejects an unknown tenant with a 404', async () => {
+      await expect(tenantsService.assertValidHospitalTenant('test_tenant_svc_unknown')).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects a tenant whose status is not in the allowed list', async () => {
+      await tenantsService.provisionTenant({ hospitalId: 'test_tenant_svc_status_fail', hospitalName: 'Fail Hospital' });
+      await tenantsService.archiveTenant('test_tenant_svc_status_fail');
+
+      await expect(
+        tenantsService.assertValidHospitalTenant('test_tenant_svc_status_fail', ['active', 'suspended'])
+      ).rejects.toThrow(/must have status active, suspended/);
+    });
+
+    it('allows a tenant with a valid status', async () => {
+      const hospitalId = 'test_tenant_svc_status_ok';
+      await tenantsService.provisionTenant({ hospitalId, hospitalName: 'Ok Hospital' });
+      const suspended = await tenantsService.suspendTenant(hospitalId);
+
+      const resolved = await tenantsService.assertValidHospitalTenant(hospitalId, ['active', 'suspended']);
+      expect(resolved.id).toEqual(suspended.id);
+    });
+  });
+
   describe('purgeTenant', () => {
     it('rejects purging a tenant that is not archived', async () => {
       await tenantsService.provisionTenant({
