@@ -143,10 +143,45 @@ describe('PlatformBranding (integration)', () => {
     it('rejects branding for the platform tenant and an unknown tenant', async () => {
       await expect(
         service.upsertBranding(PLATFORM_TENANT_ID, { displayName: 'x' }),
-      ).rejects.toThrow('platform tenant');
+      ).rejects.toThrow('reserved system tenant');
       await expect(
         service.upsertBranding('no_such_tenant', { displayName: 'x' }),
       ).rejects.toThrow('not found');
+    });
+
+    it('rejects operations on archived tenants but allows them on suspended tenants', async () => {
+      const suspendedId = `${PREFIX}suspended`;
+      const archivedId = `${PREFIX}archived`;
+      await provision(suspendedId);
+      await provision(archivedId);
+
+      await ctx.dataSource.query(`UPDATE tenants SET status = 'suspended' WHERE "hospitalId" = $1`, [suspendedId]);
+      await ctx.dataSource.query(`UPDATE tenants SET status = 'archived' WHERE "hospitalId" = $1`, [archivedId]);
+
+      // Suspended should succeed
+      const saved = await service.upsertBranding(suspendedId, { displayName: 'Suspended Hospital' });
+      expect(saved.displayName).toBe('Suspended Hospital');
+      
+      const uploaded = await service.uploadLogo(suspendedId, { buffer: Buffer.from('fake'), mimetype: 'image/png', size: 4 });
+      expect(uploaded.logoObjectKey).not.toBeNull();
+      
+      await service.removeLogo(suspendedId);
+
+      // Archived should fail
+      await expect(
+        service.upsertBranding(archivedId, { displayName: 'x' })
+      ).rejects.toThrow(/must have status active, suspended/);
+
+      await expect(
+        service.uploadLogo(archivedId, { buffer: Buffer.from('fake'), mimetype: 'image/png', size: 4 })
+      ).rejects.toThrow(/must have status active, suspended/);
+
+      // Need to configure a logo for the archived tenant to test removeLogo correctly
+      await ctx.dataSource.query(
+        `INSERT INTO tenant_branding ("tenantId", "logoObjectKey") VALUES ($1, 'branding/logo.png')`,
+        [archivedId],
+      );
+      await expect(service.removeLogo(archivedId)).rejects.toThrow(/must have status active, suspended/);
     });
 
     it('uploads a logo, resolves a URL for it, then removes it', async () => {

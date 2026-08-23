@@ -47,17 +47,9 @@ export class PlatformBrandingService {
     return this.dataSource.getRepository(TenantBranding);
   }
 
-  /** Rejects the platform tenant (never brandable) and an unknown hospitalId. */
+  /** Rejects the platform tenant (never brandable), an unknown hospitalId, and inactive tenants (except suspended). */
   private async assertBrandableTenant(hospitalId: string): Promise<void> {
-    if (hospitalId === PLATFORM_TENANT_ID) {
-      throw new BadRequestException(
-        `${PLATFORM_TENANT_ID} is the platform tenant and has no per-tenant branding`,
-      );
-    }
-    const tenant = await this.tenantsService.getTenant(hospitalId);
-    if (!tenant) {
-      throw new NotFoundException(`Tenant ${hospitalId} not found`);
-    }
+    await this.tenantsService.assertValidHospitalTenant(hospitalId, ['active', 'suspended'], 'be branded');
   }
 
   private async resolveLogoUrl(row: TenantBranding | null): Promise<string | null> {
