@@ -407,9 +407,12 @@ Follow the PRD's own phase ordering as-is:
   (2026-08-22):** a notifications page (list + mark-read/mark-all-read + the shell's notification
   bell wired to `GET /notifications/summary`) and vitals/encounters pages (patient-scoped vitals
   entry; notes/diagnoses/prescriptions tabs) turned out to already be built and routed too — this
-  line was stale, found and corrected while picking up `claude-code-tasks.md` 2.6. **Not built:**
-  patient-portal — a distinct product decision (`patient-portal` app scaffold, patient-facing auth
-  path), not started, needs scope confirmation before any work begins.
+  line was stale, found and corrected while picking up `claude-code-tasks.md` 2.6. **Patient-portal
+  Phase 1 backend done (2026-08-23):** patient login + read-only self-scoped records (appointments,
+  invoices, prescriptions, lab/radiology results) — see `claude-code-tasks.md` 2.6 and
+  `Development-Standards.md` §62. **Not built:** the `patient-portal` frontend app scaffold, and
+  Phase 2-4 (booking, payment, messaging) — each a distinct follow-up needing its own scope
+  confirmation, payment additionally blocked on a gateway-vendor decision.
 - Phase 3: Verification — not started (its payer/eligibility checks substantially overlap the
   insurance module's `checkCoverage`). **Fixed Asset**, **Insurance & Claims**, and **Accounting**
   are done for their MVP scopes.

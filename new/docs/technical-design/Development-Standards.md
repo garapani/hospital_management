@@ -2496,3 +2496,72 @@ stale-read window the same review caught). Four independent review-agent passes 
 same finding unprompted, the same pattern seen with the 2.32 logging gap above — when several
 independently-primed reviewers converge on the identical finding without cross-talk, treat that as
 a strong signal to actually fix it, not just note it.
+
+## 62. Patient-portal Phase 1: a second account type reusing the staff auth stack (2026-08-23)
+
+2.6's patient-portal item (`new/docs/superpowers/specs/2026-08-23-patient-portal-design.md`),
+Phase 1 scope: patient login + read-only self-scoped records (appointments, invoices,
+prescriptions, lab/radiology results). Booking, payment, and messaging are deferred — payment
+specifically has zero existing gateway integration in this codebase and needs a vendor decision
+before any design work, not just an engineering slice.
+
+**`Account.accountType: 'staff' | 'patient'` existed as dead code before this** — declared on the
+entity, hardcoded to `'staff'` in every write path, never read anywhere. Activating it needed: a
+`patientId uuid nullable` column + partial unique index (`WHERE "patientId" IS NOT NULL`, so at
+most one portal account per patient) on `accounts`; `AccountsService.createPatientAccount()`
+mirroring `createStaffAccount()`'s generated-password/`needsPasswordUpdate: true` onboarding
+exactly, but with no role assignment at all — patient accounts don't enter the staff RBAC
+catalog.
+
+**Auth is reused wholesale, not forked.** `AuthService.login()`/`refresh()`/
+`changeInitialPassword()` are unchanged in control flow; only `buildAccessPayload()` gained
+`accountType`/`patientId` claims, threaded from the `Account` row. A patient account naturally
+gets `permissions: []` (`AccountsService.getPermissionNamesForRoles([])` short-circuits, and
+`PackagesService.filterPermissions` is a no-op filter over an empty array) — no explicit "patients
+get no permissions" branch was needed anywhere.
+
+**A second, orthogonal guard, not an extension of `PermissionGuard`.** `patients.manage`-style
+RBAC permissions model staff job functions; a patient isn't a weaker staff role, it's a different
+kind of caller entirely. `PatientAuthGuard` (`libs/auth-guards`) checks
+`request.authContext?.accountType === 'patient'` and rejects everything else, gating a whole
+separate `/patient-portal/*` route namespace — inventing a fake `patients.self-service` permission
+just to reuse `PermissionGuard` would have polluted the RBAC catalog with a concept that doesn't
+belong there.
+
+**Patient-scoping follows the same "context, not a query param" shape this codebase already uses
+for tenant scoping.** `RequestContextStore` (`@hospital/tenant-context`) gained `patientId?:
+string`, populated in `TenantContextMiddleware` *only* from `req.authContext.patientId` — deliberately
+no `x-*` header fallback, unlike `tenantId`/`accountId`, since patientId has no legitimate
+unauthenticated-route meaning the way login's tenant resolution does. Every
+`PatientPortalService` method reads `tenantContext.getPatientId()` internally
+(`requirePatientId()`) rather than accepting a `patientId` parameter — there is nowhere in the
+service a caller could pass a different patient's id even if a controller bug tried to forward
+one.
+
+**Lab/radiology results have no direct `patientId`** — `LabRequisition`/`RadiologyRequisition`
+only carry `orderItemId`, so the patient-facing read model joins `Order (patientId) → OrderItem →
+requisition` in application code (three sequential `find({where: {..., In(ids)}})` calls, not a
+raw-SQL join — small enough result sets per patient that this is simpler to read than a
+query-builder join across un-related entities). Only `status: 'Verified'` requisitions are
+included: an in-progress or just-sampled result hasn't been clinically reviewed, and the patient
+seeing it before a clinician verifies it would bypass that review — this is a product-safety
+filter, not just a data-completeness one.
+
+**Migration sort-key trap recurred, same shape as §53's.** `accounts` was created by a *legacy*
+migration (`0002`, `name` suffix `2000000000001` — TypeORM sorts migrations by the last 13
+characters of `name`, not array position or filename, per the `migration-safety-check` skill and
+the `CreatePatientTables0008` incident it documents). A migration adding a column to `accounts`
+therefore needs a `3xxx`-prefixed sort key like §53's `AddAuditColumnsToTenantTables`, not the
+`1xxx` scheme migrations 50/52/56 (all `PLATFORM_MIGRATIONS`, altering `tenants` in `public` —
+never sharing a sort-order collision with legacy tenant-schema migrations) got away with. Caught
+immediately by running the new migration's owning test file in isolation (`relation "accounts"
+does not exist`) before it ever reached a shared or CI database — **any new
+`TENANT_MIGRATIONS` entry altering a table from a legacy (pre-0050) migration must audit its sort
+key against that migration's actual `name` field, not assume `10000000000NN` is always safe.**
+
+**Invite-based onboarding, not self-registration.** `PatientsService.createPortalInvite()` is
+staff-initiated (new `patients.portal-invite` permission, seeded to Super Admin/Hospital
+Admin/Receptionist — the desk roles, not Doctor/Nurse) and anchors the new account to an
+*existing* `Patient.id` staff already verified belongs to that person. Self-registration was
+explicitly rejected for Phase 1: nothing in an open sign-up flow proves the caller is actually the
+patient they claim to be, and getting that wrong is a PHI-exposure bug, not a UX gap to fix later.

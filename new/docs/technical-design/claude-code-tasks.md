@@ -237,8 +237,17 @@ with permission guards, and use real API calls (no fake data) — 13/13 tests gr
 against the dev API (notifications list/summary, vitals-by-patient, encounter-notes-by-patient
 all 200). Corrected in `pending-tasks.md`'s Phase 6 frontend-pages note too.
 
-**Only remaining piece: patient-portal** — not started, and per the original write-up below, a
-bigger product decision needing scope confirmation before any work begins. Not picked up.
+**Patient-portal Phase 1 (backend) — done (2026-08-23).** Scope confirmed with the human (see
+`new/docs/superpowers/specs/2026-08-23-patient-portal-design.md`): patient login (new
+`Account.accountType: 'patient'` path, reusing `AuthService` unchanged) + read-only self-scoped
+records (appointments, invoices, prescriptions, lab/radiology results). Booking, payment, and
+messaging are deferred to their own specs — payment specifically has no gateway integration
+anywhere in this codebase and needs a vendor decision first, not an engineering slice. See
+`Development-Standards.md` §62 for the full pattern (dual-account-type auth, patient-scoping via
+`TenantContextService.getPatientId()`, the Order→OrderItem→requisition join for results with
+`status: 'Verified'` filtering, invite-based onboarding). **Frontend (`apps/patient-portal`, a new
+Nx app per the spec's Implementation Decision 4) is not started** — a separate, confirm-first
+follow-up, same as the original write-up below always intended for the whole patient-portal item.
 
 **Original context (kept for reference):** tenant console pages built for
 Lab/Radiology/Pharmacy/Inventory/Admissions/Orders/Reporting. Patient portal is a bigger product
