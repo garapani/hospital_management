@@ -796,7 +796,7 @@ through the real `AppModule`, including the soft-delete path.
 
 ---
 
-### 2.28 A purged tenant's `hospitalId` is freely reusable, and a new tenant inherits the old tenant's billing history
+### 2.28 A purged tenant's `hospitalId` is freely reusable, and a new tenant inherits the old tenant's billing history (done)
 
 **Context:** Found while fixing 2.20. `TenantsService.provisionTenant`
 (`apps/api/src/tenants/tenants.service.ts:96-100`) only checks the live `tenants` table for a
@@ -818,6 +818,13 @@ prior purged tenant either fails with a clear error, or the new tenant's billing
 exclude the prior tenant's history.
 **Test:** extend `tenants.service.integration-spec.ts`'s purge tests with a purge-then-reprovision
 case asserting the chosen behavior.
+
+**Done (Antigravity, verified 2026-08-23):** chose "block reuse outright" via the tombstone
+approach — `purgeTenant` sets `status: 'purged'` (migration 0056) instead of deleting the registry
+row, so `provisionTenant`'s own existing-row check rejects any reuse of a purged `hospitalId` with
+a clear `ConflictException`. Product-review pass confirmed the underlying behavior genuinely works
+(a purge-then-reprovision attempt is blocked, billing history stays correctly attributed), but the
+item's own stated test was never written — added as part of that review.
 
 ---
 
