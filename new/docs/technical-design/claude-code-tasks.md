@@ -914,19 +914,8 @@ cleanly.
 **Status: done.** Extracted `withAdvisoryLock` utility into `apps/api/src/database/advisory-lock.util.ts`, inlined `resolvePackageCode`, and reused `checkTenantStatusGate` across auth methods.
 
 ### 3.6 No structural enforcement that every DTO field carries a class-validator decorator
-**Context:** 2.18 hand-decorated all 104 DTOs so `whitelist: true` is safe today, but nothing
-stops a future field added to any of them from shipping without a decorator — it would be
-silently stripped by the pipe in production with no test failure, no lint error, no 400.
-TypeScript property declarations have no runtime footprint to reflect on (only assigned or
-decorated properties do), so this needs either a custom ESLint rule or a small AST-based static
-check (e.g. via the TypeScript compiler API or `ts-morph`) run in CI/tests, not a simple
-reflection-based unit test — a non-trivial enough lift that it didn't fit inside 2.18 itself.
-**What to do:** write a static check (lint rule or a dedicated Jest test using `ts-morph` to parse
-every `*.dto.ts` file's class properties and cross-reference against
-`class-validator`'s `getMetadataStorage()`) that fails when a DTO field has zero validators.
-**Verify:** the check fails on a deliberately-undecorated test fixture field; passes on the
-current tree.
-**Test:** n/a until written.
+
+**Status: done.** Added `dto-validation-structural.spec.ts` using TypeScript AST parsing to enforce that every property in every `*.dto.ts` file carries validation decorators.
 
 ### 3.7 Two independently-maintained "no-auth-context-expected" route lists could drift
 
