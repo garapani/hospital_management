@@ -2289,3 +2289,87 @@ confirming it reliably reproduces the bug rather than passing vacuously — then
 A race test that has never been observed to fail against the bug it claims to catch hasn't proven
 anything; deliberately reverting the fix and re-running is cheap insurance against a false-negative
 regression test.
+
+## 58. `provisionTenant` cleanup-on-failure + `refresh()` catches a purged tenant's dropped schema (2026-08-23)
+
+`claude-code-tasks.md` 2.23. Two unrelated bugs sharing one root cause: `TenantsService.
+provisionTenant` and `AuthService.refresh()` both assumed a registry row's existence (or its
+absence/status) is the single source of truth for tenant state, when the tenant *schema* is the
+real ground truth and can diverge from the registry row.
+
+**`provisionTenant`: why a nested transaction wasn't possible.** The registry-row insert through
+bootstrap-admin creation isn't one atomic DB transaction, and can't cleanly become one:
+`tenant_roles`'s FK to `tenants("hospitalId")` requires the registry row to exist first (so it can't
+be inserted before the row), and department-seed/bootstrap-admin creation both run in their *own*
+tenant-schema transaction via `runInTenantSchema` (`SET LOCAL ROLE`/`search_path`, scoped to its own
+`queryRunner`), which can't be nested inside the platform-schema transaction that would wrap the
+registry-row insert. **Fix:** instead of atomicity, best-effort cleanup — wrap the whole block in a
+try/catch, and on any failure delete the just-inserted registry row before rethrowing. This keeps
+`hospitalId` immediately retryable without requiring archive+purge. The schema/role created earlier
+in the flow are deliberately left behind on failure: `provisionTenantSchema`'s `CREATE SCHEMA IF NOT
+EXISTS` plus TypeORM's inherently-idempotent migration runner (tracks applied migrations, skips
+them on a second run) make re-running it on retry a safe no-op/resume, so there's nothing to clean
+up there.
+
+**`refresh()`: catch the schema failure, don't pre-check registry state.** The natural-looking fix —
+`if (!tenant) return invalidToken` before touching the schema — is wrong: `getTenant()` returns
+`null` for a purged tenant *and* for the platform tenant (by design) *and* for schema-only test
+tenants with no registry row (this codebase's established fail-open convention for registry-gated
+checks, shared with `AccountsService.createStaffAccount`'s role-membership check). A registry row's
+absence can't distinguish "purged" from "never registered" — but the tenant schema's actual
+existence can. So the fix instead wraps the schema-touching call itself
+(`accountsService.getAccountWithRoles`, inside `tenantContext.run`) in a try/catch: a purged
+tenant's dropped role/schema make `runInTenantSchema`'s `SET LOCAL ROLE` throw a real Postgres
+error, which is now caught and translated to `{ invalidToken: true }`. A schema-only test tenant's
+schema genuinely still exists, so the call still succeeds for it exactly as before — the fix adds
+zero new rejection paths for the fail-open case it must not disturb.
+
+**Verifying against the pre-fix code, not just that the new test passes:** both fixes were verified
+by git-stashing the source change (keeping the new test) and confirming the test actually fails
+against the unfixed code with the exact expected error (`ConflictException: Tenant ... already
+exists` left behind for `provisionTenant`; `QueryFailedError: role "tenant_..." does not exist` for
+`refresh()`) before restoring the fix and confirming it passes — same discipline as §57.
+
+**Known sibling gap, not fixed here:** `AuthService.login()`/`changeInitialPassword()` have the
+identical root-cause bug (schema access before any status check), but `login()`'s check is
+deliberately deferred until *after* password verification to avoid leaking tenant state to a
+wrong-password attempt — so the fix shape has to preserve that anti-enumeration property (treat the
+caught failure as `invalidCredentials`, not a new outcome), not just copy `refresh()`'s pattern.
+Logged separately as `claude-code-tasks.md` 2.32.
+
+## 59. Full-suite flake triage: parallel-load contention vs. genuine test-isolation gaps (2026-08-23)
+
+`claude-code-tasks.md` 3.1. The full backend suite (97 suites, each provisioning its own tenant
+schema against one shared dev Postgres) was intermittently failing unrelated suites under full
+parallel load — passing cleanly in isolation every time, the classic signature of resource
+contention rather than a real bug.
+
+**Fix: back off the parallelism, not the correctness.** `jest.config.cts`: `maxWorkers` 4→2 (fewer
+concurrent full migration runs competing for the same DB), `testTimeout` 60s→120s (each suite's
+`beforeAll` does a full schema+migration provision, comfortably over budget under load at the old
+timeout). `data-source.ts`: `connectionTimeoutMillis` default 5s→15s, made env-tunable
+(`DB_CONNECTION_TIMEOUT_MS`) like its siblings, since acquiring a pool connection under contention
+was a documented but previously ignored possible failure mode. `tenants.service.integration-spec.
+ts`/`auth.service.integration-spec.ts` also gained proactive `beforeAll` cleanup (not just
+`afterAll`), tolerating drop failures — a prior run's leftover schema/role/registry row (from a
+crashed or interrupted earlier run) no longer permanently blocks every subsequent run.
+
+**Verifying a flake fix without a flake-free environment to test it in.** 3 consecutive full runs
+were the actual verification (matching this task's own criterion), not a single green run — and
+even then, "same failure set" is the honest bar, not literally zero: one run surfaced a one-off
+`mvp-workflow.integration-spec.ts` 403 that didn't recur in the other two, plausibly attributable to
+genuine external contention on the shared dev DB (this session, mid-investigation, discovered other
+concurrent Claude Code sessions were also actively running against the same repo/DB — see the
+`claude-code-tasks.md` 1.x section for what was in flight). None of the *originally-documented*
+flaky suites (`master-data.controller`, `charge-capture`, `patients`, `cssd`, `admissions`,
+`seed-rbac`, `metrics`, `master-data-permgate`) failed in any of the 3 runs — the actual target of
+this task.
+
+**A "flaky" failure can turn out to be a deterministic bug hiding behind persistent shared state.**
+`packages.integration-spec.ts`'s `test_pkg_roles` test provisions a real tenant via
+`tenantsService.provisionTenant()` but never cleans it up (`claude-code-tasks.md` 3.8) — this isn't
+flaky at all, it's 100%-reproducible once the DB has been touched once, but it *looks* flaky in a
+list of "sometimes this suite fails" if nobody's traced the exact cause yet. Worth distinguishing
+before triaging a whole suite as "contention-flaky": check whether the specific failing assertion
+is timing-shaped (a timeout, a race) or state-shaped (an already-exists conflict, a row that should
+have been absent) — only the former is what parallel-load mitigation actually fixes.

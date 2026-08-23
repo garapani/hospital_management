@@ -639,7 +639,7 @@ the new cycle) and same-cycle (period preserved) paths.
 
 ---
 
-### 2.23 Tenant provisioning is non-transactional; a purged tenant + stale refresh token 500s instead of 401
+### 2.23 Tenant provisioning is non-transactional; a purged tenant + stale refresh token 500s instead of 401 (done)
 
 **Context:** found during the entity-audit-columns task's code review, in already-shipped
 tenant/auth code.
@@ -664,6 +664,28 @@ tenant returns 401, not 500.
 **Test:** extend `tenants.service.integration-spec.ts` with a provisioning-failure case; extend
 `auth.service.integration-spec.ts`/`auth.controller.integration-spec.ts` with a purge-then-refresh
 case (only suspend/archive are currently tested).
+
+**Done (2026-08-23):** `provisionTenant` wraps registry-row-insert through bootstrap-admin-creation
+in a try/catch — any failure best-effort deletes the just-inserted registry row before rethrowing,
+so a retry with the same `hospitalId` never 409s (schema/role are deliberately left behind; both
+are idempotent to re-touch on retry). `AuthService.refresh()` now catches the schema-access failure
+a purged tenant's dropped role/schema causes and returns `invalidToken: true`, without disturbing
+the pre-existing fail-open convention for schema-only test tenants (registry-row presence alone
+can't distinguish "purged" from "never registered," so the fix catches the actual schema failure
+rather than pre-checking `getTenant() === null`). New tests: `tenants.service.integration-spec.ts`
+(a forced role-membership failure leaves no orphaned row, retry succeeds), `auth.service.
+integration-spec.ts` (provision → login → archive → purge → refresh returns `invalidToken`, not a
+500). Both verified to fail against the pre-fix code (git-stash) before committing. Full detail:
+`Development-Standards.md` §58.
+
+**Known follow-on gap (not fixed here):** `AuthService.login()` and `changeInitialPassword()` both
+call `accountsService.findByUsernameWithRoles()` (which touches the tenant schema) *before* any
+tenant-status check — the same ordering bug `refresh()` had, but for a different reason: `login()`
+deliberately defers its status check until after password verification, specifically so tenant
+state isn't leaked to a wrong-password attempt (see its own comment). A purged tenant's login
+attempt would still raw-500 today, and fixing it needs a different shape than `refresh()`'s fix
+(e.g. treating a schema-access failure the same as `invalidCredentials`, to preserve the
+anti-enumeration property) rather than the same try/catch pattern copied over. Logged as 2.32.
 
 ---
 
@@ -869,9 +891,46 @@ malicious-SVG upload case.
 
 ---
 
+### 2.32 `AuthService.login()`/`changeInitialPassword()` raw-500 on a purged tenant (login's sibling of 2.23's refresh fix)
+
+**Context:** found while fixing 2.23. `AuthService.refresh()` had a raw-500 bug when a
+still-cryptographically-valid token was presented for a purged tenant — its dropped schema/role
+caused an uncaught Postgres error before any status check ran. `login()` and
+`changeInitialPassword()` have the identical root cause: both call
+`accountsService.findByUsernameWithRoles()` (tenant-schema-scoped) *before* `checkTenantStatusGate`
+runs, so a login attempt against a purged tenant's `hospitalId` still 500s today.
+**Why this wasn't folded into 2.23's fix:** `login()`'s status check is deliberately placed *after*
+password verification (own comment: "credentials are verified first so the tenant state is not
+leaked to a wrong-password attempt") — copying `refresh()`'s try/catch-around-the-schema-call
+pattern verbatim would work mechanically, but the right shape needs more care: the caught failure
+should read as `{ invalidCredentials: true }` (indistinguishable from a wrong password), not a new
+distinct outcome, to preserve that anti-enumeration property. `changeInitialPassword()` shares the
+same call and needs the analogous treatment.
+**What to do:** wrap `findByUsernameWithRoles()` in `login()` and `changeInitialPassword()` in a
+try/catch that returns/throws the same "not found" outcome each already has for a genuinely-missing
+account.
+**Verify:** a login attempt against a purged tenant's `hospitalId` returns `invalidCredentials`, not
+a 500; same for `changeInitialPassword`.
+**Test:** extend `auth.service.integration-spec.ts` with a provision→archive→purge→login case and a
+provision→archive→purge→changeInitialPassword case.
+
+---
+
 ## 3. Cleanups
 
 ### 3.1 Full-suite flake triage (infra, shared dev DB)
+
+**Status: done.** Reduced `maxWorkers` 4→2, raised `testTimeout` 60s→120s, raised the DB pool's
+`connectionTimeoutMillis` default 5s→15s (env-tunable), and added proactive beforeAll cleanup (not
+just afterAll) to `tenants.service.integration-spec.ts`/`auth.service.integration-spec.ts` so a
+prior run's leftover state can't block a fresh one. 3 consecutive full runs: none of the
+originally-documented flaky suites failed in any run. See `Development-Standards.md` §59 for detail
+and two follow-on gaps found during verification (logged separately, not fixed here): 3.8
+(`packages.integration-spec.ts`'s `test_pkg_roles` test never cleans up its real-provisioned tenant
+— deterministic failure on any re-run against a persistent DB) and a note on a one-off
+`mvp-workflow.integration-spec.ts` flake observed in 1 of 3 runs (403 instead of 201) that didn't
+recur — not chased further per this task's own "don't fix a passing-alone spec" instruction.
+
 **Context:** the full backend suite (~664 tests) occasionally fails random unrelated suites
 (observed: `master-data.controller`, `charge-capture`, `patients`, `cssd`, `admissions`,
 `seed-rbac`, `metrics`, `master-data-permgate` "ctx undefined") — each passes alone and the
@@ -936,6 +995,27 @@ unauthenticated tenant route — so a future `AuthContextMiddleware` failure on 
 have its spoofing-anomaly warning silently suppressed instead of logged. Not urgent (no live
 exploit today, `AuthContextMiddleware` has never failed to populate `authContext` there), but
 raises the priority of the consolidation above whenever this item is next picked up.
+
+---
+
+### 3.8 `packages.integration-spec.ts`'s `test_pkg_roles` test never cleans up its real-provisioned tenant
+
+**Context:** found while verifying 3.1's flake-mitigation changes. `packages.integration-spec.ts`'s
+"provisions the package role set and adds the new package roles on upgrade" test calls
+`tenantsService.provisionTenant({ hospitalId: 'test_pkg_roles', ... })` directly — the real
+provisioning flow, creating a schema/role/registry row — but never registers `'test_pkg_roles'` in
+the file's `registryOnlyTenantIds` cleanup array (unlike every other tenant this spec creates), and
+never purges/deletes it afterward.
+**Failure scenario:** the first run against a fresh DB passes. Every subsequent run against that
+same persistent dev DB (which is every run in practice, since this is a shared, not per-run,
+database) hits `ConflictException: Tenant test_pkg_roles already exists` deterministically —
+observed blocking 2 of 3 full-suite verification runs for 3.1, unrelated to anything 3.1 changed.
+**What to do:** either push `'test_pkg_roles'` into `registryOnlyTenantIds` (if a raw `DELETE FROM
+tenants` is sufficient) or call `tenantsService.archiveTenant`+`purgeTenant` in an `afterAll`/
+`afterEach` (since this one, unlike the others, has a real schema/role to also clean up, not just a
+registry row).
+**Verify:** running this spec's full file twice in a row (no DB reset in between) passes both times.
+**Test:** the fix's own verification is running the spec twice consecutively.
 
 ---
 
