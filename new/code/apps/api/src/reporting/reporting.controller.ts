@@ -18,12 +18,14 @@ export class ReportingController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
+    const parsedPage = page && !isNaN(Number(page)) ? Math.max(1, Number(page)) : 1;
+    const parsedLimit = limit && !isNaN(Number(limit)) ? Math.max(1, Math.min(100, Number(limit))) : 50;
     return this.reportingQueryService.listEvents({
       eventType,
       from,
       to,
-      page: page ? Number(page) : undefined,
-      limit: limit ? Number(limit) : undefined,
+      page: parsedPage,
+      limit: parsedLimit,
     });
   }
 
