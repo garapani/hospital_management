@@ -242,15 +242,34 @@ describe('PlatformBranding (integration)', () => {
       const routes = [
         ['get', `/platform/tenants/${hospitalId}/branding`],
         ['put', `/platform/tenants/${hospitalId}/branding`],
+        ['post', `/platform/tenants/${hospitalId}/branding/logo`],
         ['delete', `/platform/tenants/${hospitalId}/branding/logo`],
       ] as const;
       for (const [method, path] of routes) {
-        const response = await request(app.getHttpServer())
+        let req = request(app.getHttpServer())
           [method](path)
-          .set('Authorization', `Bearer ${noPermissionToken}`)
-          .send(method === 'put' ? { displayName: 'x' } : undefined);
+          .set('Authorization', `Bearer ${noPermissionToken}`);
+        
+        if (method === 'put') {
+          req = req.send({ displayName: 'x' });
+        } else if (method === 'post') {
+          req = req.attach('file', Buffer.from('fake'), { filename: 'logo.png', contentType: 'image/png' });
+        }
+        
+        const response = await req;
         expect(response.status).toBe(403);
       }
+    });
+
+    it('returns 200 on public unauthenticated GET /branding', async () => {
+      const hospitalId = `${PREFIX}public_get`;
+      await provision(hospitalId);
+      
+      const response = await request(app.getHttpServer())
+        .get(`/branding`)
+        .set('x-tenant-id', hospitalId);
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ displayName: null, primaryColor: null, logoUrl: null });
     });
 
     it('reads and updates branding end to end with the platform permission', async () => {

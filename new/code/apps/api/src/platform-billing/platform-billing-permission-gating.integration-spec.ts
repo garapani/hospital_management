@@ -70,7 +70,10 @@ describe('PlatformBillingController permission gating (integration)', () => {
       ['get', '/platform/billing/subscriptions'],
       ['get', `/platform/billing/tenants/${PREFIX}hospital/subscription`],
       ['post', `/platform/billing/tenants/${PREFIX}hospital/subscribe`],
+      ['post', `/platform/billing/tenants/${PREFIX}hospital/cancel`],
+      ['get', `/platform/billing/tenants/${PREFIX}hospital/invoices`],
       ['post', `/platform/billing/tenants/${PREFIX}hospital/invoices`],
+      ['post', `/platform/billing/invoices/fake-id/paid`],
     ] as const;
     for (const [method, path] of routes) {
       const response = await request(app.getHttpServer())
