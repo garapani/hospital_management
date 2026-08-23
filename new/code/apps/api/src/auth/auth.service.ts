@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 import { TenantContextService } from '@hospital/tenant-context';
@@ -39,6 +39,8 @@ interface RefreshTokenPayload {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly accountsService: AccountsService,
     private readonly jwtService: JwtService,
@@ -70,7 +72,28 @@ export class AuthService {
   }
 
   async login(input: LoginInput): Promise<LoginResult> {
-    const found = await this.accountsService.findByUsernameWithRoles(input.username);
+    // A purged tenant's schema/role are dropped (TenantsService.purgeTenant), so this lookup
+    // fails inside runInTenantSchema's `SET LOCAL ROLE` with a raw Postgres error — same root
+    // cause as 2.23's refresh() fix. Unlike refresh(), the caught failure is folded into
+    // invalidCredentials here rather than a distinct outcome: login()'s status gate is
+    // deliberately placed after credential verification specifically so tenant state is never
+    // leaked to an unauthenticated caller (see the comment below), and a purged-tenant lookup
+    // failure must preserve that same anti-enumeration property, not announce itself differently
+    // from a wrong password.
+    let found: Awaited<ReturnType<AccountsService['findByUsernameWithRoles']>>;
+    try {
+      found = await this.accountsService.findByUsernameWithRoles(input.username);
+    } catch (err) {
+      // Logged, not swallowed silently: this catch is meant for one specific, expected cause (a
+      // purged tenant), but it's unscoped by necessity (the response must not distinguish a
+      // purged tenant from a wrong password). A genuine infrastructure fault here — a connection
+      // pool exhausted, an unrelated query bug — would otherwise be indistinguishable from normal
+      // failed-login traffic in monitoring, with no trace to diagnose it from.
+      this.logger.warn(
+        `login() account lookup failed for username "${input.username}" — treating as invalid credentials: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return { invalidCredentials: true };
+    }
     if (!found) {
       return { invalidCredentials: true };
     }
@@ -139,7 +162,17 @@ export class AuthService {
     currentPassword: string,
     newPassword: string,
   ): Promise<void> {
-    const found = await this.accountsService.findByUsernameWithRoles(username);
+    // Same purged-tenant schema-access failure as login() above — folded into the same
+    // Invalid-credentials outcome the existing !found branch already uses.
+    let found: Awaited<ReturnType<AccountsService['findByUsernameWithRoles']>>;
+    try {
+      found = await this.accountsService.findByUsernameWithRoles(username);
+    } catch (err) {
+      this.logger.warn(
+        `changeInitialPassword() account lookup failed for username "${username}" — treating as invalid credentials: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new UnauthorizedException('Invalid credentials');
+    }
     if (!found) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -188,7 +221,10 @@ export class AuthService {
         { tenantId: payload.hospitalId, correlationId: 'auth-refresh' },
         () => this.accountsService.getAccountWithRoles(payload.sub),
       );
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        `refresh() account lookup failed for hospitalId "${payload.hospitalId}" — treating as invalid token: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return { invalidToken: true };
     }
     if (!found) {

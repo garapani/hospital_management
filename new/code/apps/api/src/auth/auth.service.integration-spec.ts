@@ -421,4 +421,48 @@ describe('AuthService (integration)', () => {
     const refreshResult = await authService.refresh({ refreshToken: loginResult.refreshToken });
     expect(refreshResult).toEqual({ invalidToken: true });
   });
+
+  it('2.32: login against a purged tenant returns invalidCredentials, not a raw 500', async () => {
+    // Timestamp-suffixed, not a fixed id: purgeTenant tombstones the registry row permanently
+    // (2.28 — status flips to 'purged', never deleted), so a fixed hospitalId here would 409 on
+    // provisionTenant on every run after the first against a persistent dev DB (the same class of
+    // gap as 3.8).
+    const hospitalId = `test_auth_purge_login_${Date.now()}`;
+    await tenantsService.provisionTenant({
+      hospitalId,
+      hospitalName: 'Purge Login Hospital',
+      adminPassword: 'a-purge-login-password',
+    });
+    await tenantsService.archiveTenant(hospitalId);
+    await tenantsService.purgeTenant(hospitalId, hospitalId);
+
+    // Anti-enumeration: a login attempt against a purged tenant's hospitalId must be
+    // indistinguishable from a wrong password/username, not a distinct outcome or a raw 500.
+    const loginResult = await ctx.tenantContext.run({ tenantId: hospitalId, correlationId: 'test' }, () =>
+      authService.login({ username: `admin.${hospitalId}`, password: 'a-purge-login-password' }),
+    );
+    expect(loginResult).toEqual({ invalidCredentials: true });
+  });
+
+  it('2.32: changeInitialPassword against a purged tenant is rejected cleanly, not a raw 500', async () => {
+    // See the login test above for why this is timestamp-suffixed rather than a fixed id.
+    const hospitalId = `test_auth_purge_cp_${Date.now()}`;
+    await tenantsService.provisionTenant({
+      hospitalId,
+      hospitalName: 'Purge Change-Password Hospital',
+      adminPassword: 'a-purge-cp-password',
+    });
+    await tenantsService.archiveTenant(hospitalId);
+    await tenantsService.purgeTenant(hospitalId, hospitalId);
+
+    await expect(
+      ctx.tenantContext.run({ tenantId: hospitalId, correlationId: 'test' }, () =>
+        authService.changeInitialPassword(
+          `admin.${hospitalId}`,
+          'a-purge-cp-password',
+          'a-new-password-123',
+        ),
+      ),
+    ).rejects.toThrow('Invalid credentials');
+  });
 });
