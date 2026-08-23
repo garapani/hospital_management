@@ -12,8 +12,25 @@ describe('TenantsService (integration)', () => {
   let ctx: TenantTestContext;
   let tenantsService: TenantsService;
 
+  async function cleanMatchingTenants() {
+    const hospitalIds: { hospitalId: string }[] = await ctx.dataSource.query(
+      `SELECT "hospitalId" FROM tenants WHERE "hospitalId" LIKE 'test_tenant_svc_%'`,
+    );
+    for (const { hospitalId } of hospitalIds) {
+      const name = `tenant_${hospitalId}`;
+      try {
+        await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "${name}" CASCADE`);
+        await ctx.dataSource.query(`DROP ROLE IF EXISTS "${name}"`);
+      } catch {
+        // ignore drop errors during test cleanup
+      }
+    }
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_svc_%'`);
+  }
+
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'tenant_svc' });
+    await cleanMatchingTenants();
     tenantsService = new TenantsService(
       ctx.dataSource,
       new TenantProvisioningService(ctx.dataSource),
@@ -22,20 +39,12 @@ describe('TenantsService (integration)', () => {
       new PackagesService(ctx.dataSource),
       ctx.accountsService,
     );
-  });
+  }, 120000);
 
   afterAll(async () => {
-    const hospitalIds: { hospitalId: string }[] = await ctx.dataSource.query(
-      `SELECT "hospitalId" FROM tenants WHERE "hospitalId" LIKE 'test_tenant_svc_%'`,
-    );
-    for (const { hospitalId } of hospitalIds) {
-      const name = `tenant_${hospitalId}`;
-      await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "${name}" CASCADE`);
-      await ctx.dataSource.query(`DROP ROLE IF EXISTS "${name}"`);
-    }
-    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_svc_%'`);
+    await cleanMatchingTenants();
     await teardownTenantTestContext(ctx);
-  });
+  }, 120000);
 
   it('provisions a tenant as active with an activatedAt timestamp', async () => {
     const tenant = await tenantsService.provisionTenant({

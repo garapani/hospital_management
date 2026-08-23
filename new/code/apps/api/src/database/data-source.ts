@@ -104,7 +104,7 @@ export function createDataSource(): DataSource {
     // Defaults here are a placeholder pending the real load test PRD.md §12 open question #1
     // still calls for; both are env-tunable without a code change once that number is known.
     extra: {
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: Number(process.env['DB_CONNECTION_TIMEOUT_MS'] ?? 15000),
       max: Number(process.env['DB_POOL_MAX'] ?? 20),
       statement_timeout: Number(process.env['DB_STATEMENT_TIMEOUT_MS'] ?? 30000),
     },

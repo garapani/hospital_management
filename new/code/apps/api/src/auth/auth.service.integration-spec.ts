@@ -34,6 +34,7 @@ describe('AuthService (integration)', () => {
       tenantsService,
     );
 
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = 'test_auth_purge_refresh'`);
     await ctx.inTenant(() =>
       ctx.accountsService.createStaffAccount({
         username: 'dr.carol',
@@ -54,7 +55,10 @@ describe('AuthService (integration)', () => {
     );
   });
 
-  afterAll(() => teardownTenantTestContext(ctx));
+  afterAll(async () => {
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = 'test_auth_purge_refresh'`);
+    await teardownTenantTestContext(ctx);
+  });
 
   it('issues an access and refresh token for correct credentials', async () => {
     const result = await ctx.inTenant(() =>

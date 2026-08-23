@@ -22,18 +22,13 @@ module.exports = {
     '**/?(*.)+(integration-spec).[jt]s?(x)',
   ],
   // Full-AppModule integration suites compile the whole Nest DI graph, provision tenant
-  // schemas/roles, and seed the RBAC catalog in beforeAll — comfortably more than Jest's
-  // default 5000ms once multiple suites run in parallel workers (or a shared dev machine is
-  // otherwise under load). 60s is a ceiling, not a target: individual tests that genuinely
-  // hang (e.g. the historical ThrottlerGuard/Redis port hang) still time out, and the heaviest
-  // test in the repo — the tenant-test-context "self-heals" test, which provisions a tenant
-  // schema twice (two full migration runs) — stays comfortably inside it even under full-suite
-  // parallel load.
-  testTimeout: 60000,
+  // schemas/roles, and seed the RBAC catalog in beforeAll — multi-tenant provisioning (55 migrations
+  // per schema) on a dev machine under parallel load comfortably completes within 120s.
+  testTimeout: 120000,
   // The suite keeps growing (78 suites, each provisioning tenant schemas against one shared
   // Postgres); Jest's default worker count parallelizes that provisioning faster than the DB (and
-  // this dev machine) can serve it, pushing beforeAll past the timeout. Cap workers so the DB is
-  // the bottleneck, not the timeouts.
-  maxWorkers: 4,
+  // this dev machine) can serve it, pushing beforeAll past the timeout. Cap workers to 2 so the DB
+  // connection pool and DDL migrations do not suffer from lock contention / starvation.
+  maxWorkers: 2,
   coverageDirectory: 'test-output/jest/coverage',
 };
