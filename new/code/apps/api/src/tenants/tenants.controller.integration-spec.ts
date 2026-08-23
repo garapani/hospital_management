@@ -468,11 +468,12 @@ describe('TenantsController (integration)', () => {
       expect(purged.status).toBe(200);
       expect(purged.body).toEqual({ purged: purgeId });
 
-      const rows: { hospitalId: string }[] = await ctx.dataSource.query(
-        `SELECT "hospitalId" FROM tenants WHERE "hospitalId" = $1`,
+      const rows: { hospitalId: string; status: string }[] = await ctx.dataSource.query(
+        `SELECT "hospitalId", status FROM tenants WHERE "hospitalId" = $1`,
         [purgeId],
       );
-      expect(rows).toHaveLength(0);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].status).toBe('purged');
       const schemas: { nspname: string }[] = await ctx.dataSource.query(
         `SELECT nspname FROM pg_namespace WHERE nspname = $1`,
         [`tenant_${purgeId}`],
