@@ -898,12 +898,8 @@ commit that as `chore:`. If files are already tracked, `git rm --cached .claude/
 **Test:** `git status --short`.
 
 ### 3.3 Stale dev-server process
-**Context:** background `nx serve api` jobs from earlier sessions were killed; verify only
-one current serve job is running and it has the latest code (see 1.4). Leftover servers on
-:3000 cause confusing "route not found" reports.
-**What to do:** `lsof -i :3000` — if more than one PID listens, kill stale ones and restart
-cleanly.
-**Verify:** exactly one process on :3000, serving `/platform/billing/subscriptions`.
+
+**Status: done.** Verified single active process on port 3000 responding properly.
 
 ### 3.4 Frontend repo hygiene
 
