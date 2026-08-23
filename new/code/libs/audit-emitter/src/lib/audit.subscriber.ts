@@ -32,12 +32,12 @@ export class AuditSubscriber implements EntitySubscriberInterface {
   ): Promise<void> {
     await this.emit(
       'create',
-      event.metadata.tableName,
+      event.metadata?.tableName ?? '',
       event.entity,
       null,
       event.entity ?? null,
       event.manager,
-      event.metadata.primaryColumns.map((column) => column.propertyName),
+      event.metadata?.primaryColumns?.map((column) => column.propertyName) ?? ['id'],
     );
   }
 
@@ -46,12 +46,12 @@ export class AuditSubscriber implements EntitySubscriberInterface {
   ): Promise<void> {
     await this.emit(
       'update',
-      event.metadata.tableName,
+      event.metadata?.tableName ?? '',
       event.entity ?? event.databaseEntity,
       (event.databaseEntity as Record<string, unknown>) ?? null,
       (event.entity as Record<string, unknown>) ?? null,
       event.manager,
-      event.metadata.primaryColumns.map((column) => column.propertyName),
+      event.metadata?.primaryColumns?.map((column) => column.propertyName) ?? ['id'],
     );
   }
 
@@ -60,12 +60,12 @@ export class AuditSubscriber implements EntitySubscriberInterface {
   ): Promise<void> {
     await this.emit(
       'delete',
-      event.metadata.tableName,
+      event.metadata?.tableName ?? '',
       event.databaseEntity,
       (event.databaseEntity as Record<string, unknown>) ?? null,
       null,
       event.manager,
-      event.metadata.primaryColumns.map((column) => column.propertyName),
+      event.metadata?.primaryColumns?.map((column) => column.propertyName) ?? ['id'],
     );
   }
 
