@@ -14,8 +14,15 @@ import { TENANT_MIGRATIONS } from './migrations/index.js';
  * schema too, and re-running this against an already-migrated tenant only applies migrations that
  * specific schema hasn't seen yet. Safe to interpolate unquoted: `schemaName` is always
  * `tenant_<id>` where `<id>` was already validated against `/^[a-z0-9_]+$/` by the caller.
+ *
+ * @param migrations Defaults to the full `TENANT_MIGRATIONS` list. The migrate-tenants-backfill
+ * gate spec overrides this with a truncated prefix to provision a schema stuck at an older
+ * migration point, then runs the real `runTenantMigrations()` against it.
  */
-export function createTenantMigrationDataSource(schemaName: string): DataSource {
+export function createTenantMigrationDataSource(
+  schemaName: string,
+  migrations: typeof TENANT_MIGRATIONS = TENANT_MIGRATIONS,
+): DataSource {
   return new DataSource({
     type: 'postgres',
     host: process.env['DB_HOST'] ?? 'localhost',
@@ -23,7 +30,7 @@ export function createTenantMigrationDataSource(schemaName: string): DataSource 
     username: process.env['DB_USERNAME'] ?? 'identity_access',
     password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
     database: process.env['DB_DATABASE'] ?? 'identity_access',
-    migrations: TENANT_MIGRATIONS,
+    migrations,
     synchronize: false,
     extra: {
       connectionTimeoutMillis: 5000,

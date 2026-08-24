@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { createTenantMigrationDataSource } from './tenant-migration-data-source.js';
+import { TENANT_MIGRATIONS } from './migrations/index.js';
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
 
@@ -13,8 +14,15 @@ export class TenantProvisioningService {
    * entry against the new schema, and grants identity_access membership in the role so
    * TenantConnectionService can SET ROLE into it per request. The single real production path —
    * called from TenantsService.provisionTenant() and the test helper alike.
+   *
+   * @param migrations Defaults to the full TENANT_MIGRATIONS list. The migrate-tenants-backfill
+   * gate spec overrides this with a truncated prefix to provision a schema stuck at an older
+   * migration point, then runs the real migrate-tenants runner against it to prove the gap closes.
    */
-  async provisionTenantSchema(tenantId: string): Promise<void> {
+  async provisionTenantSchema(
+    tenantId: string,
+    migrations: typeof TENANT_MIGRATIONS = TENANT_MIGRATIONS,
+  ): Promise<void> {
     if (!SAFE_TENANT_ID.test(tenantId)) {
       throw new Error(`Refusing to provision unsafe tenant id: ${tenantId}`);
     }
@@ -49,7 +57,7 @@ export class TenantProvisioningService {
       await setupRunner.release();
     }
 
-    const migrationDataSource = createTenantMigrationDataSource(name);
+    const migrationDataSource = createTenantMigrationDataSource(name, migrations);
     await migrationDataSource.initialize();
     try {
       await migrationDataSource.runMigrations({ transaction: 'each' });

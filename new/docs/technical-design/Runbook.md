@@ -32,6 +32,22 @@ the tables/sequences the migrations just created, and grants `tenant_<id>` membe
    manually complete the missing piece (schema/role/grants/migrations) or drop the schema and role
    and re-provision the tenant from scratch.
 
+### Deploying a new tenant migration
+Adding a file to `TENANT_MIGRATIONS` only changes what a *newly* provisioned tenant gets — it does
+not reach any tenant schema that already exists. **After deploying a tenant migration, run
+`pnpm exec nx run api:migrate-tenants` (or, in prod, `docker compose -f docker-compose.prod.yml run
+--rm migrate`, which runs `migrate.ts` then `migrate-tenants.ts`) against every environment that
+has existing tenant data — dev, staging, and prod each need their own run.** Forgetting this step is
+silent: the app boots fine and only fails per-query, per-tenant, at the point something touches the
+missing column/table. This exact gap shipped on 2026-08-23 (migration 0057 added
+`accounts.patientId`, `migrate-tenants` was never re-run against the already-provisioned `demo`,
+`demo1`, and `__platform` schemas) and took down login everywhere, because
+`AuthService.login`'s anti-enumeration catch folded the underlying `column Account.patientId does
+not exist` error into a generic "Invalid username or password" 401. The
+`migrate-tenants-backfill.integration-spec.ts` gate (`apps/api/src/database/`) exists to catch a
+regression in the backfill mechanism itself in CI, but it cannot force the deploy-time command to
+actually be run — treat this as a mandatory manual step in the deploy checklist, not optional.
+
 ## 2. Event Archiver and Audit Logs Missing
 We use asynchronous TypeORM `EntitySubscriberInterface` hooks to capture Audit Logs and Reporting Events without blocking the core business transaction.
 
