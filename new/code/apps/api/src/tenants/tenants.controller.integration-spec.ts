@@ -25,8 +25,40 @@ describe('TenantsController (integration)', () => {
   // developer machines that already ran the seed.
   let platformTenantInsertedByThisSuite = false;
 
+  /** Fully-provisioned tenants (schema + role + registry row) — drop all three. */
+  async function dropProvisionedTenant(hospitalId: string): Promise<void> {
+    await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "tenant_${hospitalId}" CASCADE`);
+    await ctx.dataSource.query(`DROP ROLE IF EXISTS "tenant_${hospitalId}"`);
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, [hospitalId]);
+  }
+
+  async function cleanMatchingTenants(): Promise<void> {
+    const hospitalIds: { hospitalId: string }[] = await ctx.dataSource.query(
+      `SELECT "hospitalId" FROM tenants WHERE "hospitalId" LIKE 'test_tenant_ctrl_%'`,
+    );
+    for (const { hospitalId } of hospitalIds) {
+      await dropProvisionedTenant(hospitalId);
+    }
+    // Also drop any orphan schemas/roles matching the pattern that may not have a row in tenants table
+    const schemas: { nspname: string }[] = await ctx.dataSource.query(
+      `SELECT nspname FROM pg_namespace WHERE nspname LIKE 'tenant_test_tenant_ctrl_%'`,
+    );
+    for (const { nspname } of schemas) {
+      await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "${nspname}" CASCADE`);
+      await ctx.dataSource.query(`DROP ROLE IF EXISTS "${nspname}"`);
+    }
+    const roles: { rolname: string }[] = await ctx.dataSource.query(
+      `SELECT rolname FROM pg_roles WHERE rolname LIKE 'tenant_test_tenant_ctrl_%'`,
+    );
+    for (const { rolname } of roles) {
+      await ctx.dataSource.query(`DROP ROLE IF EXISTS "${rolname}"`);
+    }
+    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_ctrl_%'`);
+  }
+
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'tenant_ctrl', seedRbac: true });
+    await cleanMatchingTenants();
     adminToken = await signTestToken({
       sub: 'tenants-controller-admin',
       hospitalId: ctx.tenantId,
@@ -47,14 +79,9 @@ describe('TenantsController (integration)', () => {
   });
 
   afterAll(async () => {
-    const hospitalIds: { hospitalId: string }[] = await ctx.dataSource.query(
-      `SELECT "hospitalId" FROM tenants WHERE "hospitalId" LIKE 'test_tenant_ctrl_%'`,
-    );
-    for (const { hospitalId } of hospitalIds) {
-      const name = `tenant_${hospitalId}`;
-      await ctx.dataSource.query(`DROP SCHEMA IF EXISTS "${name}" CASCADE`);
-      await ctx.dataSource.query(`DROP ROLE IF EXISTS "${name}"`);
-    }
+    // Cleanup must run before app.close(): the app's DatabaseModule owns (and destroys) the
+    // overridden DataSource on close, so any query after close() hits a dead connection.
+    await cleanMatchingTenants();
     // Conditional on purpose: __platform is a single global literal, not a test_tenant_ctrl_%
     // namespaced row. Task 2 seeds a real __platform tenant into this same database, so an
     // unconditional delete here would silently remove a developer's real platform-tenant row and
@@ -63,9 +90,8 @@ describe('TenantsController (integration)', () => {
     if (platformTenantInsertedByThisSuite) {
       await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" = $1`, [PLATFORM_TENANT_ID]);
     }
-    await ctx.dataSource.query(`DELETE FROM tenants WHERE "hospitalId" LIKE 'test_tenant_ctrl_%'`);
     await teardownTenantTestContext(ctx);
-    await app.close();
+    await app?.close();
   });
 
   it('provisions a tenant and returns it', async () => {
@@ -129,10 +155,11 @@ describe('TenantsController (integration)', () => {
   });
 
   it('rejects provisioning a duplicate hospitalId with 409', async () => {
-    await request(app.getHttpServer())
+    const first = await request(app.getHttpServer())
       .post('/tenants')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ hospitalId: 'test_tenant_ctrl_dup', hospitalName: 'Dup Hospital' });
+    expect(first.status).toBe(201);
 
     const response = await request(app.getHttpServer())
       .post('/tenants')
@@ -143,10 +170,11 @@ describe('TenantsController (integration)', () => {
   });
 
   it('lists tenants', async () => {
-    await request(app.getHttpServer())
+    const createRes = await request(app.getHttpServer())
       .post('/tenants')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ hospitalId: 'test_tenant_ctrl_list', hospitalName: 'List Hospital' });
+    expect(createRes.status).toBe(201);
 
     const response = await request(app.getHttpServer()).get('/tenants').set('Authorization', `Bearer ${adminToken}`);
     expect(response.status).toBe(200);
@@ -156,10 +184,11 @@ describe('TenantsController (integration)', () => {
   });
 
   it('gets a single tenant, 404 for an unknown one', async () => {
-    await request(app.getHttpServer())
+    const createRes = await request(app.getHttpServer())
       .post('/tenants')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ hospitalId: 'test_tenant_ctrl_get', hospitalName: 'Get Hospital' });
+    expect(createRes.status).toBe(201);
 
     const found = await request(app.getHttpServer())
       .get('/tenants/test_tenant_ctrl_get')
@@ -174,10 +203,11 @@ describe('TenantsController (integration)', () => {
   });
 
   it('suspends and reactivates a tenant', async () => {
-    await request(app.getHttpServer())
+    const createRes = await request(app.getHttpServer())
       .post('/tenants')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ hospitalId: 'test_tenant_ctrl_lifecycle', hospitalName: 'Lifecycle Hospital' });
+    expect(createRes.status).toBe(201);
 
     const suspended = await request(app.getHttpServer())
       .patch('/tenants/test_tenant_ctrl_lifecycle/suspend')
@@ -253,10 +283,11 @@ describe('TenantsController (integration)', () => {
     const hospitalId = 'test_tenant_ctrl_roles';
 
     beforeAll(async () => {
-      await request(app.getHttpServer())
+      const response = await request(app.getHttpServer())
         .post('/tenants')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ hospitalId, hospitalName: 'Roles Hospital' });
+      expect(response.status).toBe(201);
     });
 
     async function getRoles() {
@@ -370,10 +401,11 @@ describe('TenantsController (integration)', () => {
     const hospitalId = 'test_tenant_ctrl_archive';
 
     it('archives and restores a tenant (soft-delete, reversible)', async () => {
-      await request(app.getHttpServer())
+      const createRes = await request(app.getHttpServer())
         .post('/tenants')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ hospitalId, hospitalName: 'Archive Hospital' });
+      expect(createRes.status).toBe(201);
 
       const archived = await request(app.getHttpServer())
         .patch(`/tenants/${hospitalId}/archive`)
@@ -399,13 +431,15 @@ describe('TenantsController (integration)', () => {
 
     it('refuses to suspend or reactivate an archived tenant — archived tenants must be restored first', async () => {
       const guardId = 'test_tenant_ctrl_archive_guard';
-      await request(app.getHttpServer())
+      const createRes = await request(app.getHttpServer())
         .post('/tenants')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ hospitalId: guardId, hospitalName: 'Archive Guard Hospital' });
-      await request(app.getHttpServer())
+      expect(createRes.status).toBe(201);
+      const archiveRes = await request(app.getHttpServer())
         .patch(`/tenants/${guardId}/archive`)
         .set('Authorization', `Bearer ${adminToken}`);
+      expect(archiveRes.status).toBe(200);
 
       // Neither the older suspend nor reactivate routes may touch an archived tenant — both
       // would leave a stale archivedAt since only restore knows to clear it.
@@ -437,10 +471,11 @@ describe('TenantsController (integration)', () => {
 
     it('purges only an archived tenant, and only with an exact hospitalId confirmation', async () => {
       const purgeId = 'test_tenant_ctrl_purge';
-      await request(app.getHttpServer())
+      const createRes = await request(app.getHttpServer())
         .post('/tenants')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ hospitalId: purgeId, hospitalName: 'Purge Hospital' });
+      expect(createRes.status).toBe(201);
 
       // Active tenant: purge refused.
       const activePurge = await request(app.getHttpServer())
