@@ -1319,3 +1319,27 @@ sweep (cross-module contract; touches many modules).
 "not started" — all shipped 2026-08-20+ (see `pending-tasks.md` Phase 6). Do not trust it as-is.
 **What to do:** re-run the audit (per its own header instruction) and refresh the summary table.
 **Route to:** docs (after fixes land).
+
+### 6.10 Resolution status (2026-08-24, after Tech Lead approval "okay with 1")
+
+All six dispatched fixes are DONE, verified, and committed on `main` (backend repo unless noted):
+
+| Item | Status | Commit | Verification |
+|---|---|---|---|
+| F2 stale master-data spec | ✅ Done (Antigravity) | `16763dd` | 6/6 spec tests; full suite green |
+| F1 admissions route collision | ✅ Done (Antigravity) | `c32da1c` | live: `GET /admissions/discharge-summaries` → 200 (was 500); `:id` route intact |
+| F3 migrate-tenants purged crash | ✅ Done (Claude) | `645f04e` | new spec 2/2; 47/47 tenants tests; runner skips tombstones, idempotent, no public writes |
+| F4 migration-backfill gate | ✅ Done (Claude, landed by orchestrator) | `ce2a7f5` | gate spec 2/2 (reproduces 0057 incident + proves backfill closes it); Runbook deploy-migration section added |
+| F5 appointments DTO validation | ✅ Done (Antigravity) | `0e92f86` | live: incomplete body → 400 with field messages (was 500); valid payload 201 |
+| F6 uuid-filter 400 hardening | ✅ Done (Antigravity; backend `58aa0269`, frontend `1aed5e1`) | `58aa0269` / `1aed5e1` | live: all five `?x=undefined` URLs → 400 (was 500); controls 200; 100/100 affected tests; 30 frontend tests |
+| F7 tenants spec self-cleaning (found during final gate) | ✅ Done (Antigravity) | `bfef271` | spec passes twice-in-a-row (21/21); root cause: leftover provisioned schemas → bootstrap-admin username collision on re-run |
+
+**Final gate:** full backend suite green — 100 suites passed, 1 pre-existing skip, 758 tests, 0 failures
+(was 736/3/1 at review start). Frontend suite + build green. Dev-DB hygiene: leftover test
+schemas/roles/registry rows cleaned.
+
+**Still open:**
+- **M1 (SSU frontend page)** — not dispatched; Tech Lead scope decision pending.
+- **M2 (patient-portal frontend)** — deferred by Tech Lead decision ("patient frontend will work later").
+- Backlog items 2.1–2.4, 2.8–2.10 (ops-readiness, accounting auto-posting, fixed-assets depreciation,
+  DICOM scoping) — unchanged, tracked in this file's §2.
