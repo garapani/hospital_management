@@ -1,106 +1,102 @@
 # MVP Status Audit — Built vs. PRD Scope
 
+**Original audit:** 2026-08-09 (see git history for the v1 table; this file is a point-in-time
+audit by design — re-run rather than trust blindly once the picture shifts).
+**Refresh:** 2026-08-24 (DeepSeek Harness end-to-end MVP review — module inventory verified against
+`apps/api/src`, the live route surface, the full test suite, and `pending-tasks.md` check-offs).
+
 Audit target: `new/code/apps/api/src/*` against `PRD.md` §5 (module descriptions) and §8 (phase
-table). Triggered by two surprises found during a planning discussion (see "Surprises /
-discrepancies" below) that made `pending-tasks.md` alone untrustworthy as a map of "what's done" —
-`pending-tasks.md` only tracks work from PRD Phase 2 onward; Phase 0/1 modules were built earlier
-and never got checklist entries.
+table). `pending-tasks.md` only tracks work from PRD Phase 2 onward; Phase 0/1 modules were built
+earlier and never got checklist entries — the table below is the authoritative "what exists".
 
-## Summary table
+## Summary table (2026-08-24 refresh)
 
-| Module (dir) | PRD phase | Wired into `AppModule`? | Status | Key gaps |
+| Module (dir) | PRD phase | Wired into `AppModule`? | Status | Key gaps / notes |
 |---|---|---|---|---|
-| `auth` | Phase 0 | Yes (direct import) | Done | Login + refresh only, matches JWT-auth plan scope |
-| `accounts` | Phase 0 (Identity & Access) | **Yes — transitively**, via `AuthModule` importing `AccountsModule` (`auth.module.ts:9,15`), not a direct `app.module.ts` import | Done | Staff account CRUD, deactivate/reactivate/unlock, role assign/unassign. No self-service password reset/email flow |
-| `rbac` | Phase 0 (Identity & Access) | N/A — entities + seed script only, no controller | Done for its scope | `Role`/`Permission`/`RolePermission` entities + `seed-rbac-catalog.ts`; consumed by `PermissionGuard` in `libs/auth-guards`, not a standalone module |
-| `master-data` | Phase 0 | Yes | Done for what exists | Single controller/service — departments etc.; scope vs. PRD's full "lookups/code tables" breadth not verified line-by-line |
-| `tenants` | Phase 0 (System Admin) | Yes | Done | Tenant provisioning confirmed elsewhere (`pending-tasks.md` Phase 1 item 3) |
-| `audit` | Phase 0 | Yes | Done | Per `pending-tasks.md`, one known-flaky unrelated test (`persisting-reporting-event-publisher` logging assertion) |
+| `auth` | Phase 0 | Yes | Done | Login/refresh/change-password, JWT + refresh, tenant-status gate, purge-safe login (2.32) |
+| `accounts` | Phase 0 | Yes — transitively via `AuthModule` | Done | Staff CRUD, deactivate/reactivate/unlock, roles, reset-password, must-change flow, no self-service password reset/email |
+| `rbac` | Phase 0 | N/A — entities + seed + guards | Done | `Role`/`Permission`/`RolePermission` + `seed-rbac-catalog.ts`, consumed by `@hospital/auth-guards` |
+| `master-data` | Phase 0 | Yes | Done | Departments/wards/beds; read-only open to all authenticated staff (2026-08-21 fix); global dept catalog is platform-side (`rbac.manage`) |
+| `tenants` | Phase 0 | Yes | Done | Provision/archive/suspend/purge (tombstone, transactional), platform audit trail, package assignment |
+| `audit` | Phase 0 | Yes | Done | Per-tenant `audit_records`, actor/recordId derivation, query UI |
 | `patients` | Phase 1 | Yes | Done | Full CRUD + duplicate-check endpoint |
-| `appointments` | Phase 1 | Yes | Done | Create/list/get/update/cancel — no visible reschedule-vs-cancel distinction or doctor-schedule/availability endpoints (PRD mentions "doctor schedules" as in-scope for this module) |
-| `admissions` | Phase 1 (Admission/ADT) | Yes | Done | Create/list/get/transfer/discharge. PRD also names "discharge summaries" (`DischargeSummaryController` in old system) — no distinct discharge-summary entity/endpoint found, only a `discharge` action |
-| `billing` | Phase 1 | Yes | Partially done | Invoice create/list/get/cancel/record-payment, deposit create/list/refund, billing settings incl. GST. **Missing:** Settlement and Return/credit-note concepts (PRD: "invoicing, deposits, **settlements**"; old system also had `Controllers/Billing/Return`) — zero matches for "Settlement"/"IpBilling"/"inpatient" in the module. Invoice line items link to `sourceOrderItemId` but it's client-supplied and optional — no automatic charge-capture trigger when Lab/Radiology/Pharmacy work completes |
-| `orders` | Phase 1 | Yes | Done | Central order placement/list, per `pending-tasks.md` |
-| `reporting` | Phase 1 (archiver) + Phase 6 (dashboard) | Yes | Ahead of schedule | Archiver (`persisting-reporting-event-publisher`, `reporting.subscriber.ts`) plus read APIs (`GET /reporting/events`, dashboard event-counts/revenue) already shipped — PRD scoped the full dashboard to Phase 6, but the read-API slice landed early per `pending-tasks.md` Phase 4 item 10. **Not done:** CSV/PDF export (explicitly deferred, per `pending-tasks.md`) |
-| `clinical/vitals` | Phase 4 (Clinical/EMR) | Yes | Done, but early | Full CRUD |
-| `clinical/encounters` | Phase 4 (Clinical/EMR) | Yes | Done, but early | Notes/diagnoses/prescriptions, each with create + patient-scoped list; diagnoses/prescriptions are create+delete only (no update) |
-| `clinical/triage` | Phase 4 (Emergency, arguably) | Yes | Done, but early | Create/list/get/update/link-patient |
-| `lab` | Phase 2 | Yes | Done (per `pending-tasks.md`, `[x]`) | Report/PDF export, instrument integration, external send-out, multi-level verification, catalog update/delete, result amendment history, `OrderItem.status` not advancing on verify — all already logged in `pending-tasks.md`, not re-discovered here |
-| `radiology` | Phase 2 | Yes | Done (per `pending-tasks.md`, `[x]`) | Image attachment, film billing, DICOM, report PDF, catalog update/delete, amendment history, `OrderItem.status` — already logged in `pending-tasks.md` |
-| `inventory` | Phase 2 | Yes | Done (per `pending-tasks.md`, `[x]`) | RFQ, two-phase staging, store/location dimension, vendor accounting fields, donations/returns, catalog update/delete — already logged |
-| `pharmacy` | Phase 2 | Yes | Done (per `pending-tasks.md`, `[x]`) | Walk-in/OTC sales, dispensing-verification step, drug-specific catalog, POS/checkout, controlled-substance logging — already logged |
-| `assets` | Phase 3 (Fixed Asset) | No | **Not started** | Directory contains only `.gitkeep` |
-| — (no dir) | Phase 2 — DICOM | — | Not started | Confirmed no `dicom` directory |
-| — (no dir) | Phase 2 — Ward Supply | — | Not started | Confirmed no `ward-supply` directory |
-| — (no dir) | Phase 3 — Insurance/Claims | — | Not started | No `insurance`/`claims` directory |
-| — (no dir) | Phase 3 — Accounting | — | Not started | No `accounting` directory (`accounts/` is Identity & Access, unrelated — see discrepancy below) |
-| — (no dir) | Phase 3 — Verification | — | Not started | No `verification` directory |
-| — (no dir) | Phase 4 — Nursing, Emergency, OT, Maternity, CSSD | — | Not started | No matching directories. Triage (`clinical/triage`) is arguably a slice of Emergency, but PRD lists Emergency as its own module ("ER intake, triage") — ambiguous whether triage-as-built satisfies it or is a partial slice |
-| — (no dir) | Phase 5 — Employee, Payroll, Fraction & Incentive | — | Not started | No matching directories |
-| — (no dir) | Phase 6 — Helpdesk, Marketing & Referral, Social Service Unit, Notification, Document & Print | — | Not started | No matching directories |
+| `appointments` | Phase 1 | Yes | Done | CRUD + doctor-schedule/department-capacity endpoints + conflict checks. **F5:** create/update take bare-interface bodies — malformed input 500s instead of 400 (no DTO validation) |
+| `admissions` | Phase 1 | Yes | Done | Create/list/get/transfer/discharge + discharge summaries (migration 0030). **F1:** `GET /admissions/discharge-summaries` list route swallowed by `@Get(':id')` → 500 |
+| `billing` | Phase 1 | Yes | Done | Invoices/deposits/returns/record-payment + **automatic charge-capture** from Lab/Radiology/Pharmacy (2026-08-20, `ChargeCaptureSubscriber`). Settlement deliberately deferred to Insurance & Claims (per original Billing spec) |
+| `orders` | Phase 1 | Yes | Done | Central order placement, routes to Lab/Radiology/Pharmacy, completion routing via `completeItemInTransaction` |
+| `reporting` | Phase 1 (archiver) + Phase 6 | Yes | Done (ahead) | Event archiver + read APIs + CSV/PDF export; frontend dashboard page exists. Full aggregation UI is partial (frontend reporting page ships what exists) |
+| `clinical/vitals` | Phase 4 | Yes | Done | Full CRUD |
+| `clinical/encounters` | Phase 4 | Yes | Done | Notes/diagnoses/prescriptions (create + patient-scoped list) |
+| `clinical/triage` | Phase 4 | Yes | Done | Create/list/get/update/link-patient; covers PRD's Emergency module (ER intake/triage) |
+| `lab` | Phase 2 | Yes | Done | Catalog, requisition workflow, verify, PDF export, charge capture. Future: instrument/LIS integration, external send-out, multi-level verification, amendment history |
+| `radiology` | Phase 2 | Yes | Done | Same shape as Lab; PDF export. Future: image attachment, film billing, DICOM, amendment history |
+| `inventory` | Phase 2 | Yes | Done | Item A (procurement: categories/items/vendors/PO/goods receipt/stock) + Item B (requisition/dispatch). Future: RFQ, staging, store/location, donations/returns |
+| `pharmacy` | Phase 2 | Yes | Done | Order-routed dispensing, FEFO stock decrement, charge capture. Future: walk-in/OTC, drug catalog, POS, controlled-substance log |
+| `ward-supply` | Phase 2 | Yes | Done | Ward sub-store stock ledger (receive/consume, per-department+item balances) |
+| `insurance` | Phase 3 | Yes | Done (MVP scope) | Payers/policies/claims lifecycle + coverage check; frontend page (2026-08-22). Future: external referrals, PM-JAY formats, payer settlement |
+| `accounting` | Phase 3 | Yes | Done (MVP scope) | CoA, double-entry journals, trial balance/income statement/balance sheet; no frontend page. Future: **auto-posting from Billing** (`claude-code-tasks.md` 2.8), reversals, fiscal-year close |
+| `fixed-assets` | Phase 3 | Yes | Done (MVP scope) | Register + read-time straight-line depreciation. Future: accrual schedules, disposal, transfers (2.9) |
+| `verification` | Phase 3 | No | **Not started** | Overlaps insurance `checkCoverage`; needs scoping decision |
+| `nursing` | Phase 4 | Yes | Done | Tasks + MAR |
+| `ot` | Phase 4 | Yes | Done | Surgery scheduling |
+| `maternity` | Phase 4 | Yes | Done | Labor/delivery records |
+| `cssd` | Phase 4 | Yes | Done | Instrument catalog + sterilization cycles |
+| `vaccination` | Phase 4 | Yes | Done | Patient vaccination records |
+| `employee` | Phase 5 | Yes | Done | HR master (auto EMP-… numbers) |
+| `payroll` | Phase 5 | Yes | Done | Monthly payslips (Draft→Paid) |
+| `fraction` | Phase 5 | Yes | Done | Revenue-share rules + entries vs real invoices |
+| `helpdesk` | Phase 6 | Yes | Done | Ticketing lifecycle |
+| `marketing` | Phase 6 | Yes | Done | Referral sources + patient referrals |
+| `ssu` | Phase 6 | Yes | Done — backend only | **M1:** no frontend page (only backend-complete module missing one) |
+| `notifications` | Phase 6 | Yes | Done (in-app slice) | CRUD + summary + subscribers; no email/SMS/push channel |
+| `document-and-print` | Phase 6 | No | Partial | PDF export exists via `@hospital/pdf` (lab/radiology/reporting); no module for stickers/print |
+| `dicom` | Phase 2 | No | **Not started** | Needs scoping (`claude-code-tasks.md` 2.10) |
+| `patient-portal` | new (PRD §6.1) | Yes | Phase 1 backend done (2026-08-23) | Login + read-only self-scoped records. **M2:** frontend app is an empty scaffold; Phase 2-4 (booking/payment/messaging) deferred, payment blocked on gateway vendor |
+| `packages` | SaaS | Yes | Done | Package catalog + resolution-time permission filtering + role auto-provisioning |
+| `platform-billing` | SaaS | Yes | Done | Subscriptions + invoices (subscribe/cancel/issue/mark-paid), tenant-locked |
+| `platform-branding` | SaaS | Yes | Done | Per-tenant display name/logo/color, MinIO-backed, XSS-hardened |
 
-## Surprises / discrepancies
+## Surprises / discrepancies (kept from the original audit + 2026-08-24 additions)
 
-### The `accounts` module is NOT dead code — it's wired transitively, not directly
+### The `accounts` module is NOT dead code — it's wired transitively, not directly (unchanged)
+`app.module.ts` never imports `AccountsModule` directly, but `auth/auth.module.ts` imports it, and
+NestJS module resolution is transitive — all `AccountsController` routes are live. **No action
+needed** — this was a false alarm in the original audit; correcting the record so it doesn't get
+"fixed" by someone re-wiring an already-wired module.
 
-The planning discussion that triggered this audit flagged `apps/api/src/accounts/` as orphaned
-because `app.module.ts` never imports `AccountsModule` directly. That's true but misleading:
-`auth/auth.module.ts:9` imports `AccountsModule`, and `auth.module.ts` is itself imported directly
-into `app.module.ts:8/46`. NestJS's module resolution is transitive — any module reachable through
-the `imports` graph from the root module has its controllers registered. `AccountsModule` declares
-`AccountsController` (`accounts.module.ts:9`), so `POST /accounts`, `GET /accounts`,
-`PATCH /accounts/:id/{deactivate,reactivate,unlock}`, `POST /accounts/:id/roles`, and
-`DELETE /accounts/:id/roles/:accountRoleId` are all live routes today. **No action needed** — this
-was a false alarm, not a real gap. Correcting the record here so it doesn't get "fixed" by someone
-re-wiring an already-wired module.
+### Phase 1 predates `pending-tasks.md`'s tracking regime entirely (unchanged)
+Patient/Appointment/Admission/Billing/Clinical-basics were built in the project's earliest commits,
+before the current pending-task pipeline existed — that's why they appear in no checklist entries,
+not because they were skipped. Same explanation covers appointments' F5 validation gap and
+admissions' F1 route collision (oldest modules, least hardening).
 
-### Phase 1 predates `pending-tasks.md`'s tracking regime entirely
+### Reporting shipped ahead of its PRD phase slot (unchanged)
+Read APIs + exports + dashboard page exist; the PRD's "full aggregation/UI" Phase 6 wording is
+partially already satisfied. Don't re-schedule done work.
 
-`git log --follow` on `accounts.controller.ts` and `admissions.module.ts`/`billing.module.ts` shows
-these were built in the project's earliest commits (e.g. `e947d51`, `15a8801`, `d0e50d2`,
-`7c67776`, `a37f6dd`), before the rename `apps/identity-access` → `apps/api` for the
-modular-monolith pivot (`8473f3d`) — i.e. before the current pending-task pipeline (brainstorm →
-plan → subagent-execute → docs) was even established as this repo's working convention. That's why
-none of Patient/Appointment/Admission/Billing/Clinical-basics appear as checklist items anywhere in
-`pending-tasks.md`: the file's scope starts at PRD Phase 2 by construction, not because Phase 0/1
-were skipped.
+### Automatic charge-capture — RESOLVED (was a surprise in the 2026-08-09 audit)
+The original audit's "no automatic charge-capture from clinical modules into Billing" is fixed
+(2026-08-20): pricing columns + `ChargeCaptureSubscriber` + `InvoicesService.captureChargeForOrderItem`
+(auto-line on the patient's open invoice when an order item completes), with per-patient advisory
+locking and a unique partial index making "one charge per order item" a DB invariant.
 
-### Reporting shipped ahead of its PRD phase slot
+### 2026-08-24 review findings (new)
+The end-to-end MVP review found two live-environment blockers and five code bugs, plus missing
+frontend features — full write-ups with acceptance criteria live in `claude-code-tasks.md` §6
+(F1–F5, M1–M2). The headline items:
+- **Login-blocking migration gap (B1/F4):** tenant migration 0057 (`accounts.patientId`) landed
+  without `api:migrate-tenants` backfill — every pre-existing tenant schema lacked the column and
+  every login 401'd. Unblocked in dev by cleanup + backfill; the process gap (undetectable by the
+  suite, which only tests fresh schemas) is tracked as F4.
+- **`migrate-tenants` crashes on purged tenants (F3):** iterates all registry rows; purged
+  tombstones have no schema → falls through to `public` and replays migrations there. Also breaks
+  the prod `docker-compose.prod.yml` `migrate` service (`migrate.ts && migrate-tenants.ts`).
 
-PRD §8 scopes the "full aggregation/dashboard UI" to Phase 6, but the read APIs
-(`GET /reporting/dashboard/event-counts`, `GET /reporting/dashboard/revenue`) already exist per
-`pending-tasks.md` Phase 4 item 10. Not a problem — just note that "Phase 6 — Reporting" in the PRD
-phase table is partially already satisfied, so a future MVP-scoping pass shouldn't re-schedule work
-that's done.
+## What's genuinely not built (for MVP scope decisions)
 
-### No automatic charge-capture from clinical modules into Billing
-
-`InvoiceItem.sourceOrderItemId` (`billing/entities/invoice-item.entity.ts:13`) is optional and
-supplied by the caller on invoice creation (`create-invoice.dto.ts:8`) — there's no subscriber or
-service call that automatically creates a billing charge when a Lab/Radiology/Pharmacy workflow
-step completes. For a real registration→visit→bill flow, front-desk/billing staff would need a
-manual step (or a UI that reads completed order items and lets staff select them) rather than
-charges appearing automatically. Not logged anywhere else in `pending-tasks.md` — worth its own
-future item if the target workflow assumes auto-capture.
-
-## Candidates for MVP-track hardening
-
-Modules that are close to a genuinely usable registration→visit→bill→lab/pharmacy flow for a
-single hospital, needing only targeted fixes rather than new build:
-
-1. **Billing** — closest to "needs real work before go-live," not just polish: no Settlement/Return
-   concept, no automatic charge capture from clinical modules (see above). Given Billing is the
-   PRD's stated proof of "registration → visit → bill," this is the highest-leverage gap to close
-   for an actual MVP, ahead of any Phase 3 (Insurance/Accounting) work.
-2. **Appointments** — solid CRUD; missing doctor-schedule/availability endpoints the PRD's module
-   description implies ("doctor schedules"). Worth confirming whether the target MVP workflow
-   actually needs scheduling-conflict checks or just appointment records.
-3. **Admissions** — solid CRUD; missing a distinct discharge-summary artifact (PRD names it
-   explicitly via the old system's `DischargeSummaryController`). Low effort if needed.
-4. **Lab / Radiology / Inventory / Pharmacy** — already `[x]` in `pending-tasks.md` with gaps
-   explicitly named there; no new findings here beyond what's already tracked.
-5. **Fixed Asset, Insurance/Claims, Accounting, Verification, Nursing, Emergency, OT, Maternity,
-   CSSD, DICOM, Ward Supply, Employee, Payroll, Fraction & Incentive, Helpdesk, Marketing &
-   Referral, Social Service Unit, Notification, Document & Print** — genuinely not started, zero
-   source directories. Any MVP scope decision should explicitly name which (if any) of these are
-   actually required, rather than assuming Phase-numbered order implies necessity.
+- **DICOM** (needs scoping), **Verification** (overlaps insurance), **Document & Print module**
+  (PDF export exists; no sticker/print surface), **full Notification channels** (in-app only).
+- **Patient-portal frontend** (backend Phase 1 done; app scaffold empty) — needs a scope decision.
+- **SSU frontend page** — backend done, page missing.
+- Ops-readiness items tracked in `claude-code-tasks.md` 2.1–2.4 (load test/sizing, OTel tracing +
+  Grafana/Loki, per-tenant connection caps, WAL/PITR + self-owned-server runbook).

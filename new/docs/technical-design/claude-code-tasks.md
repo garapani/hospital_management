@@ -1165,3 +1165,157 @@ decision** — revisit only if the human asks.
    (`Development-Standards.md` section + `pending-tasks.md` check-off + `review-comments.md`
    resolve mark) in a separate `docs:` commit.
 5. Full backend suite run once at the end; treat a lone flake per 3.1, not as a regression.
+
+---
+
+## 6. MVP review findings (2026-08-24) — awaiting Tech Lead approval
+
+Recorded by the DeepSeek Harness end-to-end MVP review (backend suite + live API sweep + frontend
+suite/build + PRD cross-check). **Status: none dispatched yet — the Tech Lead chose "backlog
+approval first".** These are the dispatch units once approved; routing per the team charter
+(`AGENTS.md` at the repo root).
+
+### 6.1 F1 — Route collision: `GET /admissions/discharge-summaries` 500s (matches `@Get(':id')`)
+**Context:** live sweep showed `GET /api/admissions/discharge-summaries` → 500
+(`invalid input syntax for type uuid: "discharge-summaries"`). `AdmissionsController` declares
+`@Get(':id')` at line 33 *before* `@Get('discharge-summaries')` at line 60, so the literal
+single-segment path is swallowed by the param route and `findOne('discharge-summaries')` runs
+`WHERE id = 'discharge-summaries'`. Only this one collision exists codebase-wide (scanned all 46
+controllers). No integration test covers the GET list route (only POST, `by-admission/:admissionId`,
+and `/:id` are tested). Frontend uses `by-admission`, so no UI breakage today.
+**What to do:** move the `discharge-summaries` literal routes above `@Get(':id')` (or otherwise
+disambiguate), and add an integration test hitting `GET /admissions/discharge-summaries` (with and
+without `?patientId=`).
+**Verify:** `GET /api/admissions/discharge-summaries` returns 200 with the tenant's list; with
+`?patientId=<uuid>` filters; `GET /api/admissions/:id` still resolves a real admission.
+**Test:** `cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="admissions"`.
+**Route to:** Antigravity (low-risk route reorder + test).
+
+### 6.2 F2 — Red suite: 3 stale assertions in `master-data-permission-gating.integration-spec.ts`
+**Context:** full suite = 736 pass / 3 fail / 1 skip; all 3 failures are this spec asserting 403 on
+read-only master-data GETs (`GET /departments`, `GET /departments/:id`, `GET /wards`) that commit
+`c76f201` (2026-08-21, `mvp-module-audit.md` §5) intentionally opened to all authenticated staff.
+The mutation assertions in the same spec still correctly 403.
+**What to do:** flip the three read-only expectations to 200 (they should now assert "accessible to
+any authenticated session"), keep the mutation 403 assertions.
+**Verify:** full backend suite green (except the known pre-existing skip).
+**Test:** `cd new/code && CI=true pnpm exec nx run api:test`.
+**Route to:** Antigravity (test fix).
+
+### 6.3 F3 — `migrate-tenants` crashes on purged/archived tenants and replays migrations into `public`
+**Context:** found while unblocking the 6.4 showstopper. `runTenantMigrations`
+(`apps/api/src/database/migrate-tenants.ts`) iterates every registry row including purged tombstones
+(kept by design since 2.28) whose schema/role are dropped; `search_path = <missing_schema>,public`
+falls through to public, TypeORM creates its tracking table there and replays every tenant migration
+in public until one fails (`relation "lab_tests" does not exist` on migration 0031). Blocks the
+backfill runner for everyone; polluted `public.migrations`/`public.discharge_summaries` in dev
+(cleaned by hand 2026-08-24).
+**What to do:** skip tenants whose `status !== 'active'` (suspended/archived keep schemas — decide
+whether they should still migrate; purged must be skipped), and/or assert the schema exists before
+running; add a regression test with a purged tombstone present.
+**Verify:** `nx run api:migrate-tenants` succeeds with purged tombstones in the registry and writes
+nothing to `public`.
+**Test:** `cd new/code && CI=true pnpm exec nx run api:migrate-tenants` twice (idempotent) against
+a DB with a purged tenant.
+**Route to:** Claude (migrations/tenant lifecycle = high-risk surface).
+
+### 6.4 F4 — Process gap: a tenant migration landed without backfill; logins broke for every existing tenant
+**Context:** patient-portal commit `ac7cf5c` (2026-08-23) added `Account.patientId` (migration
+`0057-add-account-patient-link.ts`, a TENANT migration) but `api:migrate-tenants` was never run, so
+every pre-existing tenant schema (`demo`, `demo1`, `__platform`) lacked the column → every login 401'd
+(masked as "Invalid username or password" by the anti-enumeration catch in `AuthService.login`).
+Undetectable by the suite (tests provision fresh schemas). Unblocked in dev 2026-08-24 by cleaning
+test leftovers + running `api:migrate-tenants`. Any existing deployment (dev/on-prem DB upgraded in
+place) is affected until backfilled.
+**What to do:** add a verification gate so this class of bug cannot ship silently: e.g. a CI step
+that provisions one "legacy" schema (migrations up to a fixed point) then runs `migrate-tenants` and
+boots the app; or extend the Definition of Done (section 5) to require running `api:migrate-tenants`
+locally when a tenant migration lands. Also add a Runbook line: after deploying a tenant migration,
+run `api:migrate-tenants` on existing DBs.
+**Verify:** a fresh "old-schema" tenant gets the new migration applied by the runner and the app
+boots/logs in against it.
+**Test:** the gate itself (CI or a script in `scripts/`).
+**Route to:** Claude designs the gate, Antigravity implements.
+
+### 6.5 M1 — Missing feature: SSU frontend page
+**Context:** `ssu` backend module complete (cases, approve/reject/close, auto `SSU-…` numbers,
+migration 0046, 5 tests) but `apps/staff-console` has no SSU page — the only backend-complete module
+without a frontend page. Permissions `ssu.read`/`ssu.manage`.
+**What to do:** build the SSU page following the established page patterns (e.g. the helpdesk page),
+permission-gated nav, real API calls.
+**Verify:** SSU cases list/create/approve/reject/close work against the dev API.
+**Test:** `cd frontend && CI=true pnpm exec nx run staff-console:test -- --testPathPatterns="ssu"` + `staff-console:build`.
+**Route to:** Antigravity. **Scope question for Tech Lead:** in MVP scope?
+
+### 6.6 M2 — Missing feature: patient-portal frontend app is an empty scaffold
+**Context:** patient-portal backend Phase 1 done (2026-08-23; §62 pattern; login + read-only
+appointments/invoices/prescriptions/lab+radiology results). `apps/patient-portal` has only
+test-setup + a spec placeholder — no UI. Phase 2-4 (booking/payment/messaging) deferred; payment
+needs a gateway-vendor decision.
+**Live verification (2026-08-24, DeepSeek Harness review):** the full backend lifecycle works end to
+end against the dev API — staff invite (`POST /patients/:id/portal-invite`, `patients.portal-invite`,
+generates + returns the initial password once) → patient login 403 `mustChangePassword` → change via
+unauthenticated `POST /auth/change-password` → re-login → `GET /patient-portal/{me,appointments,
+invoices,prescriptions,results}` all 200 with patient-scoped rows (the portal JWT's `patientId`
+claim scopes every query; `/me` returned exactly the invited patient). Only the frontend app is
+missing.
+**What to do:** per the design spec `new/docs/superpowers/specs/2026-08-23-patient-portal-design.md`
+(Implementation Decision 4): build the Phase 1 read-only portal app.
+**Verify:** a patient account can log in and view own appointments/invoices/prescriptions/results.
+**Test:** frontend suite + build; live-verify against a seeded patient account.
+**Route to:** Antigravity after Tech Lead scope sign-off (is Phase 1 portal in MVP scope?).
+
+### 6.7 F5 — Appointments create/update take bare-interface bodies: malformed input 500s instead of 400
+**Context:** found during live mutation testing. `AppointmentsController.createAppointment`/
+`updateAppointment` (`appointments.controller.ts:14,32`) type `@Body()` as
+`CreateAppointmentInput`/`UpdateAppointmentInput` — plain TS interfaces, no class-validator DTO
+(the module's only DTO is `search-appointments.dto.ts`). The global ValidationPipe has nothing to
+validate, so a missing/invalid field sails through and dies at the DB: `null value in column
+"firstName" ... violates not-null constraint` → raw 500. Should be a clean 400. The frontend sends
+the full shape so no UI breakage; this is an API-robustness gap (the only `*Input`-typed bodies in
+the codebase — all 123 other `@Body()` sites use DTO classes).
+**What to do:** add `CreateAppointmentDto`/`UpdateAppointmentDto` classes mirroring
+`CreateAppointmentInput` with decorators (required: `@IsNotEmpty` on firstName/lastName/
+contactNumber/appointmentDate/appointmentTime/appointmentType; `@IsUUID` on patientId/doctorId/
+departmentId; `@IsString`+`@IsOptional` on reason), and switch the controller to them. Note the
+frontend's actual payload shape before finalizing (per §53's lesson: whitelist:true strips
+undecorated fields — the frontend sends `scheduledFor`/`reason` today; the DTO must match the real
+payload, or the frontend must be updated to the DTO's shape).
+**Verify:** `POST /api/appointments` with only `{patientId, reason}` returns 400 with a clear
+message, not 500; the frontend appointment-creation flow still works end to end.
+**Test:** `cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="appointments"` + live check.
+**Route to:** Antigravity (module CRUD + validation), but the payload-shape reconciliation with the
+frontend may need a quick Claude review (cross-module contract).
+
+### 6.8 F6 — `?<uuidFilter>=undefined` (or any non-UUID junk) 500s on list endpoints, not 400
+**Context:** found during the live review's frontend-contract scan. Angular stringifies `undefined`
+in query params as the literal `"undefined"`. The requireParam guard (2026-08-09) only 400s when a
+required filter is *absent*; a *present-but-malformed* value sails through because the list/search
+DTOs decorate uuid-typed filter fields with `@IsString` (e.g. `search-appointments.dto.ts`'s
+`doctorId`/`departmentId`, `search-admissions.dto.ts`'s `wardId`) instead of `@IsUUID`. The value
+then reaches the query builder as `WHERE col = 'undefined'` → Postgres `invalid input syntax for
+type uuid` → raw 500. **Live-proven 500s:** `/appointments?doctorId=undefined`,
+`/appointments?departmentId=undefined`, `/admissions/active?wardId=undefined`,
+`/lab/requisitions?orderItemId=undefined`, `/orders?patientId=undefined`. The current frontend
+dodges it by page-level guards (lab queue + orders list clear the table rather than call empty),
+but `lab-api.service.ts:95` and `orders-api.service.ts:76` still pass `undefined` unconditionally
+in params (violating the 2.13 conditional-params convention), and any future caller misbehaves with
+a 500, not a clean 400. Same bug class as the 2026-08-09 NaN-pagination fixes (`mvp-module-audit.md`
+§3) — those fixed `Number()` inputs; this is the uuid-filter variant.
+**What to do:** sweep list/search DTOs and switch uuid-typed filter fields from `@IsString` to
+`@IsUUID` (the global ValidationPipe then 400s malformed values); fix `lab-api.service.ts` and
+`orders-api.service.ts` to build params conditionally per the 2.13 convention; add a regression
+spec hitting `/lab/requisitions?orderItemId=undefined` (and one of the others) expecting 400, not
+500.
+**Verify:** each probed URL above returns 400; lab queue + orders pages still load with real
+filters.
+**Test:** `cd new/code && CI=true pnpm exec nx run api:test` (full — app-wide DTO change) + live
+probe of the five URLs.
+**Route to:** Antigravity (DTO + frontend service fixes), with a Claude review pass on the DTO
+sweep (cross-module contract; touches many modules).
+
+### 6.9 Docs debt — `mvp-status.md` is stale
+**Context:** the 2026-08-09 audit claims Accounting/Insurance/Fixed-Asset/Emergency/CSSD/Maternity/etc.
+"not started" — all shipped 2026-08-20+ (see `pending-tasks.md` Phase 6). Do not trust it as-is.
+**What to do:** re-run the audit (per its own header instruction) and refresh the summary table.
+**Route to:** docs (after fixes land).
