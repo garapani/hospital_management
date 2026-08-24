@@ -1,7 +1,8 @@
 import { Controller, Get, Post, Put, Body, Param, Query, HttpCode, HttpStatus, UseGuards, BadRequestException } from '@nestjs/common';
 import { RequirePermission, PermissionGuard } from '@hospital/auth-guards';
 import { AppointmentsService } from './appointments.service.js';
-import type { CreateAppointmentInput, UpdateAppointmentInput } from './appointments.service.js';
+import { CreateAppointmentDto } from './dto/create-appointment.dto.js';
+import { UpdateAppointmentDto } from './dto/update-appointment.dto.js';
 import { SearchAppointmentsDto } from './dto/search-appointments.dto.js';
 
 @Controller('appointments')
@@ -11,7 +12,7 @@ export class AppointmentsController {
 
   @Post()
   @RequirePermission('appointment.manage')
-  async createAppointment(@Body() body: CreateAppointmentInput) {
+  async createAppointment(@Body() body: CreateAppointmentDto) {
     return this.appointmentsService.create(body);
   }
 
@@ -29,7 +30,7 @@ export class AppointmentsController {
 
   @Put(':id')
   @RequirePermission('appointment.manage')
-  async updateAppointment(@Param('id') id: string, @Body() body: UpdateAppointmentInput) {
+  async updateAppointment(@Param('id') id: string, @Body() body: UpdateAppointmentDto) {
     return this.appointmentsService.update(id, body);
   }
 
