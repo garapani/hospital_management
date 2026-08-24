@@ -77,7 +77,7 @@ Below is the module-by-module audit and compliance analysis:
 ### Tier 3: Low Risk (System Config & Static Lookups)
 
 13. **`master-data` (Departments, Wards, Beds)**
-    - **RBAC**: Read-only endpoints are accessible to all authenticated staff (`master-data.read`). Creation/deactivation requires `master-data.manage` (Super Admin or Platform Admin).
+    - **RBAC**: Read-only endpoints are accessible to all authenticated staff (no permission check required). Creation/deactivation requires `master-data.manage` (Super Admin or Platform Admin).
     - **Pagination**: Bypassed by design. Wards (<50), departments (<100), and beds (<30 per ward) have low cardinality, making client-side caching of these lists cleaner than paginated fetching.
     - **Audit Logs**: Edits to the department and ward catalog structure are fully audited.
 14. **`platform-branding` (Tenants Whitelabeling)**
@@ -138,3 +138,8 @@ During this audit, we identified two pagination-related bugs that could crash th
 - **File**: `new/code/apps/api/src/admissions/admissions.controller.ts`
 - **Bug**: To fetch a single discharge summary by ID, the controller endpoint loaded *all* discharge summaries for the entire tenant using `listDischargeSummaries()`, then performed an in-memory `.find(s => s.id === id)` search. This is an O(N) memory and CPU performance bottleneck that scales poorly as the database grows.
 - **Fix**: Added a dedicated `getDischargeSummary(id)` method to `AdmissionsService` to perform a direct O(1) indexed SQL lookup, and updated the controller to call it directly.
+
+### 5. Master-Data Read-Only RBAC Lockout
+- **File**: `new/code/apps/api/src/master-data/master-data.controller.ts`
+- **Bug**: The read-only endpoints (`GET /departments`, `GET /departments/:id`, `GET /wards`, `GET /wards/:id`, `GET /wards/:wardId/beds`, `GET /beds/:id`) were previously decorated with `@RequirePermission('master-data.manage')`. This locked out regular staff roles (like Receptionists, Doctors, and Nurses) who need to look up rooms, beds, and departments to admit patients, create appointments, or schedule surgeries, but should not have permission to manage (create/deactivate) those catalogs.
+- **Fix**: Removed the `@RequirePermission` decorator from the read-only controller endpoints. They are now accessible to any authenticated session, while mutation endpoints (POST/PATCH) remain securely locked behind `master-data.manage`.
