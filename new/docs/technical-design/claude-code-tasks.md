@@ -1238,14 +1238,18 @@ boots/logs in against it.
 **Route to:** Claude designs the gate, Antigravity implements.
 
 ### 6.5 M1 — Missing feature: SSU frontend page
+**Status: DONE (2026-08-24) — frontend commit `ad1db90`.** SSU page built mirroring the helpdesk
+pattern: `apps/staff-console/src/app/ssu/` (ssu-api.service + spec, ssu-list + html + spec,
+ssu.model), lazy route `/ssu` guarded by `Permissions.SSU_READ` (app.routes.ts), nav entry gated
+by `ssu.read` (app-shell.html), `SSU_READ`/`SSU_MANAGE` added to the Permissions enum
+(`libs/auth/src/lib/permissions.ts`). Cases lifecycle (list with status/patient filters, create
+with patient picker + subsidy %, Approve/Reject-with-required-notes/Close actions, toasts).
+Verified: 15/15 SSU tests (2 suites), 50/50 auth lib tests, typecheck, production build (lazy
+chunk emitted). Live check not possible under the basic-package demo tenant (SSU is Standard+);
+the backend module's own 5 integration tests + the frontend suite/build are the gate.
 **Context:** `ssu` backend module complete (cases, approve/reject/close, auto `SSU-…` numbers,
-migration 0046, 5 tests) but `apps/staff-console` has no SSU page — the only backend-complete module
+migration 0046, 5 tests) but `apps/staff-console` had no SSU page — the only backend-complete module
 without a frontend page. Permissions `ssu.read`/`ssu.manage`.
-**What to do:** build the SSU page following the established page patterns (e.g. the helpdesk page),
-permission-gated nav, real API calls.
-**Verify:** SSU cases list/create/approve/reject/close work against the dev API.
-**Test:** `cd frontend && CI=true pnpm exec nx run staff-console:test -- --testPathPatterns="ssu"` + `staff-console:build`.
-**Route to:** Antigravity. **Scope question for Tech Lead:** in MVP scope?
 
 ### 6.6 M2 — Missing feature: patient-portal frontend app is an empty scaffold
 **Context:** patient-portal backend Phase 1 done (2026-08-23; §62 pattern; login + read-only
@@ -1339,7 +1343,9 @@ All six dispatched fixes are DONE, verified, and committed on `main` (backend re
 schemas/roles/registry rows cleaned.
 
 **Still open:**
-- **M1 (SSU frontend page)** — not dispatched; Tech Lead scope decision pending.
 - **M2 (patient-portal frontend)** — deferred by Tech Lead decision ("patient frontend will work later").
 - Backlog items 2.1–2.4, 2.8–2.10 (ops-readiness, accounting auto-posting, fixed-assets depreciation,
   DICOM scoping) — unchanged, tracked in this file's §2.
+
+**M1 (SSU frontend page) — DONE 2026-08-24**, frontend commit `ad1db90` (see §6.5): with this, every
+backend-complete module has a staff-console page.
