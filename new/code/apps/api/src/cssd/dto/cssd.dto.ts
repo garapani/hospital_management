@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import type { SterilizationCycleStatus, SterilizationMethod } from '../entities/cssd.entity.js';
 
@@ -75,7 +75,7 @@ export class FailCycleDto {
 // claude-code-tasks.md 2.18). Extending directly fixes that.
 export class ListCyclesQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   instrumentId?: string;
 
   @IsOptional()

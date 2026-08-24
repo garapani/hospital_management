@@ -1,4 +1,4 @@
-import { IsDateString, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 
 export class CreateVaccinationRecordDto {
@@ -32,7 +32,7 @@ export class CreateVaccinationRecordDto {
 
 export class ListVaccinationRecordsQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   patientId?: string;
 
   @IsOptional()

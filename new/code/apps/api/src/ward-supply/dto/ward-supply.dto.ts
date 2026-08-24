@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import type { WardStockTransactionType } from '../entities/ward-stock.entity.js';
 
@@ -60,17 +60,17 @@ export class ConsumeStockDto {
 
 export class ListBalancesQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   departmentId?: string;
 }
 
 export class ListTransactionsQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   departmentId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   itemId?: string;
 
   @IsOptional()

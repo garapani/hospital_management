@@ -1,4 +1,4 @@
-import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateTaskDto {
   @IsString()
@@ -21,7 +21,7 @@ export class CreateTaskDto {
 
 export class ListTasksQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   admissionId?: string;
 }
 
@@ -50,7 +50,7 @@ export class CreateAdministrationDto {
 
 export class ListAdministrationsQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   admissionId?: string;
 }
 

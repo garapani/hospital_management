@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 
 import type { DeliveryType } from '../entities/maternity-record.entity.js';
 
@@ -75,10 +75,10 @@ export class RecordDeliveryDto {
 
 export class ListMaternityRecordsQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   patientId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   admissionId?: string;
 }

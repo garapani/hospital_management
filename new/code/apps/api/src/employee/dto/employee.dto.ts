@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import type { EmploymentType } from '../entities/employee.entity.js';
 
 export class CreateEmployeeDto {
@@ -81,7 +81,7 @@ export class UpdateEmployeeDto {
 
 export class ListEmployeesQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   departmentId?: string;
 
   @IsOptional()

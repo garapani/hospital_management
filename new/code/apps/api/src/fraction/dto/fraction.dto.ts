@@ -1,5 +1,5 @@
 import { PaginationQueryDto } from '@hospital/pagination';
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateRuleDto {
   @IsString()
@@ -36,16 +36,16 @@ export class CreateEntryDto {
 
 export class ListRulesQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   doctorId?: string;
 }
 
 export class ListEntriesQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   invoiceId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   doctorId?: string;
 }

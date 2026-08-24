@@ -1,9 +1,9 @@
 import { PaginationQueryDto } from '@hospital/pagination';
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class ListPharmacyDispensingDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   orderItemId?: string;
 
   @IsOptional()

@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import type { OtSurgeryStatus } from '../entities/ot-surgery.entity.js';
 
@@ -44,6 +44,6 @@ export class ListSurgeriesQueryDto extends PaginationQueryDto {
   status?: OtSurgeryStatus;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   patientId?: string;
 }

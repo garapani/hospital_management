@@ -1,5 +1,5 @@
 import { PaginationQueryDto } from '@hospital/pagination';
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import type {
   HelpdeskTicketPriority,
   HelpdeskTicketStatus,
@@ -41,7 +41,7 @@ export class ListTicketsQueryDto extends PaginationQueryDto {
   priority?: HelpdeskTicketPriority;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   assigneeAccountId?: string;
 
   @IsOptional()

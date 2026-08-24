@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import type { SsuCaseStatus } from '../entities/ssu-case.entity.js';
 
@@ -46,7 +46,7 @@ export class RejectCaseDto {
 
 export class ListCasesQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   patientId?: string;
 
   @IsOptional()

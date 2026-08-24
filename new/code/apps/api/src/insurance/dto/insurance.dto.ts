@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import type { InsurancePayerType } from '../entities/insurance-payer.entity.js';
 import { INSURANCE_CLAIM_STATUSES, type InsuranceClaimStatus } from '../entities/insurance-claim.entity.js';
@@ -29,7 +29,7 @@ export class CreatePayerDto {
 // 2.18). A real `extends`-based class fixes that.
 export class ListPoliciesQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   patientId?: string;
 }
 
@@ -157,7 +157,7 @@ export class CheckCoverageQueryDto {
 
 export class ListClaimsQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   patientId?: string;
 
   @IsOptional()

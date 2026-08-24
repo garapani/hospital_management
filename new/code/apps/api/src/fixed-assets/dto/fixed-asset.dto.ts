@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import { FIXED_ASSET_CONDITIONS } from '../entities/fixed-asset.entity.js';
 import type { FixedAssetCondition } from '../entities/fixed-asset.entity.js';
@@ -52,7 +52,7 @@ export class CreateFixedAssetDto {
 // (see 2.14 Phase B / claude-code-tasks.md 2.18). A real `extends`-based class fixes that.
 export class ListFixedAssetsQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   categoryId?: string;
 
   @IsOptional()

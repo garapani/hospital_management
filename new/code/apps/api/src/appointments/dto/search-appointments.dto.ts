@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 
 export class SearchAppointmentsDto extends PaginationQueryDto {
@@ -7,11 +7,11 @@ export class SearchAppointmentsDto extends PaginationQueryDto {
   date?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   doctorId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   departmentId?: string;
 
   @IsOptional()

@@ -71,3 +71,7 @@ task, conventional-commit prefixes, no AI co-authorship.
 - Never add a `Co-Authored-By: Claude` (or any AI attribution) trailer to any commit.
 - All work happens directly on `main` — no feature branches or worktrees for this project's
   pending-task pipeline.
+
+## Team Charter
+
+Roles and decision rights (Claude / Antigravity / DeepSeek Harness / Tech Lead) are defined in `AGENTS.md` at the repo root.

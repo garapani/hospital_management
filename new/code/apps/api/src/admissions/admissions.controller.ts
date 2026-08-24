@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { AdmissionsService } from './admissions.service.js';
 import { CreateAdmissionDto } from './dto/create-admission.dto.js';
@@ -26,7 +26,7 @@ export class AdmissionsController {
 
   @Get('active')
   @RequirePermission('admission.read')
-  async listActive(@Query('wardId') wardId?: string) {
+  async listActive(@Query('wardId', new ParseUUIDPipe({ optional: true })) wardId?: string) {
     return this.admissionsService.listActive(wardId);
   }
 
@@ -41,7 +41,7 @@ export class AdmissionsController {
 
   @Get('discharge-summaries')
   @RequirePermission('admission.read')
-  async listDischargeSummaries(@Query('patientId') patientId?: string) {
+  async listDischargeSummaries(@Query('patientId', new ParseUUIDPipe({ optional: true })) patientId?: string) {
     return this.admissionsService.listDischargeSummaries(patientId);
   }
 

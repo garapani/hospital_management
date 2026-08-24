@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import type { PayslipStatus } from '../entities/payslip.entity.js';
 
@@ -41,7 +41,7 @@ export class MarkPaidDto {
 
 export class ListPayslipsQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   employeeId?: string;
 
   @IsOptional()

@@ -32,6 +32,10 @@ describe('Global ValidationPipe (integration)', () => {
         'billing.manage',
         'maternity.manage',
         'inventory.catalog.manage',
+        'lab.read',
+        'appointment.read',
+        'admission.read',
+        'order.read',
       ],
     });
 
@@ -169,5 +173,59 @@ describe('Global ValidationPipe (integration)', () => {
       .send({ name: 'Test Category', displaySequence: 1.5 });
 
     expect(response.status).toBe(400);
+  });
+
+  // UUID query-filter validation hardening: Angular stringifies undefined query params as the
+  // literal string 'undefined'. List/search DTOs with uuid-typed filter fields must reject
+  // invalid UUID strings like 'undefined' with a 400 Bad Request instead of letting them reach
+  // Postgres WHERE col = 'undefined' which throws a raw 500.
+  it('rejects invalid UUID query param "undefined" on SearchAppointmentsDto with 400', async () => {
+    const resDoc = await request(app.getHttpServer())
+      .get('/appointments')
+      .query({ doctorId: 'undefined' })
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId);
+    expect(resDoc.status).toBe(400);
+
+    const resDept = await request(app.getHttpServer())
+      .get('/appointments')
+      .query({ departmentId: 'undefined' })
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId);
+    expect(resDept.status).toBe(400);
+  });
+
+  it('rejects invalid UUID query param "undefined" on SearchLabRequisitionsDto with 400', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/lab/requisitions')
+      .query({ orderItemId: 'undefined' })
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId);
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects invalid UUID query param "undefined" on SearchOrdersDto with 400', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/orders')
+      .query({ patientId: 'undefined' })
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId);
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects invalid UUID query param "undefined" on SearchAdmissionsDto and active admissions with 400', async () => {
+    const resSearch = await request(app.getHttpServer())
+      .get('/admissions')
+      .query({ wardId: 'undefined' })
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId);
+    expect(resSearch.status).toBe(400);
+
+    const resActive = await request(app.getHttpServer())
+      .get('/admissions/active')
+      .query({ wardId: 'undefined' })
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId);
+    expect(resActive.status).toBe(400);
   });
 });

@@ -1,9 +1,9 @@
 import { PaginationQueryDto } from '@hospital/pagination';
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class ListRadiologyRequisitionDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   orderItemId?: string;
 
   @IsOptional()
@@ -11,6 +11,6 @@ export class ListRadiologyRequisitionDto extends PaginationQueryDto {
   status?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   imagingItemId?: string;
 }

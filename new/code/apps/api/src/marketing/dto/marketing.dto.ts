@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 
 import type { ReferralSourceType } from '../entities/marketing.entity.js';
@@ -45,10 +45,10 @@ export class RecordReferralDto {
 // .skip()/.take() as a float, which Postgres rejects with a 500 instead of a clean 400.
 export class ListReferralsQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   patientId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   sourceId?: string;
 }
