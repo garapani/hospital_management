@@ -30,24 +30,6 @@ export class AdmissionsController {
     return this.admissionsService.listActive(wardId);
   }
 
-  @Get(':id')
-  @RequirePermission('admission.read')
-  async findOne(@Param('id') id: string) {
-    return this.admissionsService.findOne(id);
-  }
-
-  @Patch(':id/transfer')
-  @RequirePermission('admission.manage')
-  async transfer(@Param('id') id: string, @Body() dto: TransferAdmissionDto) {
-    return this.admissionsService.transfer(id, dto);
-  }
-
-  @Patch(':id/discharge')
-  @RequirePermission('admission.manage')
-  async discharge(@Param('id') id: string, @Body() dto: DischargeAdmissionDto) {
-    return this.admissionsService.discharge(id, dto);
-  }
-
   @Post('discharge-summaries')
   @RequirePermission('admission.manage')
   async createDischargeSummary(@Body() dto: CreateDischargeSummaryDto) {
@@ -88,5 +70,23 @@ export class AdmissionsController {
   @RequirePermission('admission.manage')
   async reviewDischargeSummary(@Param('id') id: string, @Body() dto: ReviewDischargeSummaryDto) {
     return this.admissionsService.reviewDischargeSummary(id, dto.reviewedBy);
+  }
+
+  @Get(':id')
+  @RequirePermission('admission.read')
+  async findOne(@Param('id') id: string) {
+    return this.admissionsService.findOne(id);
+  }
+
+  @Patch(':id/transfer')
+  @RequirePermission('admission.manage')
+  async transfer(@Param('id') id: string, @Body() dto: TransferAdmissionDto) {
+    return this.admissionsService.transfer(id, dto);
+  }
+
+  @Patch(':id/discharge')
+  @RequirePermission('admission.manage')
+  async discharge(@Param('id') id: string, @Body() dto: DischargeAdmissionDto) {
+    return this.admissionsService.discharge(id, dto);
   }
 }
