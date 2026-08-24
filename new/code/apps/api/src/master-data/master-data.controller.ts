@@ -31,13 +31,11 @@ export class MasterDataController {
   }
 
   @Get('departments')
-  @RequirePermission(REQUIRED_PERMISSION)
   async listDepartments() {
     return this.masterDataService.listDepartments();
   }
 
   @Get('departments/:id')
-  @RequirePermission(REQUIRED_PERMISSION)
   async getDepartment(@Param('id') id: string) {
     const department = await this.masterDataService.getDepartment(id);
     if (!department) {
@@ -66,13 +64,11 @@ export class MasterDataController {
   }
 
   @Get('wards')
-  @RequirePermission(REQUIRED_PERMISSION)
   async listWards() {
     return this.masterDataService.listWards();
   }
 
   @Get('wards/:id')
-  @RequirePermission(REQUIRED_PERMISSION)
   async getWard(@Param('id') id: string) {
     const ward = await this.masterDataService.getWard(id);
     if (!ward) {
@@ -101,13 +97,11 @@ export class MasterDataController {
   }
 
   @Get('wards/:wardId/beds')
-  @RequirePermission(REQUIRED_PERMISSION)
   async listBedsByWard(@Param('wardId') wardId: string) {
     return this.masterDataService.listBedsByWard(wardId);
   }
 
   @Get('beds/:id')
-  @RequirePermission(REQUIRED_PERMISSION)
   async getBed(@Param('id') id: string) {
     const bed = await this.masterDataService.getBed(id);
     if (!bed) {

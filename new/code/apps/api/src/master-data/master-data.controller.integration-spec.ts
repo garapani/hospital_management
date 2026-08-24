@@ -18,6 +18,7 @@ describe('MasterDataController (integration)', () => {
   let app: INestApplication;
   let ctx: TenantTestContext;
   let adminToken: string;
+  let receptionistToken: string;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'masterdata_ctrl', seedRbac: true });
@@ -25,6 +26,11 @@ describe('MasterDataController (integration)', () => {
       sub: 'master-data-controller-admin',
       hospitalId: ctx.tenantId,
       permissions: ['master-data.manage'],
+    });
+    receptionistToken = await signTestToken({
+      sub: 'master-data-controller-receptionist',
+      hospitalId: ctx.tenantId,
+      permissions: ['patients.read'],
     });
 
     const moduleRef = await Test.createTestingModule({ imports: [MasterDataModule] })
@@ -153,5 +159,18 @@ describe('MasterDataController (integration)', () => {
       .set('Authorization', `Bearer ${adminToken}`);
     expect(listResponse.status).toBe(200);
     expect(listResponse.body.some((b: { id: string }) => b.id === bedResponse.body.id)).toBe(true);
+  });
+
+  it('allows read-only access (GET) to departments, wards, and beds for any authenticated user, but rejects mutations (POST/PATCH) with 403', async () => {
+    const listRes = await request(app.getHttpServer())
+      .get('/departments')
+      .set('Authorization', `Bearer ${receptionistToken}`);
+    expect(listRes.status).toBe(200);
+
+    const postRes = await request(app.getHttpServer())
+      .post('/departments')
+      .set('Authorization', `Bearer ${receptionistToken}`)
+      .send({ departmentCode: 'FORBIDDEN', departmentName: 'Forbidden Department' });
+    expect(postRes.status).toBe(403);
   });
 });
