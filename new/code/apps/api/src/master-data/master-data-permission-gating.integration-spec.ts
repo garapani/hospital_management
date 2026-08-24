@@ -74,16 +74,16 @@ describe('MasterDataController permission gating (integration)', () => {
     expect(response.status).toBe(403);
   });
 
-  it('rejects listing departments with 403 when no master-data.manage permission is granted', async () => {
+  it('allows listing departments for any authenticated session without master-data.manage permission', async () => {
     const response = await request(app.getHttpServer()).get('/departments').set('Authorization', `Bearer ${noPermissionToken}`);
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(200);
   });
 
-  it('rejects getting a single department with 403 when no master-data.manage permission is granted', async () => {
+  it('allows getting a single department for any authenticated session without master-data.manage permission', async () => {
     const response = await request(app.getHttpServer())
       .get(`/departments/${departmentId}`)
       .set('Authorization', `Bearer ${noPermissionToken}`);
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(200);
   });
 
   it('rejects department deactivate/reactivate with 403 when no master-data.manage permission is granted', async () => {
@@ -98,14 +98,16 @@ describe('MasterDataController permission gating (integration)', () => {
     expect(reactivateResponse.status).toBe(403);
   });
 
-  it('rejects creating and listing wards with 403 when no master-data.manage permission is granted', async () => {
+  it('rejects creating a ward with 403 when no master-data.manage permission is granted', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/wards')
       .set('Authorization', `Bearer ${noPermissionToken}`)
       .send({ wardCode: 'BLOCKED', wardName: 'Blocked Ward' });
     expect(createResponse.status).toBe(403);
+  });
 
+  it('allows listing wards for any authenticated session without master-data.manage permission', async () => {
     const listResponse = await request(app.getHttpServer()).get('/wards').set('Authorization', `Bearer ${noPermissionToken}`);
-    expect(listResponse.status).toBe(403);
+    expect(listResponse.status).toBe(200);
   });
 });
