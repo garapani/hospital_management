@@ -206,6 +206,9 @@ per-tenant pool saturation.
 **Test:** `curl localhost:3000/metrics | grep tenant`.
 
 ### 2.4 WAL/PITR + self-owned-server runbook (Phase 3 item 8)
+**Status: WAL/PITR + self-owned-server variant done (2026-08-25). Owner placeholder
+explicitly deferred — asked the human, chose to leave it open.**
+
 **Context:** nightly `pg_dump -Fc` + 30-day retention done; 24h RPO accepted. Continuous
 WAL/PITR, a self-owned-server recovery runbook, and a named owner/escalation contact are
 explicitly **not done**.
@@ -214,6 +217,20 @@ to `Runbook.md`; write the self-owned-server variant; fill in the owner placehol
 the human for the name).
 **Verify:** Runbook has both recovery paths and no unresolved placeholder.
 **Test:** n/a (doc-only).
+
+**Outcome:** `Runbook.md` §5 gained "Continuous WAL Archiving / Point-in-Time Recovery
+(PITR)" — `archive_mode`/`archive_command`/`archive_timeout` config against the actual
+`postgres:16`/`postgres:16-alpine` services in `docker-compose.dev.yml`/`docker-compose.prod.yml`,
+a `pg_basebackup` base-backup step, and a `recovery.signal`/`restore_command`/
+`recovery_target_time` restore-to-a-point-in-time procedure — explicitly flagged opt-in and
+not yet enabled in any deployed environment, not yet drilled. §6 gained a "Self-owned-server
+variant" subsection covering how hardware recovery differs from the VPS path (no
+provider-level snapshot/reprovision — a cold spare or accepted longer RTO is a prerequisite;
+network/power become your own dependency; OS+Docker provisioning is no longer a provider base
+image), explicitly scoped as a placeholder pending the `PRD.md` §12 self-owned-vs-VPS decision.
+The owner/escalation placeholder was **not** filled in — asked the human directly, they chose
+to leave it open rather than name someone; noted as an explicit 2026-08-25 deferral, not an
+oversight.
 
 ### 2.5 Reporting PDF export (Phase 4 item 10)
 **Status: done (2026-08-22).** See `Development-Standards.md` §49.

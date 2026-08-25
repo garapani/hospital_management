@@ -219,9 +219,15 @@ scope, not merely lower priority.
    India-region offsite target, 30-day retention), full + per-tenant restore procedures and a
    monthly restore-drill procedure in `Runbook.md`, and a Hostinger-VPS-path hardware-failure
    recovery runbook (~4h target RTO). Scoped to the VPS hosting path only — `PRD.md` §12 open
-   question #1 (self-owned server vs. VPS) is still unresolved. **Not done:** continuous WAL/PITR
-   (24h RPO accepted instead), a self-owned-server recovery runbook, and naming a real
-   owner/escalation contact (left as an explicit placeholder).
+   question #1 (self-owned server vs. VPS) is still unresolved. **Continuous WAL/PITR and a
+   self-owned-server recovery variant done (2026-08-25):** `Runbook.md` §5 documents
+   `archive_mode`/`archive_command`/`archive_timeout` config, base-backup, and
+   `recovery.signal`/`restore_command`/`recovery_target_time` restore-to-a-point-in-time
+   procedure (opt-in, not yet enabled/drilled in any environment); §6 documents how hardware
+   recovery differs on self-owned hardware (no provider snapshot — needs a cold spare or an
+   accepted longer RTO; own network/power dependency; own OS/Docker provisioning), pending the
+   §12 decision. **Not done:** naming a real owner/escalation contact — asked the human,
+   explicitly deferred rather than left as an oversight.
 9. **Reference server sizing + load test** (new-features.md #8) — only meaningful once
    observability (item 6) and pooling (item 7) are in place to measure against.
 

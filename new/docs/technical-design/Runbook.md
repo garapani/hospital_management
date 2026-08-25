@@ -110,9 +110,11 @@ This drops the volume and restarts Postgres with a clean slate.
 ## 5. Restoring from Backup
 
 Backups are nightly `pg_dump -Fc` files produced by `scripts/backup-db.sh` (see
-`Deployment-Guide.md` "Backup Configuration"), uploaded to the configured S3 bucket. **RPO: up to
-24 hours of data loss** — backups are nightly only, no continuous WAL archiving/point-in-time
-recovery exists yet (tracked as a known gap, not solved by this runbook).
+`Deployment-Guide.md` "Backup Configuration"), uploaded to the configured S3 bucket. **Default
+RPO: up to 24 hours of data loss** on the nightly-dump path alone. Continuous WAL archiving
+narrows this to minutes when enabled — see "Continuous WAL Archiving / Point-in-Time Recovery"
+below; it is **opt-in, not yet turned on in any deployed environment**, so treat 24h as the actual
+RPO until it's enabled and drilled at least once.
 
 ### Full-database restore
 
@@ -163,6 +165,66 @@ Once a month, prove a real backup actually restores:
 |---|---|---|---|
 | _(fill in after first drill)_ | | | |
 
+### Continuous WAL Archiving / Point-in-Time Recovery (PITR)
+
+**Status: documented procedure, opt-in — not enabled in any deployed environment today.**
+Nightly `pg_dump` alone caps RPO at 24h; enabling WAL archiving lets you replay every committed
+transaction up to (or just before) the moment of failure instead of losing up to a day of data.
+This is additive to the nightly dumps, not a replacement — the dumps remain the PITR base backup's
+fallback if the WAL archive itself is lost or corrupted.
+
+**Enabling archiving** (both `docker-compose.dev.yml`'s `api-postgres` and
+`docker-compose.prod.yml`'s `postgres` run `postgres:16`/`postgres:16-alpine` with a bind-mounted
+data volume — add a second bind mount for the archive directory):
+
+1. Add an archive volume to the Postgres service, e.g. `- ./.data/wal-archive:/wal-archive` (dev)
+   or a dedicated volume in prod.
+2. Set these in `postgresql.conf` (or via `command:`/a mounted `postgresql.conf` override —
+   whichever the compose file already uses for Postgres config; there is none today, so this is a
+   net-new mount):
+   ```
+   wal_level = replica
+   archive_mode = on
+   archive_command = 'test ! -f /wal-archive/%f && cp %p /wal-archive/%f'
+   archive_timeout = 300
+   ```
+   `archive_timeout = 300` forces a WAL segment switch at least every 5 minutes even under low
+   write volume, bounding RPO to ~5 minutes instead of depending entirely on segment fill rate.
+3. Restart the Postgres container so the config takes effect (`archive_mode` requires a restart,
+   not just a reload).
+4. Take a fresh base backup once archiving is confirmed running (check `archive_command` is
+   succeeding — no `.ready` files piling up in `pg_wal/archive_status/` inside the container):
+   ```bash
+   docker compose -f docker-compose.dev.yml exec api-postgres \
+     pg_basebackup -U identity_access -D /wal-archive/base/$(date +%Y%m%d) -Fp -Xs -P
+   ```
+5. Periodically ship `/wal-archive` offsite (same S3 target `backup-db.sh` already uploads to,
+   under its own `S3_PREFIX` e.g. `wal-archive`) — a local-only archive volume defeats the purpose
+   if the host itself is lost (see "Hardware Failure Recovery" below).
+
+**Restoring to a point in time:**
+
+1. Restore the most recent base backup's data directory into a fresh Postgres data volume.
+2. Drop a `recovery.signal` file (empty file, PG16+) into that data directory — its mere presence
+   is what puts Postgres into recovery mode; there is no separate `recovery.conf` in PG12+.
+3. Set in `postgresql.conf` (or `postgresql.auto.conf`) on the restored instance:
+   ```
+   restore_command = 'cp /wal-archive/%f %p'
+   recovery_target_time = '2026-08-25 14:30:00+00'
+   ```
+   Omit `recovery_target_time` to replay every archived WAL segment (recover to the latest
+   available point); set it to stop replay at a specific timestamp — e.g. just before a bad
+   migration or an accidental mass-delete.
+4. Start Postgres. It replays WAL from `restore_command` until it reaches `recovery_target_time`
+   (or runs out of WAL), then promotes to a normal read-write instance and renames
+   `recovery.signal` away automatically.
+5. Run the same restore-drill smoke queries from "Monthly restore-drill procedure" above to confirm
+   data is present and consistent before treating the instance as authoritative.
+
+**Not yet done:** this procedure has not been exercised end-to-end against a real deployment —
+treat it as a documented starting point, not a validated runbook, until it's been drilled at least
+once the way the nightly-dump restore already is.
+
 ## 6. Hardware Failure Recovery
 
 Scope: the **Hostinger VPS** hosting path. `PRD.md` §12 open question #1 (self-owned server vs.
@@ -190,10 +252,42 @@ direction is finalized later, this section needs a follow-up rewrite, not a patc
    once that's decided (not yet documented anywhere in this repo).
 8. Monitor error logs/health after cutover for any residual issues.
 
+### Self-owned-server variant
+
+Scope: if `PRD.md` §12 open question #1 resolves toward a **self-owned server** (colo/on-prem)
+instead of a VPS. The steps above assume a VPS provider that can snapshot or reprovision an
+instance in minutes; none of that exists for physical hardware, so the procedure differs in the
+ways that matter for RTO:
+
+1. **No provider-level snapshot/reprovision step.** Step 1 above ("restore from a VPS snapshot or
+   provision a new VPS instance") is replaced by either: swapping in cold-spare hardware already
+   racked and powered (if one is kept on hand) or physically sourcing/installing replacement
+   hardware — the latter can take from hours to days depending on parts availability, and blows
+   through the ~4h RTO target the VPS path assumes. **A cold spare (or a documented decision to
+   accept a longer RTO) is a prerequisite for self-owned hosting to hit any RTO target at all** —
+   this is not optional infrastructure, it's the load-bearing assumption behind step 1.
+2. **Network/power are now your dependency, not the provider's.** Confirm whether the failure is
+   the server itself vs. upstream power/network/cooling at the facility before starting hardware
+   recovery — a self-owned box has no automatic failover to a different physical location the way
+   a VPS provider's infrastructure might.
+3. **OS + Docker install is no longer a provider base image.** Step 2 ("Install Docker + Docker
+   Compose on the new instance") now also needs a documented base-OS provisioning step (which
+   distro/version, disk partitioning, network config) — none of this is captured yet because no
+   self-owned server exists today. Treat this as the first thing to document once hardware is
+   actually chosen, not something this runbook can specify in the abstract.
+4. **DNS cutover (step 7) is unchanged** — it's provider-agnostic either way.
+5. **Steps 3–6 (clone repo, bring up compose stack, restore backup, run smoke queries) are
+   unchanged** from the VPS path once the replacement hardware is up and reachable.
+
+This subsection is a placeholder for the operational differences, not a complete self-owned
+runbook — it cannot be made complete until the self-owned-vs-VPS decision in `PRD.md` §12 is
+actually made and real hardware/facility details exist to document against.
+
 ### Owner and escalation
 
 _(Placeholder — fill in the actual on-call owner/escalation contact for this procedure. Not
-something this runbook can supply on its own.)_
+something this runbook can supply on its own. Explicitly deferred as of 2026-08-25 — asked, human
+chose to leave it open rather than name someone yet.)_
 
 ## 7. Object Storage Backup Policy
 
