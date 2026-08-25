@@ -144,8 +144,12 @@ export class OrdersService {
    * Marks an order item Completed using a caller-supplied manager, so the workflow services that
    * finish a Lab/Radiology/Pharmacy order item can complete it in the same transaction as their
    * own status transition, instead of reaching into the OrderItem repository directly. Idempotent
-   * (a no-op returning the existing row) if the item doesn't exist or is already Completed —
-   * matches the tolerant check every caller of this used to inline itself.
+   * (a no-op returning the existing row) if the item doesn't exist or isn't Pending — this also
+   * covers a Cancelled item: a workflow module verifying/dispensing against an order item that was
+   * cancelled out from under it must not resurrect it to Completed, since that would trigger
+   * billing's charge-capture subscriber for a cancelled order line (code-review-findings-2026-08-25
+   * P1). Callers that need to distinguish "already completed" from "cancelled, can't complete"
+   * should check the returned item's status themselves.
    */
   async completeItemInTransaction(
     manager: EntityManager,
@@ -154,7 +158,7 @@ export class OrdersService {
   ): Promise<OrderItem | null> {
     const repository = manager.getRepository(OrderItem);
     const item = await repository.findOne({ where: { id: itemId } });
-    if (!item || item.status === 'Completed') {
+    if (!item || item.status !== 'Pending') {
       return item;
     }
 

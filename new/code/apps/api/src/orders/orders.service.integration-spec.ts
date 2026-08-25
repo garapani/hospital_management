@@ -143,6 +143,33 @@ describe('OrdersService (integration)', () => {
     expect(cancelled.cancelReason).toBe('Duplicate order');
   });
 
+  it('completeItemInTransaction does not resurrect a cancelled item to Completed', async () => {
+    // Regression test: a Lab/Radiology verify() call reaches this method without re-checking
+    // the order item's own status. Before the fix, a Cancelled item was only guarded against
+    // being re-completed if it was already Completed — Cancelled fell through and was flipped
+    // to Completed, which also fires billing's charge-capture subscriber for a cancelled line.
+    const patient = await makePatient(ctx, '4440000099');
+    const order = await ctx.inTenant(() =>
+      ordersService.create({
+        patientId: patient.id,
+        orderedBy: DOCTOR_ID,
+        items: [{ itemType: 'Lab', itemDescription: 'CBC' }],
+      }),
+    );
+    await ctx.inTenant(() => ordersService.cancelItem(order.id, order.items[0].id, {}));
+
+    const result = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        ordersService.completeItemInTransaction(manager, order.items[0].id, {}),
+      ),
+    );
+    expect(result?.status).toBe('Cancelled');
+
+    const persisted = await ctx.inTenant(() => ordersService.findOne(order.id));
+    expect(persisted.items[0].status).toBe('Cancelled');
+    expect(persisted.items[0].completedAt).toBeNull();
+  });
+
   it('rejects completing or cancelling an already-resolved item', async () => {
     const patient = await makePatient(ctx, '4440000006');
     const order = await ctx.inTenant(() =>
