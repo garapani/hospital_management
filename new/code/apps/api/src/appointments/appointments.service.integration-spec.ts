@@ -1,6 +1,8 @@
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { AppointmentsService, CreateAppointmentInput, UpdateAppointmentInput } from './appointments.service.js';
 import { Appointment } from './entities/appointment.entity.js';
+import { MasterDataService } from '../master-data/master-data.service.js';
+import { Department } from '../master-data/entities/department.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -10,10 +12,12 @@ import {
 describe('AppointmentsService (integration)', () => {
   let ctx: TenantTestContext;
   let appointmentsService: AppointmentsService;
+  let masterDataService: MasterDataService;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'appointments_svc' });
     appointmentsService = new AppointmentsService(ctx.tenantConnection);
+    masterDataService = new MasterDataService(ctx.tenantConnection);
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
@@ -118,6 +122,75 @@ describe('AppointmentsService (integration)', () => {
     const created = await ctx.inTenant(() => appointmentsService.create(input));
 
     await expect(ctx.inTenant(() => appointmentsService.cancel(created.id, ''))).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects updating a cancelled appointment', async () => {
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Cancelled', lastName: 'One', contactNumber: '5550000001',
+      appointmentDate: '2026-08-07', appointmentTime: '09:00', appointmentType: 'Consultation',
+    }));
+    await ctx.inTenant(() => appointmentsService.cancel(created.id, 'No longer needed'));
+
+    await expect(
+      ctx.inTenant(() => appointmentsService.update(created.id, { reason: 'trying to revive it' })),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects rescheduling into a slot the doctor already has scheduled', async () => {
+    const doctorId = '00000000-0000-0000-0000-0000000000d2';
+    await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Existing', lastName: 'Booking', contactNumber: '5550000002',
+      appointmentDate: '2026-08-08', appointmentTime: '09:00', appointmentType: 'Consultation', doctorId,
+    }));
+    const toMove = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Moving', lastName: 'Around', contactNumber: '5550000003',
+      appointmentDate: '2026-08-08', appointmentTime: '10:00', appointmentType: 'Consultation', doctorId,
+    }));
+
+    await expect(
+      ctx.inTenant(() => appointmentsService.update(toMove.id, { appointmentTime: '09:00' })),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('allows re-saving an appointment at its own existing doctor/date/time (no self-conflict)', async () => {
+    const doctorId = '00000000-0000-0000-0000-0000000000d3';
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Steady', lastName: 'Slot', contactNumber: '5550000004',
+      appointmentDate: '2026-08-09', appointmentTime: '11:00', appointmentType: 'Consultation', doctorId,
+    }));
+
+    const updated = await ctx.inTenant(() =>
+      appointmentsService.update(created.id, { appointmentDate: '2026-08-09', appointmentTime: '11:00', doctorId, reason: 'confirmed' }),
+    );
+    expect(updated.reason).toBe('confirmed');
+  });
+
+  it('rejects rescheduling into a department that has reached its daily capacity', async () => {
+    const department = await ctx.inTenant(() => masterDataService.createDepartment({
+      departmentCode: `APPT-CAP-${Date.now()}`,
+      departmentName: 'Capacity Test Dept',
+      isAppointmentApplicable: true,
+    }));
+    await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema(async (manager) => {
+        await manager.getRepository(Department).update(department.id, { maxDailyAppointments: 1 });
+      }),
+    );
+
+    await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Filled', lastName: 'Slot', contactNumber: '5550000005',
+      appointmentDate: '2026-08-12', appointmentTime: '09:00', appointmentType: 'Consultation', departmentId: department.id,
+    }));
+    const toMove = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Elsewhere', lastName: 'For', contactNumber: '5550000006',
+      appointmentDate: '2026-08-13', appointmentTime: '09:00', appointmentType: 'Consultation',
+    }));
+
+    await expect(
+      ctx.inTenant(() =>
+        appointmentsService.update(toMove.id, { appointmentDate: '2026-08-12', departmentId: department.id }),
+      ),
+    ).rejects.toThrow(ConflictException);
   });
 
   it('lists appointments with filters', async () => {

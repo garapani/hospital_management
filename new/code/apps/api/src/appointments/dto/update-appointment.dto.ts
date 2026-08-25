@@ -39,9 +39,5 @@ export class UpdateAppointmentDto {
 
   @IsOptional()
   @IsString()
-  status?: string;
-
-  @IsOptional()
-  @IsString()
   reason?: string;
 }

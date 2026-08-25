@@ -161,14 +161,41 @@ describe('AppointmentsController (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .set('x-tenant-id', ctx.tenantId)
       .send({
-        status: 'Completed',
         reason: 'Patient was seen and treated',
       });
 
     expect(res.status).toBe(HttpStatus.OK);
     expect(res.body.id).toBe(appointmentId);
-    expect(res.body.status).toBe('Completed');
     expect(res.body.reason).toBe('Patient was seen and treated');
+  });
+
+  it('does not let status be set through the update endpoint', async () => {
+    // status is not part of UpdateAppointmentDto: a client-supplied status is silently
+    // stripped by the whitelist ValidationPipe, not applied. Cancellation is the only
+    // sanctioned status transition, via POST /appointments/:id/cancel.
+    const createRes = await request(app.getHttpServer())
+      .post('/appointments')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({
+        firstName: 'Dana',
+        lastName: 'Scully',
+        contactNumber: '5554445555',
+        appointmentDate: '2026-08-19',
+        appointmentTime: '13:00',
+        appointmentType: 'Checkup',
+      });
+    expect(createRes.status).toBe(HttpStatus.CREATED);
+    const appointmentId = createRes.body.id;
+
+    const res = await request(app.getHttpServer())
+      .put(`/appointments/${appointmentId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({ status: 'Completed' });
+
+    expect(res.status).toBe(HttpStatus.OK);
+    expect(res.body.status).toBe('Scheduled');
   });
 
   it('fails with 400 when updating with invalid UUID', async () => {

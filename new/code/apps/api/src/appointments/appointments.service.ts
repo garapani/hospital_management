@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Not } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Appointment } from './entities/appointment.entity.js';
 import { Department } from '../master-data/entities/department.entity.js';
@@ -28,7 +29,6 @@ export interface UpdateAppointmentInput {
   doctorId?: string;
   departmentId?: string;
   appointmentType?: string;
-  status?: string;
   reason?: string;
 }
 
@@ -113,6 +113,64 @@ export class AppointmentsService {
       if (!appointment) {
         throw new NotFoundException(`Appointment ${id} not found`);
       }
+      if (appointment.status === 'Cancelled') {
+        throw new ConflictException(`Appointment ${id} is cancelled and cannot be updated`);
+      }
+
+      const isReschedule =
+        input.appointmentDate !== undefined ||
+        input.appointmentTime !== undefined ||
+        input.doctorId !== undefined ||
+        input.departmentId !== undefined;
+
+      if (isReschedule) {
+        const nextDate = input.appointmentDate ?? appointment.appointmentDate;
+        const nextTime = input.appointmentTime ?? appointment.appointmentTime;
+        const nextDoctorId = input.doctorId ?? appointment.doctorId;
+        const nextDepartmentId = input.departmentId ?? appointment.departmentId;
+
+        if (nextDepartmentId && nextDate) {
+          const department = await manager.getRepository(Department).findOne({
+            where: { id: nextDepartmentId },
+          });
+
+          if (department?.maxDailyAppointments) {
+            const existingCount = await manager.getRepository(Appointment).count({
+              where: {
+                departmentId: nextDepartmentId,
+                appointmentDate: nextDate,
+                status: 'Scheduled',
+                id: Not(id),
+              },
+            });
+
+            if (existingCount >= department.maxDailyAppointments) {
+              throw new ConflictException(
+                `Department ${department.departmentName} has reached its maximum daily capacity of ${department.maxDailyAppointments} appointments for ${nextDate}`,
+              );
+            }
+          }
+        }
+
+        if (nextDoctorId && nextDate && nextTime) {
+          const conflictingAppointment = await manager.getRepository(Appointment).findOne({
+            where: {
+              doctorId: nextDoctorId,
+              appointmentDate: nextDate,
+              appointmentTime: nextTime,
+              status: 'Scheduled',
+              id: Not(id),
+            },
+          });
+
+          if (conflictingAppointment) {
+            throw new ConflictException(
+              `Doctor already has an appointment scheduled at ${nextTime} on ${nextDate}`,
+            );
+          }
+        }
+      }
+
       Object.assign(appointment, input);
       return repo.save(appointment);
     });
