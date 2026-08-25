@@ -100,7 +100,7 @@ the root `CLAUDE.md`.
 ## Diagnostics & Supply Chain
 
 ### orders
-- [ ] **P1** — A cancelled order item can be resurrected to Completed and billed — `completeItemInTransaction` only blocks already-Completed items, not Cancelled ones, and Lab/Radiology `verify()` don't re-check status before calling it. (`orders/orders.service.ts:157`, `lab/lab-workflow.service.ts:257`, `radiology/radiology-workflow.service.ts:228`, `billing/charge-capture.subscriber.ts:41`)
+- [x] **P1** — A cancelled order item can be resurrected to Completed and billed — `completeItemInTransaction` only blocks already-Completed items, not Cancelled ones, and Lab/Radiology `verify()` don't re-check status before calling it. (`orders/orders.service.ts:157`, `lab/lab-workflow.service.ts:257`, `radiology/radiology-workflow.service.ts:228`, `billing/charge-capture.subscriber.ts:41`) — **Fixed 2026-08-25:** `completeItemInTransaction`'s no-op guard changed from `status === 'Completed'` to `status !== 'Pending'`, so a Cancelled item is left untouched (and never fires the Completed-transition charge-capture subscriber) instead of being flipped to Completed. Root-cause fix at the single choke point every workflow module completes through, rather than patching each caller.
 - [ ] **P2** — Cancelling an order item leaves its downstream requisition/dispensing live — no cascade. (`orders.service.ts:167-182`)
 - [ ] **P2** — `completeItem`/`cancelItem` take no row lock, unlike every other status mutator in the codebase. (`orders.service.ts:128,170`)
 - [ ] **P3** — `itemType` is unconstrained free text — a typo silently orphans an unbillable order line. (`dto/create-order.dto.ts:6`)
