@@ -267,14 +267,28 @@ Reporting-page patterns in the frontend repo.
 **Test:** frontend spec + build.
 
 ### 2.8 Accounting auto-posting from Billing (Phase 3)
+**Status: DONE (2026-08-25) — commit `871dc6f` (note: the commit message is a panic
+"unfinished code" from a Claude session-limit hit; per repo convention history is not rewritten —
+the work itself is complete and verified, see below).** See `Development-Standards.md` §64
+("Automatic ledger posting from Billing"). AR-based double-entry mapping (ledger account IDs
+seeded per-tenant by migration 0059, referenced by id not code): charge-capture → Dr Patient AR /
+Cr Patient Service Revenue; payment (Cash/Card/UPI/Cheque) → Dr Cash & Bank / Cr Patient AR;
+deposit-sourced payment → Dr Patient Deposits Payable / Cr Patient AR; deposit creation → Dr Cash /
+Cr Deposits Payable; deposit refund → reverse; return/credit-note → Dr Sales Returns / Cr Patient
+AR. `AccountingService.postAutoJournal` runs on the caller's EntityManager (atomic with the billing
+write), idempotent by (sourceType, sourceId) with conflict detection, balance/account-existence
+validation, fails-loud for payments/deposits/returns, best-effort (log-and-swallow) for
+charge-capture revenue to match the ChargeCaptureSubscriber precedent. Auto-posted journals go
+straight to Posted (no Draft). Explicitly out of scope (documented): manual non-charge-captured
+invoice lines, GST split, and a second refund against the same deposit (surfaces the pre-existing
+data-model gap loudly). Migrations 0058 (journal source ref) + 0059 (seed default ledger accounts).
+Verified: 76/76 accounting+billing tests, full suite green (767 passed / 1 skip), live end to end
+(payment ₹200 → JRN Posted Dr Cash/Cr AR; lab CBC verify → InvoiceItem journal Dr AR/Cr Revenue;
+trial balance reflects both).
 **Context:** accounting module done (CoA, double-entry journals, reports); automatic journal
-posting from Billing/charge-capture (ledger mapping — legacy `DanpheEMR.AccTransfer`) is
+posting from Billing/charge-capture (ledger mapping — legacy `DanpheEMR.AccTransfer`) was
 explicitly **not done**.
-**What to do:** design a ledger mapping (revenue accounts per item type / cash vs. credit)
-and post a journal when an invoice payment is recorded. This touches money — follow the
-risk-gated review rule (security-review/code-review at high effort before merge).
-**Verify:** a recorded payment produces a balanced posted journal; reports reflect it.
-**Test:** `cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="accounting"` (+ new tests).
+**Route to:** Claude (money — implemented per the risk-gated review rule).
 
 ### 2.9 Fixed-assets depreciation schedules (Phase 3)
 **Context:** read-time straight-line depreciation exists; periodic accrual schedules,
