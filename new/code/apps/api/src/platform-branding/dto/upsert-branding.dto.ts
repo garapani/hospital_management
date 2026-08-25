@@ -13,4 +13,24 @@ export class UpsertBrandingDto {
   @IsOptional()
   @IsString()
   primaryColor?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  tagline?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  description?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  footerText?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  supportText?: string | null;
 }

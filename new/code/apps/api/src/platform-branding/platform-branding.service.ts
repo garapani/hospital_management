@@ -34,7 +34,14 @@ export interface PublicBranding {
   displayName: string | null;
   primaryColor: string | null;
   logoUrl: string | null;
+  tagline: string | null;
+  description: string | null;
+  footerText: string | null;
+  supportText: string | null;
 }
+
+/** Fields that follow the same "blank string is invalid, null clears it" rule as displayName. */
+const BLANK_CHECKED_TEXT_FIELDS = ['displayName', 'tagline', 'description', 'footerText', 'supportText'] as const;
 
 @Injectable()
 export class PlatformBrandingService {
@@ -71,6 +78,10 @@ export class PlatformBrandingService {
       displayName: row?.displayName ?? null,
       primaryColor: row?.primaryColor ?? null,
       logoUrl: await this.resolveLogoUrl(row),
+      tagline: row?.tagline ?? null,
+      description: row?.description ?? null,
+      footerText: row?.footerText ?? null,
+      supportText: row?.supportText ?? null,
     };
   }
 
@@ -116,15 +127,21 @@ export class PlatformBrandingService {
     if (dto.primaryColor !== undefined && dto.primaryColor !== null && !HEX_COLOR.test(dto.primaryColor)) {
       throw new BadRequestException('primaryColor must be a 6-digit hex color, e.g. #006D77');
     }
-    if (dto.displayName !== undefined && dto.displayName !== null && !dto.displayName.trim()) {
-      throw new BadRequestException('displayName cannot be blank — pass null to clear it');
+    for (const field of BLANK_CHECKED_TEXT_FIELDS) {
+      const value = dto[field];
+      if (value !== undefined && value !== null && !value.trim()) {
+        throw new BadRequestException(`${field} cannot be blank — pass null to clear it`);
+      }
     }
 
     return this.dataSource.transaction(async (manager) => {
       await this.lockBrandingRow(manager, hospitalId);
       const row = await this.getOrCreateBrandingRow(manager, hospitalId);
-      if (dto.displayName !== undefined) {
-        row.displayName = dto.displayName?.trim() ?? null;
+      for (const field of BLANK_CHECKED_TEXT_FIELDS) {
+        const value = dto[field];
+        if (value !== undefined) {
+          row[field] = value?.trim() ?? null;
+        }
       }
       if (dto.primaryColor !== undefined) {
         row.primaryColor = dto.primaryColor;

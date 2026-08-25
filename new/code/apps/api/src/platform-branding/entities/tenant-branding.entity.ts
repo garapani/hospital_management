@@ -19,4 +19,20 @@ export class TenantBranding extends SoftDeletableEntity {
    *  logo is served via a short-lived presigned URL, never a public bucket path. */
   @Column({ type: 'varchar', nullable: true })
   logoObjectKey!: string | null;
+
+  /** Login-page headline override, e.g. "Hospital operations, one screen at a time." */
+  @Column({ type: 'varchar', nullable: true })
+  tagline!: string | null;
+
+  /** Login-page subtitle paragraph override, shown under the tagline. */
+  @Column({ type: 'text', nullable: true })
+  description!: string | null;
+
+  /** Trailing text after "© {year}" on the login page (defaults to the tenant display name). */
+  @Column({ type: 'varchar', nullable: true })
+  footerText!: string | null;
+
+  /** Replaces the login form's fixed "Trouble signing in? Contact your hospital administrator." */
+  @Column({ type: 'varchar', nullable: true })
+  supportText!: string | null;
 }

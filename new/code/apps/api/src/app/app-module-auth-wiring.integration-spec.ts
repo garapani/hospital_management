@@ -70,7 +70,15 @@ describe('AppModule auth-exclusion wiring (integration)', () => {
     // TenantBrandingController rather than being rejected by the auth middleware. An unconfigured
     // tenant resolves to all-null (the frontend's default-Vaidya-brand case), not an error.
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ displayName: null, primaryColor: null, logoUrl: null });
+    expect(response.body).toEqual({
+      displayName: null,
+      primaryColor: null,
+      logoUrl: null,
+      tagline: null,
+      description: null,
+      footerText: null,
+      supportText: null,
+    });
   });
 
   it('POST /branding (wrong method, same path — no such route) is NOT excluded: AuthContextMiddleware rejects it with 401', async () => {

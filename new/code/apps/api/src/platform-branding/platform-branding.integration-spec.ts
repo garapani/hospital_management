@@ -20,6 +20,10 @@ import { resolveJwtSecret } from '../auth/jwt-secret.js';
 // (subscription-billing, packages).
 const PREFIX = 'test_branding_';
 
+// The four login-page-copy fields default to null alongside displayName/primaryColor/logoUrl —
+// spread into an all-null expectation instead of repeating all seven keys everywhere.
+const NULL_TEXT_FIELDS = { tagline: null, description: null, footerText: null, supportText: null };
+
 describe('PlatformBranding (integration)', () => {
   let ctx: TenantTestContext;
   let service: PlatformBrandingService;
@@ -84,12 +88,12 @@ describe('PlatformBranding (integration)', () => {
       const hospitalId = `${PREFIX}unconfigured`;
       await provision(hospitalId);
       const result = await service.getBrandingForAdmin(hospitalId);
-      expect(result).toEqual({ displayName: null, primaryColor: null, logoUrl: null });
+      expect(result).toEqual({ displayName: null, primaryColor: null, logoUrl: null, ...NULL_TEXT_FIELDS });
     });
 
     it('the platform tenant always resolves to all-null, never a row lookup', async () => {
       const result = await service.getPublicBranding(PLATFORM_TENANT_ID);
-      expect(result).toEqual({ displayName: null, primaryColor: null, logoUrl: null });
+      expect(result).toEqual({ displayName: null, primaryColor: null, logoUrl: null, ...NULL_TEXT_FIELDS });
     });
 
     it('an unknown/undefined tenant header resolves to all-null instead of throwing', async () => {
@@ -97,11 +101,13 @@ describe('PlatformBranding (integration)', () => {
         displayName: null,
         primaryColor: null,
         logoUrl: null,
+        ...NULL_TEXT_FIELDS,
       });
       await expect(service.getPublicBranding('no_such_tenant')).resolves.toEqual({
         displayName: null,
         primaryColor: null,
         logoUrl: null,
+        ...NULL_TEXT_FIELDS,
       });
     });
 
@@ -121,7 +127,48 @@ describe('PlatformBranding (integration)', () => {
         displayName: 'City Hospital',
         primaryColor: '#123ABC',
         logoUrl: null,
+        ...NULL_TEXT_FIELDS,
       });
+    });
+
+    it('upserts the four login-page text fields independently of displayName/primaryColor', async () => {
+      const hospitalId = `${PREFIX}text_fields`;
+      await provision(hospitalId);
+
+      const saved = await service.upsertBranding(hospitalId, {
+        tagline: 'Care, coordinated.',
+        description: 'Everything the front desk and wards need, in one place.',
+        footerText: 'City Hospital Pvt Ltd. All rights reserved.',
+        supportText: 'Call the help desk at extension 100.',
+      });
+      expect(saved.tagline).toBe('Care, coordinated.');
+      expect(saved.description).toBe('Everything the front desk and wards need, in one place.');
+      expect(saved.footerText).toBe('City Hospital Pvt Ltd. All rights reserved.');
+      expect(saved.supportText).toBe('Call the help desk at extension 100.');
+
+      const publicView = await service.getPublicBranding(hospitalId);
+      expect(publicView).toEqual({
+        displayName: null,
+        primaryColor: null,
+        logoUrl: null,
+        tagline: 'Care, coordinated.',
+        description: 'Everything the front desk and wards need, in one place.',
+        footerText: 'City Hospital Pvt Ltd. All rights reserved.',
+        supportText: 'Call the help desk at extension 100.',
+      });
+
+      const cleared = await service.upsertBranding(hospitalId, { tagline: null });
+      expect(cleared.tagline).toBeNull();
+      expect(cleared.description).toBe('Everything the front desk and wards need, in one place.'); // untouched (omitted)
+    });
+
+    it('rejects a blank tagline/description/footerText/supportText the same as displayName', async () => {
+      const hospitalId = `${PREFIX}text_validate`;
+      await provision(hospitalId);
+      await expect(service.upsertBranding(hospitalId, { tagline: '   ' })).rejects.toThrow('cannot be blank');
+      await expect(service.upsertBranding(hospitalId, { description: '' })).rejects.toThrow('cannot be blank');
+      await expect(service.upsertBranding(hospitalId, { footerText: '  ' })).rejects.toThrow('cannot be blank');
+      await expect(service.upsertBranding(hospitalId, { supportText: '  ' })).rejects.toThrow('cannot be blank');
     });
 
     it('null explicitly clears a field back to default; omitted leaves it unchanged', async () => {
@@ -274,7 +321,7 @@ describe('PlatformBranding (integration)', () => {
         .get(`/branding`)
         .set('x-tenant-id', hospitalId);
       expect(response.status).toBe(200);
-      expect(response.body).toEqual({ displayName: null, primaryColor: null, logoUrl: null });
+      expect(response.body).toEqual({ displayName: null, primaryColor: null, logoUrl: null, ...NULL_TEXT_FIELDS });
     });
 
     it('reads and updates branding end to end with the platform permission', async () => {
@@ -285,7 +332,7 @@ describe('PlatformBranding (integration)', () => {
         .get(`/platform/tenants/${hospitalId}/branding`)
         .set('Authorization', `Bearer ${platformToken}`);
       expect(empty.status).toBe(200);
-      expect(empty.body).toEqual({ displayName: null, primaryColor: null, logoUrl: null });
+      expect(empty.body).toEqual({ displayName: null, primaryColor: null, logoUrl: null, ...NULL_TEXT_FIELDS });
 
       const updated = await request(app.getHttpServer())
         .put(`/platform/tenants/${hospitalId}/branding`)

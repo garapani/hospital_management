@@ -54,6 +54,7 @@ import { AddAuditColumnsToTenantTables1000000000053 } from './0053-add-audit-col
 import { AddAuditColumnsToPlatformTables1000000000054 } from './0054-add-audit-columns-to-platform-tables.js';
 import { DropSubscriptionsTenantFkCascade1000000000055 } from './0055-drop-subscriptions-tenant-fk-cascade.js';
 import { AddTenantPurged1000000000056 } from './0056-add-tenant-purged.js';
+import { AddBrandingTextFields1000000000060 } from './0060-add-branding-text-fields.js';
 import { AddAccountPatientLink3000000000057 } from './0057-add-account-patient-link.js';
 import { AddJournalSourceRef3000000000058 } from './0058-add-journal-source-ref.js';
 import { SeedDefaultLedgerAccounts3000000000059 } from './0059-seed-default-ledger-accounts.js';
@@ -73,6 +74,7 @@ export const PLATFORM_MIGRATIONS = [
   AddAuditColumnsToPlatformTables1000000000054,
   DropSubscriptionsTenantFkCascade1000000000055,
   AddTenantPurged1000000000056,
+  AddBrandingTextFields1000000000060,
 ];
 
 // Tenant-scoped migrations: create per-tenant-schema tables. Run once per tenant by
