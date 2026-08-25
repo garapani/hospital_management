@@ -29,7 +29,9 @@ describe('NursingService (integration)', () => {
 
   let seq = 0;
 
-  /** Inserts an admission row directly — nursing validates existence via raw query only. */
+  /** Inserts an admission row directly — nursing validates existence via raw query only.
+   *  Each call uses a distinct patientId: admissions.patientId is now (correctly) unique
+   *  per active admission, so reusing one patientId across rows would collide. */
   async function makeAdmission(tenant: TenantTestContext = ctx): Promise<string> {
     seq += 1;
     const rows = await tenant.inTenant(() =>
@@ -39,11 +41,11 @@ describe('NursingService (integration)', () => {
            VALUES ($1, $2, $3, $4, $5)
            RETURNING id`,
           [
-            '00000000-0000-0000-0000-0000000000a1',
+            `00000000-0000-0000-0000-${String(seq).padStart(12, '0')}`,
             'OPD',
             STAFF_ID,
             '00000000-0000-0000-0000-0000000000c2',
-            `00000000-0000-0000-0000-${String(seq).padStart(12, '0')}`,
+            `00000000-0000-0000-0000-b${String(seq).padStart(11, '0')}`,
           ],
         ),
       ),

@@ -1,4 +1,5 @@
 import { IsDateString, IsOptional, IsString, IsUUID } from 'class-validator';
+import { PaginationQueryDto } from '@hospital/pagination';
 
 export class CreateTaskDto {
   @IsString()
@@ -19,7 +20,7 @@ export class CreateTaskDto {
   assignedTo?: string;
 }
 
-export class ListTasksQueryDto {
+export class ListTasksQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   admissionId?: string;
@@ -48,7 +49,7 @@ export class CreateAdministrationDto {
   notes?: string;
 }
 
-export class ListAdministrationsQueryDto {
+export class ListAdministrationsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   admissionId?: string;

@@ -255,8 +255,10 @@ describe('MaternityService (integration)', () => {
       ),
     ).rejects.toThrow(BadRequestException);
 
-    // Update validation mirrors create (merged-state lmp/edd check).
-    const record = await makeRecord(patient.id);
+    // Update validation mirrors create (merged-state lmp/edd check). Uses a fresh patient:
+    // `patient` above already holds an active admission, and a patient can only hold one.
+    const updatePatient = await makePatient();
+    const record = await makeRecord(updatePatient.id);
     await expect(
       ctx.inTenant(() =>
         maternityService.updateRecord(record.id, { lmp: '2026-05-01' }),
