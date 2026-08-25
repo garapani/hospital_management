@@ -450,9 +450,10 @@ Follow the PRD's own phase ordering as-is:
   (deactivate/reactivate, §28 convention), and read-time straight-line depreciation
   (`GET /fixed-assets/:id/valuation` — accumulated + book value; stateless, no accrual job).
   Permissions `fixed-asset.read`/`fixed-asset.manage` wired to Super Admin / Hospital Admin /
-  Inventory & Store Manager. Migration `0033`. Not done (future items): depreciation
-  schedules/periodic accrual, disposal/write-off, asset transfers between departments,
-  maintenance/AMC tracking, and a frontend page.
+  Inventory & Store Manager. Migration `0033`. **Depreciation accrual done (2026-08-25):** see
+  `claude-code-tasks.md` 2.9 / `Development-Standards.md` §65. Not done (future items):
+  disposal/write-off, asset transfers between departments, maintenance/AMC tracking, and a
+  frontend page (including one for the new accrual endpoints).
 - Phase 4: Clinical/EMR long tail — remaining slice is medical-records extras; **Vaccination is
   done (2026-08-20)** (patient vaccination records: vaccine, dose number, date, batch,
   actor-derived administeredBy; permissions `vaccination.read`/`vaccination.manage` → Doctor,

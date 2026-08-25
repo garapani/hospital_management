@@ -291,12 +291,24 @@ explicitly **not done**.
 **Route to:** Claude (money — implemented per the risk-gated review rule).
 
 ### 2.9 Fixed-assets depreciation schedules (Phase 3)
-**Context:** read-time straight-line depreciation exists; periodic accrual schedules,
-disposal/write-off, transfers, maintenance/AMC tracking are **not done**.
-**What to do:** pick the smallest valuable slice — depreciation schedule/accrual job
-(stateless read → scheduled accrual). Confirm scope with the human (each is a distinct
-future item).
-**Verify:** schedule records + accrued amounts appear on the register/valuation.
+**Status: done (2026-08-25).** See `Development-Standards.md` §65.
+
+**Context:** read-time straight-line depreciation existed; periodic accrual schedules,
+disposal/write-off, transfers, maintenance/AMC tracking were **not done**.
+**What was done:** the smallest valuable slice, confirmed with the human — a
+depreciation schedule/accrual job (`FixedAssetsService.runDepreciationAccrual`) that persists a
+period charge per asset, alongside (not replacing) the existing stateless
+`GET /fixed-assets/:id/valuation` read. New `asset_depreciation_entries` table (migration `0061`),
+`POST /fixed-assets/depreciation/run` (`fixed-asset.manage`) and
+`GET /fixed-assets/depreciation` (`fixed-asset.read`, filterable by assetId/month/year), both
+gated the same as every other fixed-assets route. Skips Retired assets, inactive assets, and
+assets with no `usefulLifeYears`; idempotent re-runs (an asset with an existing entry for that
+period is skipped, not re-charged); each period's charge is incremental against the asset's most
+recent prior entry, not assumed-monthly, so an out-of-order or skipped-period catch-up run still
+charges the right amount. 6 new integration tests (14/14 in the fixed-assets suite), full backend
+suite green.
+**Not done (future items, unchanged):** disposal/write-off, asset transfers between departments,
+maintenance/AMC tracking, and a frontend page (register + the new accrual run/history views).
 **Test:** `cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="fixed-assets"`.
 
 ### 2.10 DICOM scoping (Phase 6)

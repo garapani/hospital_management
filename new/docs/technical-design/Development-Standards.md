@@ -2671,3 +2671,51 @@ copyright line rather than needing to embed the year in their own copy.
 hospital-editable preference" — confirmed unchanged for this iteration); localization/i18n of
 this copy; per-field character-count UI (server-side `@MaxLength` is enforced but the tenant-detail
 form doesn't surface a live counter).
+
+## 65. Fixed-assets depreciation accrual (2026-08-25)
+
+`pending-tasks.md`'s Fixed Asset entry / `claude-code-tasks.md` 2.9's smallest-valuable-slice:
+`FixedAssetsService.getAssetValuation`'s stateless read-time straight-line calculation (§33's
+`computeStraightLineValuation`) now has a persisted counterpart —
+`runDepreciationAccrual(month, year)` writes one `asset_depreciation_entries` row per eligible
+asset for that period, mirroring Payroll's `runMonthlyPayroll` shape (§ Payroll module):
+validate month/year, resolve the actor from tenant context, iterate eligible rows, skip what
+already has an entry, persist the rest. The two coexist rather than one replacing the other — the
+valuation endpoint still answers "what is this asset worth right now," the new endpoints answer
+"what did we book in period X," which an accounting close needs a stable, non-recalculating
+number for.
+
+**Incremental-against-most-recent-entry, not assumed-monthly.** A naive implementation would
+charge `annualDepreciation / 12` every run and call it done, but that silently assumes accrual
+runs happen exactly once a month with no gaps. Instead each run computes
+`computeStraightLineValuation(asset, periodEnd)` — the *cumulative* accumulated depreciation as
+of the end of the requested period — and charges only the delta against whatever the asset's most
+recent prior entry (by `periodYear`/`periodMonth` DESC, not assumed to be the immediately
+preceding calendar month) already accumulated, defaulting to 0 for an asset's first-ever entry.
+A skipped month, an asset added mid-year, or an admin running two periods back-to-back in one
+sitting all charge the mathematically correct incremental amount this way, with no special-casing
+needed for any of them — `periodEnd = new Date(year, month, 1)` (JS's 0-indexed month arithmetic
+happens to land exactly on "first of the month *after* the 1-12 `month` argument," reusing
+`computeStraightLineValuation`'s existing `monthsInService` math instead of duplicating it).
+
+**Eligibility filter, and why `Retired` is excluded but `Under Repair` isn't.** Raw SQL (matching
+Payroll's own `SELECT ... WHERE "isActive" = true` pattern) filters to `isActive = true`,
+`condition != 'Retired'`, and `usefulLifeYears IS NOT NULL` before the per-asset loop runs — an
+asset with no useful life set already accrues nothing under the read-time formula, so excluding it
+here is just avoiding a wasted no-op entry, not a behavior change. `Retired` is excluded because a
+retired asset's depreciable life is considered over; `Under Repair` deliberately still accrues —
+it's a temporarily-out-of-service asset the hospital still owns and is still consuming useful life,
+not a disposed one.
+
+**Idempotency is the same "an entry already exists for this key, skip it" shape as Payroll**, not
+the compare-and-conflict shape §64 (billing auto-posting) uses — a re-run for a period an asset
+already has an entry for silently skips that asset (not an error, not a `ConflictException`) and
+continues the rest of the batch, matching `runMonthlyPayroll`'s per-employee skip. This is
+deliberately looser than §64's journal-posting idempotency: a depreciation entry is a computed
+snapshot with no independent "did the inputs change" signal like a journal's debit/credit lines
+carry, so there's nothing meaningful to compare against beyond "does a row already exist."
+
+**Not built (scoped out, confirmed with the human):** disposal/write-off, asset transfers between
+departments, maintenance/AMC tracking, and a frontend page — none of `pending-tasks.md`'s Fixed
+Asset "Not done" list beyond the accrual job itself was in scope for this iteration; each remains
+a distinct future item.
