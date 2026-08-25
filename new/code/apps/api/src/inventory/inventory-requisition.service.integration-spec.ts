@@ -131,7 +131,12 @@ describe('InventoryRequisitionService.listByDepartment (integration)', () => {
     async function makeRequisitionWithStock() {
       requisitionSeq += 1;
       const item = await makeItem(`actor-derivation-${requisitionSeq}`);
-      await seedBatch(item.id, `BATCH-ACTOR-${requisitionSeq}`, '2025-06-01', 5);
+      await seedBatch(
+        item.id,
+        `BATCH-ACTOR-${requisitionSeq}`,
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        5,
+      );
       const department = await makeDepartment(`DEPT-ACTOR-${requisitionSeq}`);
       const requisition = await ctx.inTenant(() =>
         requisitionService.createRequisition({

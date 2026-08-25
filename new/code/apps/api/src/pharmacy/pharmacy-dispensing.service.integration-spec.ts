@@ -82,6 +82,13 @@ describe('PharmacyDispensingService (integration)', () => {
     });
   }
 
+  /** A future date (not a fixed literal — FEFO now excludes expired batches entirely, so a
+   *  hardcoded past-relative date would make a batch invisible to FEFO instead of merely
+   *  far-dated). */
+  function daysFromNow(days: number): string {
+    return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  }
+
   /** Seeds a stock batch + its balance directly, bypassing the procurement pipeline. */
   async function seedBatch(itemId: string, batchNumber: string, expiryDate: string | null, quantity: number) {
     return ctx.inTenant(() =>
@@ -142,8 +149,8 @@ describe('PharmacyDispensingService (integration)', () => {
   describe('dispenseDrug — FEFO stock decrement', () => {
     it('consumes the nearer-expiry batch first, splitting across batches when needed', async () => {
       const item = await makeDrugItem('fefo');
-      const nearBatch = await seedBatch(item.id, 'BATCH-NEAR', '2025-06-01', 5);
-      const farBatch = await seedBatch(item.id, 'BATCH-FAR', '2026-06-01', 5);
+      const nearBatch = await seedBatch(item.id, 'BATCH-NEAR', daysFromNow(30), 5);
+      const farBatch = await seedBatch(item.id, 'BATCH-FAR', daysFromNow(400), 5);
       const orderItem = await makeOrderItem('4470000004');
       const dispensing = await ctx.inTenant(() =>
         dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 7 }),
@@ -189,7 +196,7 @@ describe('PharmacyDispensingService (integration)', () => {
     it('treats a null expiryDate batch as consumed last', async () => {
       const item = await makeDrugItem('fefo-null-expiry');
       const noExpiryBatch = await seedBatch(item.id, 'BATCH-NO-EXPIRY', null, 5);
-      const expiringBatch = await seedBatch(item.id, 'BATCH-EXPIRING', '2025-03-01', 5);
+      const expiringBatch = await seedBatch(item.id, 'BATCH-EXPIRING', daysFromNow(10), 5);
       const orderItem = await makeOrderItem('4470000005');
       const dispensing = await ctx.inTenant(() =>
         dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 5 }),
@@ -210,7 +217,7 @@ describe('PharmacyDispensingService (integration)', () => {
 
     it('rejects dispensing more than the available stock', async () => {
       const item = await makeDrugItem('insufficient');
-      await seedBatch(item.id, 'BATCH-SMALL', '2025-06-01', 2);
+      await seedBatch(item.id, 'BATCH-SMALL', daysFromNow(30), 2);
       const orderItem = await makeOrderItem('4470000006');
       const dispensing = await ctx.inTenant(() =>
         dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 5 }),
@@ -223,7 +230,7 @@ describe('PharmacyDispensingService (integration)', () => {
 
     it('rejects dispensing when the dispensing is not Pending', async () => {
       const item = await makeDrugItem('not-pending');
-      await seedBatch(item.id, 'BATCH-1', '2025-06-01', 5);
+      await seedBatch(item.id, 'BATCH-1', daysFromNow(30), 5);
       const orderItem = await makeOrderItem('4470000007');
       const dispensing = await ctx.inTenant(() =>
         dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 1 }),
@@ -237,7 +244,7 @@ describe('PharmacyDispensingService (integration)', () => {
 
     it('rejects a blank dispensedBy', async () => {
       const item = await makeDrugItem('blank-actor');
-      await seedBatch(item.id, 'BATCH-1', '2025-06-01', 5);
+      await seedBatch(item.id, 'BATCH-1', daysFromNow(30), 5);
       const orderItem = await makeOrderItem('4470000008');
       const dispensing = await ctx.inTenant(() =>
         dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 1 }),
@@ -265,7 +272,7 @@ describe('PharmacyDispensingService (integration)', () => {
 
     it('rejects cancelling an already-Dispensed record', async () => {
       const item = await makeDrugItem('cancel-guard');
-      await seedBatch(item.id, 'BATCH-1', '2025-06-01', 5);
+      await seedBatch(item.id, 'BATCH-1', daysFromNow(30), 5);
       const orderItem = await makeOrderItem('4470000010');
       const dispensing = await ctx.inTenant(() =>
         dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 1 }),
@@ -295,7 +302,7 @@ describe('PharmacyDispensingService (integration)', () => {
     async function makePendingDispensing() {
       dispensingSeq += 1;
       const item = await makeDrugItem(`actor-derivation-${dispensingSeq}`);
-      await seedBatch(item.id, `BATCH-ACTOR-${dispensingSeq}`, '2025-06-01', 5);
+      await seedBatch(item.id, `BATCH-ACTOR-${dispensingSeq}`, daysFromNow(30), 5);
       const orderItem = await makeOrderItem(`44700000${String(10 + dispensingSeq).padStart(2, '0')}`);
       const dispensing = await ctx.inTenant(() =>
         dispensingService.createDispensing({

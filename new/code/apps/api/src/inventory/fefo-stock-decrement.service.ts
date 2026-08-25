@@ -29,6 +29,10 @@ export class FefoStockDecrementService {
       .innerJoin(StockBatch, 'batch', 'batch.id = balance.stockBatchId')
       .where('balance.itemId = :itemId', { itemId: input.itemId })
       .andWhere('balance.availableQuantity > 0')
+      // Excludes expired batches from being dispensed at all — without this, expiryDate ASC
+      // sorts an already-expired batch first, making it the *preferred* pick rather than merely
+      // eligible (code-review-findings-2026-08-25 P1). A batch with no expiry date is unaffected.
+      .andWhere('(batch.expiryDate IS NULL OR batch.expiryDate >= CURRENT_DATE)')
       .orderBy('batch.expiryDate', 'ASC', 'NULLS LAST')
       .addOrderBy('batch.createdAt', 'ASC')
       .addOrderBy('balance.id', 'ASC')
