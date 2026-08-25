@@ -119,7 +119,7 @@ the root `CLAUDE.md`.
 - [ ] **P3** — `listByOrderItem` is dead code. (`radiology-workflow.service.ts:129-133`)
 
 ### pharmacy
-- [ ] **P1** — FEFO dispensing preferentially hands out expired stock — no `expiryDate >= today` predicate, no quarantine state, no write-off path. (`inventory/fefo-stock-decrement.service.ts:27-36`, `pharmacy/pharmacy-dispensing.service.ts:195`)
+- [x] **P1** — FEFO dispensing preferentially hands out expired stock — no `expiryDate >= today` predicate, no quarantine state, no write-off path. (`inventory/fefo-stock-decrement.service.ts:27-36`, `pharmacy/pharmacy-dispensing.service.ts:195`) — **Fixed 2026-08-25:** the shared FEFO decrement query now excludes any batch with `expiryDate < CURRENT_DATE` (a null expiry is still eligible), so expired stock is never selected — insufficient-stock now correctly fires rather than substituting expired stock. Quarantine/write-off workflows remain a separate, larger feature (not part of this P1). Added a dedicated `FefoStockDecrementService` spec, and fixed several pharmacy/inventory test fixtures whose hardcoded 2025 "future" expiry dates had since drifted into the past.
 - [ ] **P2** — No reversal path once stock is dispensed. (`pharmacy-dispensing.service.ts:143-160`)
 - [ ] **P2** — RBAC gaps vs PRD §6.1 — Hospital Admin lacks `pharmacy.read`; Pharmacist lacks `inventory.read`/`order.read`. (`rbac/seed-rbac-catalog.ts:545-551`)
 - [ ] **P3** — `listByOrderItem` is dead code. (`pharmacy-dispensing.service.ts:119-123`)
