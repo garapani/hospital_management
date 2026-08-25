@@ -162,3 +162,140 @@ the PRD's target of 10-20 tenant schemas this isn't expected to trigger, but if 
 `max_locks_per_transaction` in `postgresql.conf` (or via `ALTER SYSTEM SET
 max_locks_per_transaction = <value>;`) and restart Postgres — this setting only takes effect on
 restart, `pg_reload_conf()` is not enough.
+
+## 9. Production Environment: the newgenworks.in server
+
+**This is a shared VPS, not a dedicated host.** Hostname `srv775724`, Debian 12 (bookworm), 2
+vCPU / 8GB RAM. Alongside this project it also runs several unrelated projects for other clients
+(`bhakti`, `devtoolshub`, `dots_boxes`, `newgenworks_db`/`newgenworks_mongo_db`, `prompthub`,
+`telugu_sticker_proj`) as their own Docker containers on the same box. **Any change here —
+restarting containers, reloading nginx, touching shared resources — has blast radius beyond this
+project.** Check `docker ps -a` before assuming a port/container name is free.
+
+### Access
+
+- SSH: `ssh newgenworksadmin@<host>` (password auth) for day-to-day work — this user owns
+  `~/hospital/` and is in the `docker` group (no `sudo` needed for any command in this section).
+  A `root@<host>` login also exists for emergencies.
+- **Actual credentials (SSH password, root password, and everything in the app's `.env` — DB
+  password, `JWT_SECRET`, `MASTER_ADMIN_PASSWORD`, `PLATFORM_ADMIN_PASSWORD`,
+  `OBJECT_STORAGE_ACCESS_KEY`/`SECRET_KEY`) are intentionally not in this doc or anywhere in git
+  history** — see this repo's root `.gitignore` (`.env*`, `*secret*`, `*credential*` patterns).
+  They're tracked outside the repo (ask the project owner for the current copy); the server's own
+  `~/hospital/backend/new/code/.env` is the authoritative live copy for the app's runtime config.
+
+### Layout on the server
+
+```
+~/hospital/
+├── backend/                  # this repo, git clone of hospital_management (backend)
+│   └── new/code/              # the actual Nx workspace — docker-compose.prod.yml, .env, Dockerfile live here
+├── frontend-src/              # git clone of hospital_management_frontend — source, not served directly
+├── frontend-dist/browser/     # built static output — THIS is what nginx actually serves
+├── nginx-hospital-http.conf, nginx-hospital-https.conf,
+│   nginx-demo-admin-http.conf, nginx-demo-admin-https.conf   # vhost configs (see below)
+```
+
+`frontend-src` and `frontend-dist` are deliberately separate: the box has no Node.js/pnpm on the
+host and no frontend `Dockerfile` in the repo, so the build runs in a throwaway container and only
+its *output* gets published to the directory nginx reads from (see "Deploying the frontend"
+below).
+
+### Networking: existing reverse proxy, not a new one
+
+A pre-existing `nginx-docker` stack (its own compose project, unrelated to this repo) runs the
+box's single nginx container (`docker ps` shows it as `nginx`) and terminates TLS for every domain
+on the box via Let's Encrypt certs at `/etc/letsencrypt/live/<domain>/`. This project's containers
+join its `hospital-network` Docker bridge network (created by this repo's own
+`docker-compose.prod.yml`) so nginx can reach `hospital-api` by container name — there is no
+separate nginx setup to deploy for this project, only vhost `.conf` files (already in place at
+`~/hospital/nginx-*.conf`, mounted into the shared nginx container).
+
+Three domains all point at the same deployment:
+
+| Domain | Serves |
+|---|---|
+| `hospital.newgenworks.in` | `frontend-dist/browser` (static) + `/api/` → `hospital-api:3000` |
+| `demo.newgenworks.in` | same as above |
+| `admin.newgenworks.in` | same as above (platform-admin routes live in the same SPA bundle) |
+
+**Gotcha — nginx caches the upstream IP.** `proxy_pass http://hospital-api:3000/api/;` is a static
+hostname, not a variable, so nginx resolves it once per worker process and does not notice when
+`hospital-api`'s container is recreated (new IP on `hospital-network`). Every backend redeploy
+that recreates the `hospital-api` container needs a follow-up
+`docker exec nginx nginx -s reload` or the site 502s until nginx is restarted for an unrelated
+reason. This is graceful (doesn't drop other domains' connections) but still touches the box's
+one shared nginx instance — reload, don't restart the container.
+
+### Deploying the backend
+
+```bash
+ssh newgenworksadmin@<host>
+cd ~/hospital/backend && git pull --ff-only origin main
+cd new/code
+
+# Rebuild the API image
+docker compose -f docker-compose.prod.yml build api
+
+# Bring up dependencies first, then migrate (idempotent — safe to rerun)
+docker compose -f docker-compose.prod.yml up -d postgres redis minio
+docker compose -f docker-compose.prod.yml run --rm migrate
+
+# Bring up the rest (api, prometheus)
+docker compose -f docker-compose.prod.yml up -d
+
+# Required follow-up — see the nginx caching gotcha above
+docker exec nginx nginx -s reload
+```
+
+`docker-compose.prod.yml` also runs `minio` and `prometheus` (added since this project's first
+deploy here) — `minio` needs `OBJECT_STORAGE_ACCESS_KEY`/`OBJECT_STORAGE_SECRET_KEY` set in `.env`
+(the API throws at boot without them in `NODE_ENV=production` —
+`libs/object-storage/src/lib/object-storage.service.ts`); the same values also drive `minio`'s
+`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` (one source of truth, see `docker-compose.prod.yml`).
+`prometheus` publishes `:9090` to the host with no auth in front of it — restrict this
+(firewall/VPN) if that's a concern on a box with other tenants' traffic.
+
+### Deploying the frontend
+
+No Node.js on the host and no frontend `Dockerfile` in the repo — build inside a throwaway
+container, then publish just the output:
+
+```bash
+ssh newgenworksadmin@<host>
+cd ~/hospital/frontend-src && git pull --ff-only origin main
+
+docker run --rm -v ~/hospital/frontend-src:/workspace -w /workspace node:22-bookworm-slim sh -c '
+  corepack enable &&
+  pnpm install --frozen-lockfile &&
+  pnpm exec nx build staff-console --configuration=production
+'
+
+# rsync is not installed on this host — plain cp, no --delete (stale old chunk files are
+# harmless clutter, not a correctness issue: index.html always references the current build's
+# hashed filenames)
+cp -r ~/hospital/frontend-src/dist/apps/staff-console/browser/. ~/hospital/frontend-dist/browser/
+```
+
+No nginx reload needed here — static files are served straight off the bind-mounted directory.
+
+**The frontend repo's deploy key on this server is read-only.** A fix discovered/made on the
+server (e.g. during a build) cannot be pushed from here — `git push` fails with "read only". Apply
+the fix locally in a full clone with write access (e.g. `~/…/new_hospital/frontend` on a dev
+machine) instead, push from there, then `git pull --ff-only` on the server to pick it up.
+
+### Rollback
+
+- **Frontend:** each deploy leaves the previous build at `~/hospital/frontend-dist.bak-<timestamp>`
+  before publishing (make one before overwriting, if the deploy script/session didn't already);
+  restore with the same `cp -r` pattern in reverse.
+- **Backend:** `git checkout <previous-commit>` in `~/hospital/backend`, rebuild the `api` image,
+  restart — migrations are additive/idempotent so no down-migration path exists; a bad migration
+  needs a manual fix-forward, not a rollback.
+
+### Known one-off issues already fixed upstream
+
+- `frontend` repo's `pnpm-workspace.yaml` needed `'@swc/core': true` added to `allowBuilds` — a
+  fresh install on a recent pnpm (no `packageManager` pin in that repo) blocks on pnpm's
+  build-script approval policy otherwise. Fixed in commit `d1ec131`; only relevant if a very old
+  frontend commit is ever checked out fresh.
