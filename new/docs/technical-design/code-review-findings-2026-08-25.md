@@ -44,7 +44,7 @@ the root `CLAUDE.md`.
 - [ ] **P3** — `patientId` is never checked to exist. (`appointments/appointments.service.ts:46-96`)
 
 ### clinical / encounters
-- [ ] **P1** — `doctorId` on notes/diagnoses/prescriptions is client-supplied — `EncountersService` doesn't inject `TenantContextService` at all, unlike every sibling clinical module. (`clinical/encounters/encounters.service.ts:17-19,22-28,49-55,76-82`, `dto/encounter.dto.ts:11-12,61-62,85-86`)
+- [x] **P1** — `doctorId` on notes/diagnoses/prescriptions is client-supplied — `EncountersService` doesn't inject `TenantContextService` at all, unlike every sibling clinical module. (`clinical/encounters/encounters.service.ts:17-19,22-28,49-55,76-82`, `dto/encounter.dto.ts:11-12,61-62,85-86`) — **Fixed 2026-08-25:** `EncountersService` now injects `TenantContextService`; `doctorId` on notes/diagnoses/prescriptions is derived from the authenticated account (`resolveActor`, same pattern as admissions/nursing/ot), with the caller-supplied value only used as a fallback for non-HTTP callers with no tenant context. DTOs' `doctorId` made optional accordingly.
 - [ ] **P2** — Clinical notes have a `status` field with no lifecycle or lock — a signed note remains fully editable forever (`updateNote` is a plain `Object.assign`). (`entities/clinical-note.entity.ts:30-31`, `encounters.service.ts:30-40`)
 - [ ] **P2** — No patient-existence check on note/diagnosis/prescription creation. (`encounters.service.ts:22,49,76`)
 - [ ] **P2** — `Prescription.status` can never change after creation — no discontinue/complete path, nothing for Nursing's MAR to reference. (`entities/prescription.entity.ts:36-37`, `encounters.controller.ts:51-68`)
