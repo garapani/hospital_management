@@ -789,11 +789,19 @@ anti-enumeration property) rather than the same try/catch pattern copied over. L
 
 ---
 
-### 2.24 Test-coverage gaps surfaced by code review (validation pipe, platform-billing, platform-branding)
+### 2.24 Test-coverage gaps surfaced by code review (validation pipe, platform-billing, platform-branding) (done)
 
-**Context:** found during the entity-audit-columns task's code review, across already-shipped code
-from earlier tasks. None of these are live bugs today — they're missing regression coverage that
-would let a *future* change ship silently broken.
+**Status: done — already closed by other work, correcting a stale write-up (2026-08-25).**
+Verified live, not assumed: all 13 listed specs already register the global `ValidationPipe`
+(`createApiValidationPipe`/`useGlobalPipes` — grepped each file directly); 15/15 relevant specs run
+green (2 platform-billing/branding suites, 19 tests; the 13 ValidationPipe specs, 50 tests). Likely
+closed as a side effect of 3.9's post-hoc review batch (which explicitly wired the 2 specs 3.9 found
+missing) plus other sessions' incremental hardening — this item's own status line was just never
+updated. No code change needed.
+
+**Context (original, kept for reference):** found during the entity-audit-columns task's code
+review, across already-shipped code from earlier tasks. None of these are live bugs today — they're
+missing regression coverage that would let a *future* change ship silently broken.
 - **~13 pre-existing HTTP integration specs boot the real `AppModule` but never register the global
   `ValidationPipe`** (`admissions/admissions.controller.integration-spec.ts`,
   `app/metrics.integration-spec.ts`, `app/mvp-workflow.integration-spec.ts`,
