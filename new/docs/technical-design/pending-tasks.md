@@ -392,7 +392,11 @@ Follow the PRD's own phase ordering as-is:
         logging, sales returns, write-offs (a `Dispensed` record is terminal, no reversal path),
         and provisional IPD consumption billing — each a distinct future item if ever needed.
   - DICOM — not started (confirmed a wholly separate PACS-facing domain in the 2026-08-14
-    review; needs its own scoping). **Ward Supply is done (2026-08-20):** ward sub-store stock
+    review). **Scoping note done (2026-08-25):** see
+    `new/docs/superpowers/specs/2026-08-25-dicom-scoping-design.md` — open questions on
+    ingest path, storage (proposed: reuse `@hospital/object-storage`/MinIO, not blob-in-DB
+    like the legacy PACS DB), link to Radiology requisitions, and viewer scope. No code yet;
+    blocked on human picking scope answers. **Ward Supply is done (2026-08-20):** ward sub-store stock
     ledger — receive/consume transactions, per-department+item balances (atomic upsert),
     consumption optionally tied to patient/admission, actor-derived performedBy. Permissions
     `ward-supply.read`/`ward-supply.manage` → Nurse, Hospital Admin, Super Admin. Migration

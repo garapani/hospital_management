@@ -312,6 +312,9 @@ maintenance/AMC tracking, and a frontend page (register + the new accrual run/hi
 **Test:** `cd new/code && CI=true pnpm exec nx run api:test -- --testPathPatterns="fixed-assets"`.
 
 ### 2.10 DICOM scoping (Phase 6)
+**Status: scoping note done (2026-08-25).** See
+`new/docs/superpowers/specs/2026-08-25-dicom-scoping-design.md`.
+
 **Context:** confirmed a wholly separate PACS-facing domain; **not started** and needs its
 own scoping.
 **What to do:** write a scoping note (users, workflows, storage — DICOM studies vs. the
@@ -319,6 +322,16 @@ radiology module's reports; `@hospital/object-storage` reuse). No implementation
 human approves scope.
 **Verify:** scoping doc in `new/docs/superpowers/specs/`.
 **Test:** n/a.
+
+**Outcome:** legacy DICOM stored raw file bytes in a separate PACS SQL DB (no tenant
+column) with an Angular/Cornerstone.js WADO viewer — confirms it was already a separate
+bounded context, not a new split. Scoping note lays out 5 open questions (ingest path:
+push/PACS-listener vs. upload-only; storage: proposed reuse of `ObjectStorageService`
+instead of blob-in-DB; optional link to `RadiologyRequisition`; viewer scope; permissions)
+and a non-binding recommendation (narrowest slice: metadata tables + MinIO storage +
+upload-only ingest + presigned-URL download, deferring a live PACS listener and in-browser
+pixel viewer). No entities/migrations/code added — implementation stays blocked pending
+human decision on the open questions.
 
 ### 2.11 India compliance roadmap (Phase 5 item 13)
 **Status: done (2026-08-22).** See `india-compliance-roadmap.md`.
