@@ -63,7 +63,7 @@ the root `CLAUDE.md`.
 - [ ] **P3** — `listByAppointment` is dead code. (`vitals.service.ts:77-84`)
 
 ### nursing
-- [ ] **P1** — `page`/`limit` are silently stripped from both list endpoints (task list and MAR) — permanently pinned to page 1, rows past 20 unreachable with no error. (`nursing/dto/nursing.dto.ts:22-26,51-55`, `app/api-validation-pipe.ts:19`)
+- [x] **P1** — `page`/`limit` are silently stripped from both list endpoints (task list and MAR) — permanently pinned to page 1, rows past 20 unreachable with no error. (`nursing/dto/nursing.dto.ts:22-26,51-55`, `app/api-validation-pipe.ts:19`) — **Fixed 2026-08-25:** `ListTasksQueryDto`/`ListAdministrationsQueryDto` now extend `PaginationQueryDto`; added a controller-level e2e spec proving `page`/`limit` survive the real `ValidationPipe`. Also fixed collateral test-fixture breakage in nursing/maternity specs that reused one hardcoded `patientId` across multiple raw-inserted admissions, now that a patient can't hold two active admissions (item above).
 - [ ] **P2** — A skipped medication dose records no actor (`administeredBy` null, no `skippedBy` column). (`nursing/nursing.service.ts:187-231`)
 - [ ] **P2** — `MedicationAdministration` has no audit columns, unlike sibling `NursingTask` in the same file. (`entities/nursing.entity.ts:10,45,76-81`)
 - [ ] **P2** — The MAR has no link to a prescription — nothing ties a dose to what authorized it. (`entities/nursing.entity.ts:44-74`)
