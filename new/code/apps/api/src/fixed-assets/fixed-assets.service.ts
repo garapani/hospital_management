@@ -5,9 +5,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { FixedAssetNumberGeneratorService } from './fixed-asset-number-generator.service.js';
 import { FixedAsset, FixedAssetCondition, FIXED_ASSET_CONDITIONS } from './entities/fixed-asset.entity.js';
 import { FixedAssetCategory } from './entities/fixed-asset-category.entity.js';
+import { AssetDepreciationEntry } from './entities/asset-depreciation-entry.entity.js';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
 
 export interface CreateFixedAssetCategoryInput {
@@ -97,12 +99,25 @@ export function computeStraightLineValuation(
   };
 }
 
+export interface ListDepreciationEntriesQuery extends PaginationQueryDto {
+  assetId?: string;
+  month?: number;
+  year?: number;
+}
+
 @Injectable()
 export class FixedAssetsService {
   constructor(
     private readonly tenantConnection: TenantConnectionService,
     private readonly assetNumberGenerator: FixedAssetNumberGeneratorService,
+    private readonly tenantContext: TenantContextService,
   ) {}
+
+  /** `accruedBy` derives from the authenticated principal (see §25) — money-relevant, like
+   *  payroll's processedBy. */
+  private resolveActor(): string {
+    return this.tenantContext.getAccountId() as string;
+  }
 
   async createCategory(input: CreateFixedAssetCategoryInput): Promise<FixedAssetCategory> {
     if (!input.name?.trim()) {
@@ -219,6 +234,94 @@ export class FixedAssetsService {
   async getAssetValuation(id: string): Promise<FixedAssetValuation> {
     const asset = await this.getAsset(id);
     return computeStraightLineValuation(asset);
+  }
+
+  /**
+   * Runs the depreciation accrual for one period: for every active, non-Retired asset with a
+   * usefulLifeYears set, persists a period charge derived from computeStraightLineValuation's
+   * accumulated-as-of-period-end figure minus whatever was accumulated as of its most recent
+   * prior entry (0 if this is the asset's first entry) — so an out-of-order or skipped-period
+   * catch-up run still charges exactly the right amount rather than assuming monthly cadence.
+   * Re-runs are idempotent — an asset that already has an entry for (month, year) is skipped
+   * rather than failing the whole run. Returns the entries created by this run.
+   */
+  async runDepreciationAccrual(month: number, year: number): Promise<AssetDepreciationEntry[]> {
+    if (!Number.isInteger(month) || month < 1 || month > 12) {
+      throw new BadRequestException('month must be an integer between 1 and 12');
+    }
+    if (!Number.isInteger(year) || year < 1900 || year > 9999) {
+      throw new BadRequestException('year must be an integer between 1900 and 9999');
+    }
+    const accruedBy = this.resolveActor();
+    // First-of-next-month: computeStraightLineValuation's monthsInService counts full elapsed
+    // calendar months up to `asOf`, so this asOf yields "accumulated through the end of `month`".
+    const periodEnd = new Date(year, month, 1);
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const assets: FixedAsset[] = await manager.query(
+        `SELECT * FROM fixed_assets WHERE "isActive" = true AND condition != 'Retired' AND "usefulLifeYears" IS NOT NULL`,
+      );
+      const repository = manager.getRepository(AssetDepreciationEntry);
+      const created: AssetDepreciationEntry[] = [];
+      for (const asset of assets) {
+        const existing = await repository.findOne({
+          where: { assetId: asset.id, periodMonth: month, periodYear: year },
+        });
+        if (existing) {
+          continue;
+        }
+        const priorEntry = await repository.findOne({
+          where: { assetId: asset.id },
+          order: { periodYear: 'DESC', periodMonth: 'DESC' },
+        });
+        const valuation = computeStraightLineValuation(
+          {
+            purchaseDate: asset.purchaseDate,
+            purchaseCost: Number(asset.purchaseCost),
+            usefulLifeYears: asset.usefulLifeYears === null ? null : Number(asset.usefulLifeYears),
+            salvageValue: Number(asset.salvageValue),
+          },
+          periodEnd,
+        );
+        const priorAccumulated = priorEntry?.accumulatedDepreciation ?? 0;
+        const depreciationAmount = roundMoney(
+          Math.max(0, valuation.accumulatedDepreciation - priorAccumulated),
+        );
+        created.push(
+          await repository.save(
+            repository.create({
+              assetId: asset.id,
+              periodMonth: month,
+              periodYear: year,
+              depreciationAmount,
+              accumulatedDepreciation: valuation.accumulatedDepreciation,
+              bookValue: valuation.bookValue,
+              accruedBy,
+            }),
+          ),
+        );
+      }
+      return created;
+    });
+  }
+
+  async listDepreciationEntries(
+    query: ListDepreciationEntriesQuery,
+  ): Promise<PaginatedResponseDto<AssetDepreciationEntry>> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager.getRepository(AssetDepreciationEntry).createQueryBuilder('entry');
+      if (query.assetId) {
+        qb.andWhere('entry.assetId = :assetId', { assetId: query.assetId });
+      }
+      if (query.month !== undefined) {
+        qb.andWhere('entry.periodMonth = :month', { month: query.month });
+      }
+      if (query.year !== undefined) {
+        qb.andWhere('entry.periodYear = :year', { year: query.year });
+      }
+      qb.orderBy('entry.createdAt', 'DESC');
+      return paginate(qb, query);
+    });
   }
 
   async updateAsset(id: string, input: UpdateFixedAssetInput): Promise<FixedAsset> {

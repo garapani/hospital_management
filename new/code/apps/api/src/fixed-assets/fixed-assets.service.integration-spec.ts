@@ -16,10 +16,19 @@ describe('FixedAssetsService (integration)', () => {
     fixedAssetsService = new FixedAssetsService(
       ctx.tenantConnection,
       new FixedAssetNumberGeneratorService(ctx.tenantConnection),
+      ctx.tenantContext,
     );
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
+
+  const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+  function withActor<T>(work: () => Promise<T>): Promise<T> {
+    return ctx.tenantContext.run(
+      { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'fixed-assets-test' },
+      work,
+    );
+  }
 
   let seq = 0;
   async function makeCategory(suffix: string) {
@@ -191,5 +200,92 @@ describe('FixedAssetsService (integration)', () => {
         }),
       ),
     ).rejects.toThrow(ConflictException);
+  });
+
+  describe('runDepreciationAccrual', () => {
+    it('accrues a period charge for an eligible asset and stamps the accruing actor', async () => {
+      const category = await makeCategory('accrual-eligible');
+      // 120000 cost, 10yr life -> 12000/yr = 1000/mo. Purchased 2024-01-01; period 2025-01
+      // (periodEnd = 2025-02-01) -> 13 months elapsed -> accumulated 13000.
+      const asset = await makeAsset(category.id, { purchaseCost: 120000, usefulLifeYears: 10, purchaseDate: '2024-01-01' });
+
+      // Other tests in this shared tenant schema also have eligible assets that happen to be
+      // in period; find this test's own asset rather than assume the run touches only it.
+      const entries = await withActor(() => fixedAssetsService.runDepreciationAccrual(1, 2025));
+      const entry = entries.find((e) => e.assetId === asset.id)!;
+
+      expect(entry).toBeDefined();
+      expect(entry.periodMonth).toBe(1);
+      expect(entry.periodYear).toBe(2025);
+      expect(entry.depreciationAmount).toBe(13000);
+      expect(entry.accumulatedDepreciation).toBe(13000);
+      expect(entry.bookValue).toBe(107000);
+      expect(entry.accruedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('charges only the incremental amount on a second period, cumulative across runs', async () => {
+      const category = await makeCategory('accrual-cumulative');
+      const asset = await makeAsset(category.id, { purchaseCost: 120000, usefulLifeYears: 10, purchaseDate: '2024-01-01' });
+
+      await withActor(() => fixedAssetsService.runDepreciationAccrual(1, 2025));
+      const entries = await withActor(() => fixedAssetsService.runDepreciationAccrual(2, 2025));
+      const second = entries.find((e) => e.assetId === asset.id)!;
+
+      expect(second).toBeDefined();
+      expect(second.depreciationAmount).toBe(1000); // incremental, not the full 14000 cumulative
+      expect(second.accumulatedDepreciation).toBe(14000);
+      expect(second.bookValue).toBe(106000);
+    });
+
+    it('skips Retired assets, inactive assets, and assets with no usefulLifeYears', async () => {
+      const category = await makeCategory('accrual-skip');
+      const retired = await makeAsset(category.id, { name: 'Retired', usefulLifeYears: 5 });
+      await ctx.inTenant(() => fixedAssetsService.updateAsset(retired.id, { condition: 'Retired' }));
+      const noLife = await makeAsset(category.id, { name: 'No Life', usefulLifeYears: undefined });
+      const inactive = await makeAsset(category.id, { name: 'Inactive', usefulLifeYears: 5 });
+      await ctx.inTenant(() => fixedAssetsService.deactivateAsset(inactive.id));
+
+      const entries = await withActor(() => fixedAssetsService.runDepreciationAccrual(3, 2025));
+
+      expect(entries.some((e) => e.assetId === retired.id)).toBe(false);
+      expect(entries.some((e) => e.assetId === noLife.id)).toBe(false);
+      expect(entries.some((e) => e.assetId === inactive.id)).toBe(false);
+    });
+
+    it('is idempotent — re-running the same period skips assets that already have an entry', async () => {
+      const category = await makeCategory('accrual-idempotent');
+      const asset = await makeAsset(category.id, { purchaseCost: 60000, usefulLifeYears: 5 });
+
+      const first = await withActor(() => fixedAssetsService.runDepreciationAccrual(4, 2025));
+      const second = await withActor(() => fixedAssetsService.runDepreciationAccrual(4, 2025));
+
+      expect(first.some((e) => e.assetId === asset.id)).toBe(true);
+      expect(second.some((e) => e.assetId === asset.id)).toBe(false); // already has an entry — skipped
+
+      const entries = await ctx.inTenant(() =>
+        fixedAssetsService.listDepreciationEntries({ assetId: asset.id, month: 4, year: 2025 }),
+      );
+      expect(entries.data).toHaveLength(1);
+    });
+
+    it('validates month/year inputs', async () => {
+      await expect(withActor(() => fixedAssetsService.runDepreciationAccrual(0, 2025))).rejects.toThrow(BadRequestException);
+      await expect(withActor(() => fixedAssetsService.runDepreciationAccrual(13, 2025))).rejects.toThrow(BadRequestException);
+      await expect(withActor(() => fixedAssetsService.runDepreciationAccrual(1, 1899))).rejects.toThrow(BadRequestException);
+    });
+
+    it('lists depreciation entries filterable by asset and period', async () => {
+      const category = await makeCategory('accrual-list');
+      const assetA = await makeAsset(category.id, { usefulLifeYears: 5 });
+      const assetB = await makeAsset(category.id, { usefulLifeYears: 5 });
+      await withActor(() => fixedAssetsService.runDepreciationAccrual(5, 2025));
+
+      const forA = await ctx.inTenant(() => fixedAssetsService.listDepreciationEntries({ assetId: assetA.id }));
+      expect(forA.data).toHaveLength(1);
+      expect(forA.data[0].assetId).toBe(assetA.id);
+
+      const forPeriod = await ctx.inTenant(() => fixedAssetsService.listDepreciationEntries({ month: 5, year: 2025 }));
+      expect(forPeriod.data.map((e: { assetId: string }) => e.assetId)).toEqual(expect.arrayContaining([assetA.id, assetB.id]));
+    });
   });
 });

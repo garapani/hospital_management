@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import { FIXED_ASSET_CONDITIONS } from '../entities/fixed-asset.entity.js';
@@ -96,4 +97,30 @@ export class UpdateFixedAssetDto {
   @IsOptional()
   @IsNumber()
   salvageValue?: number;
+}
+
+export class RunDepreciationDto {
+  /** 1-12. */
+  @IsNumber()
+  month!: number;
+
+  /** Valid 4-digit year. */
+  @IsNumber()
+  year!: number;
+}
+
+export class ListDepreciationEntriesQueryDto extends PaginationQueryDto {
+  @IsOptional()
+  @IsUUID()
+  assetId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  month?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  year?: number;
 }

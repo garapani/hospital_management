@@ -4,7 +4,9 @@ import { FixedAssetsService } from './fixed-assets.service.js';
 import {
   CreateFixedAssetCategoryDto,
   CreateFixedAssetDto,
+  ListDepreciationEntriesQueryDto,
   ListFixedAssetsQueryDto,
+  RunDepreciationDto,
   UpdateFixedAssetDto,
 } from './dto/fixed-asset.dto.js';
 
@@ -49,6 +51,18 @@ export class FixedAssetsController {
     @Query() query: ListFixedAssetsQueryDto,
   ) {
     return this.fixedAssetsService.listAssets(query);
+  }
+
+  @Post('depreciation/run')
+  @RequirePermission('fixed-asset.manage')
+  async runDepreciation(@Body() dto: RunDepreciationDto) {
+    return this.fixedAssetsService.runDepreciationAccrual(dto.month, dto.year);
+  }
+
+  @Get('depreciation')
+  @RequirePermission('fixed-asset.read')
+  async listDepreciationEntries(@Query() query: ListDepreciationEntriesQueryDto) {
+    return this.fixedAssetsService.listDepreciationEntries(query);
   }
 
   @Get(':id')
