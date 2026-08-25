@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 import { ClinicalNote } from './entities/clinical-note.entity.js';
 import { Diagnosis } from './entities/diagnosis.entity.js';
@@ -8,21 +9,39 @@ import { Prescription } from './entities/prescription.entity.js';
 // keyof SoftDeletableEntity (not the old literal 'createdAt' | 'updatedAt'): these entities now also
 // carry createdBy/updatedBy/deletedAt/deletedBy, all system-populated by AuditColumnsSubscriber,
 // never part of a create/update input.
-export type CreateNoteInput = Omit<ClinicalNote, 'id' | keyof SoftDeletableEntity | 'status'>;
+export type CreateNoteInput = Omit<ClinicalNote, 'id' | keyof SoftDeletableEntity | 'status' | 'doctorId'> & {
+  doctorId?: string;
+};
 export type UpdateNoteInput = Partial<Omit<ClinicalNote, 'id' | keyof SoftDeletableEntity | 'patientId' | 'doctorId' | 'appointmentId'>>;
 
-export type CreateDiagnosisInput = Omit<Diagnosis, 'id' | keyof SoftDeletableEntity>;
-export type CreatePrescriptionInput = Omit<Prescription, 'id' | keyof SoftDeletableEntity | 'status'>;
+export type CreateDiagnosisInput = Omit<Diagnosis, 'id' | keyof SoftDeletableEntity | 'doctorId'> & { doctorId?: string };
+export type CreatePrescriptionInput = Omit<Prescription, 'id' | keyof SoftDeletableEntity | 'status' | 'doctorId'> & {
+  doctorId?: string;
+};
 
 @Injectable()
 export class EncountersService {
-  constructor(private readonly tenantConnection: TenantConnectionService) {}
+  constructor(
+    private readonly tenantConnection: TenantConnectionService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
+
+  /**
+   * `doctorId` on a clinical note/diagnosis/prescription is never trusted from the caller: the
+   * authenticated principal (TenantContextService.accountId, set by AuthContextMiddleware from the
+   * verified JWT) wins; the passed value is only a fallback for non-HTTP callers (service specs)
+   * that run without a tenant context. Spoofing the clinical author would be an audit-trail
+   * integrity breach.
+   */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
+  }
 
   // --- Clinical Notes ---
   async createNote(input: CreateNoteInput): Promise<ClinicalNote> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(ClinicalNote);
-      const note = repository.create(input);
+      const note = repository.create({ ...input, doctorId: this.resolveActor(input.doctorId) });
       return repository.save(note);
     });
   }
@@ -49,7 +68,7 @@ export class EncountersService {
   async createDiagnosis(input: CreateDiagnosisInput): Promise<Diagnosis> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(Diagnosis);
-      const diagnosis = repository.create(input);
+      const diagnosis = repository.create({ ...input, doctorId: this.resolveActor(input.doctorId) });
       return repository.save(diagnosis);
     });
   }
@@ -76,7 +95,7 @@ export class EncountersService {
   async createPrescription(input: CreatePrescriptionInput): Promise<Prescription> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(Prescription);
-      const prescription = repository.create(input);
+      const prescription = repository.create({ ...input, doctorId: this.resolveActor(input.doctorId) });
       return repository.save(prescription);
     });
   }

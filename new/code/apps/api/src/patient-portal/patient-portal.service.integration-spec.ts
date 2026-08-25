@@ -131,7 +131,7 @@ describe('PatientPortalService (integration)', () => {
         items: [{ description: 'Consultation', quantity: 1, unitPrice: 500 }],
       });
 
-      const encountersService = new EncountersService(ctx.tenantConnection);
+      const encountersService = new EncountersService(ctx.tenantConnection, ctx.tenantContext);
       await encountersService.createPrescription({
         patientId: patientA.id,
         doctorId: DOCTOR_ID,

@@ -8,8 +8,12 @@ export class CreateNoteDto {
   @IsString()
   appointmentId?: string;
 
+  // Not trusted from the caller: the authenticated clinician's account (from the verified
+  // JWT) wins. This is only a fallback for non-HTTP callers (service specs) that run without
+  // a tenant context — see EncountersService.resolveActor.
+  @IsOptional()
   @IsString()
-  doctorId!: string;
+  doctorId?: string;
 
   @IsOptional()
   @IsString()
@@ -58,8 +62,10 @@ export class CreateDiagnosisDto {
   @IsString()
   appointmentId?: string;
 
+  // Not trusted from the caller — see CreateNoteDto.doctorId.
+  @IsOptional()
   @IsString()
-  doctorId!: string;
+  doctorId?: string;
 
   @IsOptional()
   @IsString()
@@ -81,8 +87,10 @@ export class CreatePrescriptionDto {
   @IsString()
   appointmentId?: string;
 
+  // Not trusted from the caller — see CreateNoteDto.doctorId.
+  @IsOptional()
   @IsString()
-  doctorId!: string;
+  doctorId?: string;
 
   @IsString()
   medicationName!: string;

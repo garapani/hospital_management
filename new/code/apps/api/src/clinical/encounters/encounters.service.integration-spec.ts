@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EncountersService } from './encounters.service.js';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -28,6 +29,7 @@ describe('EncountersService (integration)', () => {
             },
           },
         },
+        { provide: TenantContextService, useValue: ctx.tenantContext },
       ],
     }).compile();
 
@@ -92,5 +94,52 @@ describe('EncountersService (integration)', () => {
     await service.deletePrescription(rx.id);
     const afterDelete = await service.getPrescriptionsByPatient('00000000-0000-0000-0000-000000000001');
     expect(afterDelete.length).toBe(0);
+  });
+
+  describe('doctorId derives from the authenticated principal, never the caller-supplied value', () => {
+    const AUTHENTICATED_ACCOUNT_ID = '00000000-0000-0000-0000-0000000000a1';
+    const SPOOFED_DOCTOR_ID = '00000000-0000-0000-0000-0000000000ee';
+
+    const asAuthenticatedRequest = <T>(work: () => Promise<T>): Promise<T> =>
+      ctx.tenantContext.run({ tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT_ID, correlationId: 'test' }, work);
+
+    it('createNote ignores a caller-supplied doctorId in favor of the authenticated account', async () => {
+      const note = await asAuthenticatedRequest(() =>
+        service.createNote({
+          patientId: '00000000-0000-0000-0000-000000000001',
+          doctorId: SPOOFED_DOCTOR_ID,
+          chiefComplaint: 'Spoof attempt',
+        }),
+      );
+      expect(note.doctorId).toBe(AUTHENTICATED_ACCOUNT_ID);
+      expect(note.doctorId).not.toBe(SPOOFED_DOCTOR_ID);
+    });
+
+    it('createDiagnosis ignores a caller-supplied doctorId in favor of the authenticated account', async () => {
+      const dx = await asAuthenticatedRequest(() =>
+        service.createDiagnosis({
+          patientId: '00000000-0000-0000-0000-000000000001',
+          doctorId: SPOOFED_DOCTOR_ID,
+          description: 'Spoof attempt',
+          isPrimary: false,
+        }),
+      );
+      expect(dx.doctorId).toBe(AUTHENTICATED_ACCOUNT_ID);
+    });
+
+    it('createPrescription ignores a caller-supplied doctorId in favor of the authenticated account', async () => {
+      const rx = await asAuthenticatedRequest(() =>
+        service.createPrescription({
+          patientId: '00000000-0000-0000-0000-000000000001',
+          doctorId: SPOOFED_DOCTOR_ID,
+          medicationName: 'Ibuprofen',
+          dosage: '400mg',
+          frequency: 'TID',
+          route: 'Oral',
+          durationDays: 3,
+        }),
+      );
+      expect(rx.doctorId).toBe(AUTHENTICATED_ACCOUNT_ID);
+    });
   });
 });
