@@ -4,6 +4,10 @@ import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { DepositsService } from './deposits.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
+import { JournalEntry } from '../accounting/entities/journal-entry.entity.js';
+import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -16,6 +20,7 @@ describe('InvoicesService (integration)', () => {
   let patientsService: PatientsService;
   let invoicesService: InvoicesService;
   let depositsService: DepositsService;
+  let accountingService: AccountingService;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'invoices_svc' });
@@ -23,8 +28,9 @@ describe('InvoicesService (integration)', () => {
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
     patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
-    invoicesService = new InvoicesService(ctx.tenantConnection, ctx.tenantContext);
-    depositsService = new DepositsService(ctx.tenantConnection, ctx.tenantContext);
+    accountingService = new AccountingService(ctx.tenantConnection, new JournalNumberGeneratorService(ctx.tenantConnection), ctx.tenantContext);
+    invoicesService = new InvoicesService(ctx.tenantConnection, ctx.tenantContext, accountingService);
+    depositsService = new DepositsService(ctx.tenantConnection, ctx.tenantContext, accountingService);
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
@@ -530,6 +536,152 @@ describe('InvoicesService (integration)', () => {
         invoicesService.createReturn('00000000-0000-0000-0000-000000000000', { amount: 100, reason: 'x', returnedBy: STAFF_ID }),
       ),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  describe('automatic ledger posting on billing events', () => {
+    async function postPaymentJournalDirectly(paymentId: string, amount: number, debitAccountId: string) {
+      return ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          accountingService.postAutoJournal(manager, {
+            sourceType: 'Payment',
+            sourceId: paymentId,
+            entryDate: new Date().toISOString().slice(0, 10),
+            actor: STAFF_ID,
+            lines: [
+              { accountId: debitAccountId, debit: amount },
+              { accountId: LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE, credit: amount },
+            ],
+          }),
+        ),
+      );
+    }
+
+    async function countJournalsForSource(sourceType: string, sourceId: string) {
+      return ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(JournalEntry).count({ where: { sourceType, sourceId } }),
+        ),
+      );
+    }
+
+    it('posts a balanced Cash/Bank vs Patient AR journal when a Cash payment is recorded, and a retried post is a no-op', async () => {
+      const patient = await makePatient(ctx, '5550000060');
+      const invoice = await ctx.inTenant(() =>
+        invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+      );
+      const payment = await ctx.inTenant(() =>
+        invoicesService.recordPayment(invoice.id, { amount: 1000, paymentMode: 'Cash', receivedBy: STAFF_ID }),
+      );
+
+      const journal = await postPaymentJournalDirectly(payment.id, 1000, LEDGER_ACCOUNT_IDS.CASH_AND_BANK);
+      expect(journal.status).toBe('Posted');
+      expect(journal.sourceType).toBe('Payment');
+      expect(journal.sourceId).toBe(payment.id);
+      expect(journal.lines).toHaveLength(2);
+      const totalDebit = journal.lines.reduce((sum, line) => sum + line.debit, 0);
+      const totalCredit = journal.lines.reduce((sum, line) => sum + line.credit, 0);
+      expect(totalDebit).toBe(totalCredit);
+      expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.CASH_AND_BANK)?.debit).toBe(1000);
+      expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE)?.credit).toBe(1000);
+
+      // Idempotency: simulates a retried/replayed payment event by posting for the same source a
+      // second time — must return the SAME journal, not create a duplicate.
+      expect(await countJournalsForSource('Payment', payment.id)).toBe(1);
+      const retried = await postPaymentJournalDirectly(payment.id, 1000, LEDGER_ACCOUNT_IDS.CASH_AND_BANK);
+      expect(retried.id).toBe(journal.id);
+      expect(retried.journalNumber).toBe(journal.journalNumber);
+      expect(await countJournalsForSource('Payment', payment.id)).toBe(1);
+    });
+
+    it('posts a Patient Deposits Payable settlement journal for a Deposit-sourced payment', async () => {
+      const patient = await makePatient(ctx, '5550000061');
+      const deposit = await ctx.inTenant(() => depositsService.create({ patientId: patient.id, amount: 2000, receivedBy: STAFF_ID }));
+      const invoice = await ctx.inTenant(() =>
+        invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+      );
+      const payment = await ctx.inTenant(() =>
+        invoicesService.recordPayment(invoice.id, {
+          amount: 1000,
+          paymentMode: 'Deposit',
+          sourceDepositId: deposit.id,
+          receivedBy: STAFF_ID,
+        }),
+      );
+
+      const journal = await postPaymentJournalDirectly(payment.id, 1000, LEDGER_ACCOUNT_IDS.PATIENT_DEPOSITS_PAYABLE);
+      expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_DEPOSITS_PAYABLE)?.debit).toBe(1000);
+      expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE)?.credit).toBe(1000);
+    });
+
+    it('posts a Sales Returns contra-revenue journal on createReturn', async () => {
+      const patient = await makePatient(ctx, '5550000062');
+      const invoice = await ctx.inTenant(() =>
+        invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+      );
+      await ctx.inTenant(() => invoicesService.recordPayment(invoice.id, { amount: 1000, paymentMode: 'Cash', receivedBy: STAFF_ID }));
+      const returnRecord = await ctx.inTenant(() =>
+        invoicesService.createReturn(invoice.id, { amount: 300, reason: 'Overcharged', returnedBy: STAFF_ID }),
+      );
+
+      const journal = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          accountingService.postAutoJournal(manager, {
+            sourceType: 'Return',
+            sourceId: returnRecord.id,
+            entryDate: new Date().toISOString().slice(0, 10),
+            actor: STAFF_ID,
+            lines: [
+              { accountId: LEDGER_ACCOUNT_IDS.SALES_RETURNS, debit: 300 },
+              { accountId: LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE, credit: 300 },
+            ],
+          }),
+        ),
+      );
+      expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.SALES_RETURNS)?.debit).toBe(300);
+      expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE)?.credit).toBe(300);
+    });
+
+    it('reflects a posted payment journal in the trial balance, hermetically in its own tenant', async () => {
+      // Reports aggregate the whole tenant (see AccountingService's own report tests), so this
+      // runs in a dedicated tenant to keep the numbers free of this file's other tests.
+      const reportCtx = await ctx.createTenant();
+      const reportAccounting = new AccountingService(
+        ctx.tenantConnection,
+        new JournalNumberGeneratorService(ctx.tenantConnection),
+        reportCtx.tenantContext,
+      );
+      const reportInvoices = new InvoicesService(ctx.tenantConnection, reportCtx.tenantContext, reportAccounting);
+      const reportPatients = new PatientsService(
+        ctx.tenantConnection,
+        new PatientNumberGeneratorService(ctx.tenantConnection),
+        new AccountsService(ctx.tenantConnection, ctx.dataSource, reportCtx.tenantContext),
+      );
+      const inReport = <T>(work: () => Promise<T>): Promise<T> =>
+        reportCtx.tenantContext.run({ tenantId: reportCtx.tenantId, correlationId: 'report' }, work);
+
+      const patient = await inReport(() =>
+        reportPatients.create({
+          firstName: 'Report',
+          lastName: 'Patient',
+          dateOfBirth: '1990-01-01',
+          gender: 'Male',
+          phoneNumber: '7770000001',
+        }),
+      );
+      const invoice = await inReport(() =>
+        reportInvoices.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+      );
+      await inReport(() => reportInvoices.recordPayment(invoice.id, { amount: 1000, paymentMode: 'Cash', receivedBy: STAFF_ID }));
+
+      const trial = await inReport(() => reportAccounting.trialBalance());
+      const byCode = new Map(trial.map((row) => [row.accountCode, row]));
+      // Manually-created invoice (not charge-captured), so Patient AR was never debited — only
+      // the payment posted. Cash/Bank (1010) carries the debit; Patient AR (1000) carries the
+      // offsetting credit. Manual-invoice revenue recognition is out of scope for this iteration
+      // (see Development-Standards.md).
+      expect(byCode.get('1010')?.balance).toBe(1000);
+      expect(byCode.get('1000')?.balance).toBe(-1000);
+    });
   });
 
   describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {

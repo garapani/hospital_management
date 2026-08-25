@@ -5,6 +5,8 @@ import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { InvoicesService } from '../billing/invoices.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -28,7 +30,11 @@ describe('InsuranceClaimsService (integration)', () => {
       ctx.tenantContext,
     );
     patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
-    invoicesService = new InvoicesService(ctx.tenantConnection, ctx.tenantContext);
+    invoicesService = new InvoicesService(
+      ctx.tenantConnection,
+      ctx.tenantContext,
+      new AccountingService(ctx.tenantConnection, new JournalNumberGeneratorService(ctx.tenantConnection), ctx.tenantContext),
+    );
   });
 
   afterAll(() => teardownTenantTestContext(ctx));

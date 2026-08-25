@@ -13,6 +13,9 @@ import { StockBatch } from '../inventory/entities/stock-batch.entity.js';
 import { StockBalance } from '../inventory/entities/stock-balance.entity.js';
 import { InvoicesService } from '../billing/invoices.service.js';
 import { InvoiceItem } from './entities/invoice-item.entity.js';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { JournalEntry, JournalLine } from '../accounting/entities/journal-entry.entity.js';
+import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -32,6 +35,7 @@ describe('Charge capture (integration) — order-item completion auto-charges th
   let inventoryCatalogService: InventoryCatalogService;
   let pharmacyDispensingService: PharmacyDispensingService;
   let invoicesService: InvoicesService;
+  let accountingService: AccountingService;
 
   const DOCTOR_ID = '00000000-0000-0000-0000-000000000001';
   const STAFF_ID = '00000000-0000-0000-0000-000000000002';
@@ -55,6 +59,7 @@ describe('Charge capture (integration) — order-item completion auto-charges th
     inventoryCatalogService = moduleFixture.get(InventoryCatalogService);
     pharmacyDispensingService = moduleFixture.get(PharmacyDispensingService);
     invoicesService = moduleFixture.get(InvoicesService);
+    accountingService = moduleFixture.get(AccountingService);
   });
 
   afterAll(async () => {
@@ -135,6 +140,21 @@ describe('Charge capture (integration) — order-item completion auto-charges th
       tenantConnection.runInTenantSchema((manager) =>
         manager.getRepository(InvoiceItem).find({ where: { invoiceId } }),
       ),
+    );
+  }
+
+  async function journalForInvoiceItem(invoiceItemId: string) {
+    return inTenant(() =>
+      tenantConnection.runInTenantSchema(async (manager) => {
+        const journal = await manager
+          .getRepository(JournalEntry)
+          .findOne({ where: { sourceType: 'InvoiceItem', sourceId: invoiceItemId } });
+        if (!journal) {
+          return null;
+        }
+        const lines = await manager.getRepository(JournalLine).find({ where: { journalId: journal.id } });
+        return { ...journal, lines };
+      }),
     );
   }
 
@@ -276,5 +296,51 @@ describe('Charge capture (integration) — order-item completion auto-charges th
     expect(items).toHaveLength(1);
     expect(items[0].unitPrice).toBe(45);
     expect(items[0].sourceOrderItemId).toBe(order.items[0].id);
+  });
+
+  it('posts a Patient AR / Patient Service Revenue journal when a charge is captured', async () => {
+    const patient = await makePatient('5560000006');
+    const test = await makePricedLabTest('Ledger CBC', 'LEDGER-CBC', 300);
+    await completeLabOrderItem(patient.id, test);
+
+    const invoices = await inTenant(() => invoicesService.list({ patientId: patient.id }));
+    const items = await invoiceItemsFor(invoices.data[0].id);
+    const journal = await journalForInvoiceItem(items[0].id);
+
+    expect(journal).not.toBeNull();
+    expect(journal!.status).toBe('Posted');
+    expect(journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE)?.debit).toBe(300);
+    expect(journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE)?.credit).toBe(300);
+  });
+
+  it('best-effort: a revenue-posting failure does not roll back the clinical verification', async () => {
+    // Simulates a ledger misconfiguration (the documented failure mode) by deactivating the
+    // revenue account captureChargeForOrderItem posts to. Restored in finally so it doesn't leak
+    // into the other tests sharing this tenant.
+    await inTenant(() => accountingService.deactivateAccount(LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE));
+    try {
+      const patient = await makePatient('5560000007');
+      const test = await makePricedLabTest('Unmapped CBC', 'UNMAPPED-CBC', 150);
+      const { order } = await completeLabOrderItem(patient.id, test);
+
+      // The clinical verification itself succeeded despite the ledger problem — the whole point
+      // of best-effort posting.
+      const requisitions = await inTenant(() =>
+        labWorkflowService.listByOrderItem({ orderItemId: order.items[0].id }),
+      );
+      expect(requisitions.data[0].status).toBe('Verified');
+
+      // Charge capture (the invoice item) is unaffected by the ledger failure...
+      const invoices = await inTenant(() => invoicesService.list({ patientId: patient.id }));
+      const items = await invoiceItemsFor(invoices.data[0].id);
+      expect(items).toHaveLength(1);
+
+      // ...but no revenue journal exists for it: the posting error was logged and swallowed, not
+      // silently treated as success.
+      const journal = await journalForInvoiceItem(items[0].id);
+      expect(journal).toBeNull();
+    } finally {
+      await inTenant(() => accountingService.reactivateAccount(LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE));
+    }
   });
 });

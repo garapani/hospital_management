@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EntityManager } from 'typeorm';
+import { EntityManager, In } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -46,6 +46,17 @@ export interface CreateJournalInput {
   lines: JournalLineInput[];
   /** Deprecated — ignored when a tenant context with an accountId is active (see §25). */
   createdBy?: string;
+}
+
+export interface AutoPostJournalInput {
+  /** e.g. 'Payment', 'Deposit', 'DepositRefund', 'Return', 'InvoiceItem'. */
+  sourceType: string;
+  sourceId: string;
+  entryDate: string;
+  narration?: string;
+  lines: JournalLineInput[];
+  /** Deprecated — ignored when a tenant context with an accountId is active (see §25). */
+  actor?: string;
 }
 
 export interface TrialBalanceRow {
@@ -234,6 +245,103 @@ export class AccountingService {
     });
   }
 
+  /**
+   * Automatic posting hook for billing (payments, deposits, returns, charge-capture revenue) and
+   * any future source. Runs on the CALLER's EntityManager — no own transaction — so it commits
+   * atomically with whatever billing write triggered it, mirroring
+   * InvoicesService.captureChargeForOrderItem's manager-passing pattern.
+   *
+   * Idempotent: looks up an existing journal by (sourceType, sourceId) first. If one exists with
+   * the same lines (same accounts, same debit/credit amounts), it's a safe retry — returned
+   * unchanged, no duplicate posted. If one exists with DIFFERENT lines, that source key was reused
+   * for a genuinely different event (e.g. a second refund against the same deposit, which has no
+   * distinct per-refund identity — see DepositsService.refund) — this is a conflict, not a retry,
+   * and throws rather than silently dropping the second event on the floor. Skips Draft entirely:
+   * auto-posted journals are created directly as Posted, since there is no human review step for
+   * system-generated entries (reversals are new correcting entries, per the existing no-reversal
+   * convention).
+   *
+   * Fails loud: an unbalanced input, a mapped account that is missing/inactive (an accounting
+   * configuration bug), or a source-key conflict as above, all throw rather than silently posting
+   * nothing or posting a broken entry. Callers that need best-effort semantics (documented
+   * exception: charge-capture revenue, to match ChargeCaptureSubscriber's "never roll back a
+   * clinical completion" rule) catch and log at the call site — this method itself never swallows.
+   */
+  async postAutoJournal(
+    manager: EntityManager,
+    input: AutoPostJournalInput,
+  ): Promise<JournalEntry & { lines: JournalLine[] }> {
+    if (!input.lines || input.lines.length < 2) {
+      throw new BadRequestException('A journal entry needs at least two lines (double-entry)');
+    }
+    const normalized = this.validateAndNormalizeLines(input.lines);
+
+    const journalRepository = manager.getRepository(JournalEntry);
+    const existing = await journalRepository.findOne({
+      where: { sourceType: input.sourceType, sourceId: input.sourceId },
+    });
+    if (existing) {
+      const existingLines = await manager.getRepository(JournalLine).find({ where: { journalId: existing.id } });
+      if (!this.linesMatch(normalized, existingLines)) {
+        throw new ConflictException(
+          `A journal already exists for source ${input.sourceType}:${input.sourceId} with different amounts — refusing to post a conflicting duplicate`,
+        );
+      }
+      return { ...existing, lines: existingLines };
+    }
+
+    // No FK constraint on journal_lines.accountId (matches the rest of the accounting schema), so
+    // an unmapped/mistyped account id would otherwise insert a silently-orphaned line. Auto-posted
+    // journals are never reviewed by a human before going Posted, so this check is what stands
+    // between a misconfigured mapping and a broken ledger.
+    const accountIds = [...new Set(normalized.map((line) => line.accountId))];
+    const accounts = await manager.getRepository(LedgerAccount).find({ where: { id: In(accountIds) } });
+    const accountsById = new Map(accounts.map((account) => [account.id, account]));
+    const missing = accountIds.filter((id) => !accountsById.has(id));
+    if (missing.length > 0) {
+      throw new ConflictException(`Ledger account(s) not found: ${missing.join(', ')}`);
+    }
+    const inactive = accounts.filter((account) => !account.isActive);
+    if (inactive.length > 0) {
+      throw new ConflictException(
+        `Ledger account(s) inactive: ${inactive.map((account) => account.accountCode).join(', ')}`,
+      );
+    }
+
+    const journalNumber = await this.journalNumberGenerator.generateNextJournalNumber();
+    const actor = this.resolveActor(input.actor);
+    const now = new Date();
+
+    const journal = await journalRepository.save(
+      journalRepository.create({
+        journalNumber,
+        entryDate: input.entryDate,
+        narration: input.narration ?? null,
+        status: 'Posted',
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        createdBy: actor,
+        postedBy: actor,
+        postedAt: now,
+      }),
+    );
+
+    const lineRepository = manager.getRepository(JournalLine);
+    const lines = await lineRepository.save(
+      normalized.map((line) =>
+        lineRepository.create({
+          journalId: journal.id,
+          accountId: line.accountId,
+          debit: line.debit,
+          credit: line.credit,
+          lineNarration: line.lineNarration ?? null,
+        }),
+      ),
+    );
+
+    return { ...journal, lines };
+  }
+
   async listJournals(
     query: PaginationQueryDto & { status?: 'Draft' | 'Posted'; from?: string; to?: string },
   ): Promise<PaginatedResponseDto<JournalEntry>> {
@@ -270,6 +378,20 @@ export class AccountingService {
       throw new NotFoundException(`Journal entry ${id} not found`);
     }
     return journal;
+  }
+
+  private linesMatch(
+    normalized: { accountId: string; debit: number; credit: number }[],
+    existing: JournalLine[],
+  ): boolean {
+    if (normalized.length !== existing.length) {
+      return false;
+    }
+    const key = (l: { accountId: string; debit: number; credit: number }): string =>
+      `${l.accountId}:${l.debit}:${l.credit}`;
+    const a = normalized.map(key).sort();
+    const b = existing.map((l) => key({ accountId: l.accountId, debit: l.debit, credit: l.credit })).sort();
+    return a.every((value, i) => value === b[i]);
   }
 
   private validateAndNormalizeLines(

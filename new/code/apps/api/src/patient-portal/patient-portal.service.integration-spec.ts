@@ -6,6 +6,8 @@ import { PatientNumberGeneratorService } from '../patients/patient-number-genera
 import { AccountsService } from '../accounts/accounts.service.js';
 import { AppointmentsService } from '../appointments/appointments.service.js';
 import { InvoicesService } from '../billing/invoices.service.js';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
 import { EncountersService } from '../clinical/encounters/encounters.service.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { LabWorkflowService } from '../lab/lab-workflow.service.js';
@@ -115,7 +117,11 @@ describe('PatientPortalService (integration)', () => {
         appointmentType: 'OPD',
       });
 
-      const invoicesService = new InvoicesService(ctx.tenantConnection, ctx.tenantContext);
+      const invoicesService = new InvoicesService(
+        ctx.tenantConnection,
+        ctx.tenantContext,
+        new AccountingService(ctx.tenantConnection, new JournalNumberGeneratorService(ctx.tenantConnection), ctx.tenantContext),
+      );
       await invoicesService.create({
         patientId: patientA.id,
         items: [{ description: 'Consultation', quantity: 1, unitPrice: 500 }],

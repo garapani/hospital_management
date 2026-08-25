@@ -1,8 +1,11 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DepositsService } from './deposits.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
+import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -14,6 +17,7 @@ describe('DepositsService (integration)', () => {
   let tenantB: TenantTestContext;
   let patientsService: PatientsService;
   let depositsService: DepositsService;
+  let accountingService: AccountingService;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'deposits_svc' });
@@ -21,7 +25,8 @@ describe('DepositsService (integration)', () => {
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
     patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
-    depositsService = new DepositsService(ctx.tenantConnection, ctx.tenantContext);
+    accountingService = new AccountingService(ctx.tenantConnection, new JournalNumberGeneratorService(ctx.tenantConnection), ctx.tenantContext);
+    depositsService = new DepositsService(ctx.tenantConnection, ctx.tenantContext, accountingService);
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
@@ -149,6 +154,80 @@ describe('DepositsService (integration)', () => {
     await expect(
       tenantB.inTenant(() => depositsService.refund(deposit.id, { amount: 100, refundedBy: STAFF_ID })),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  describe('automatic ledger posting on billing events', () => {
+    async function postDepositJournalDirectly(depositId: string, amount: number) {
+      return ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          accountingService.postAutoJournal(manager, {
+            sourceType: 'Deposit',
+            sourceId: depositId,
+            entryDate: new Date().toISOString().slice(0, 10),
+            actor: STAFF_ID,
+            lines: [
+              { accountId: LEDGER_ACCOUNT_IDS.CASH_AND_BANK, debit: amount },
+              { accountId: LEDGER_ACCOUNT_IDS.PATIENT_DEPOSITS_PAYABLE, credit: amount },
+            ],
+          }),
+        ),
+      );
+    }
+
+    async function postRefundJournalDirectly(depositId: string, amount: number) {
+      return ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          accountingService.postAutoJournal(manager, {
+            sourceType: 'DepositRefund',
+            sourceId: depositId,
+            entryDate: new Date().toISOString().slice(0, 10),
+            actor: STAFF_ID,
+            lines: [
+              { accountId: LEDGER_ACCOUNT_IDS.PATIENT_DEPOSITS_PAYABLE, debit: amount },
+              { accountId: LEDGER_ACCOUNT_IDS.CASH_AND_BANK, credit: amount },
+            ],
+          }),
+        ),
+      );
+    }
+
+    it('posts a Cash/Bank vs Patient Deposits Payable journal when a deposit is received', async () => {
+      const patient = await makePatient(ctx, '6660000020');
+      const deposit = await ctx.inTenant(() =>
+        depositsService.create({ patientId: patient.id, amount: 5000, receivedBy: STAFF_ID }),
+      );
+
+      const journal = await postDepositJournalDirectly(deposit.id, 5000);
+      expect(journal.status).toBe('Posted');
+      expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.CASH_AND_BANK)?.debit).toBe(5000);
+      expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_DEPOSITS_PAYABLE)?.credit).toBe(5000);
+    });
+
+    it('posts a Patient Deposits Payable vs Cash/Bank journal on refund', async () => {
+      const patient = await makePatient(ctx, '6660000021');
+      const deposit = await ctx.inTenant(() =>
+        depositsService.create({ patientId: patient.id, amount: 5000, receivedBy: STAFF_ID }),
+      );
+      await ctx.inTenant(() => depositsService.refund(deposit.id, { amount: 2000, refundedBy: STAFF_ID }));
+
+      const journal = await postRefundJournalDirectly(deposit.id, 2000);
+      expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_DEPOSITS_PAYABLE)?.debit).toBe(2000);
+      expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.CASH_AND_BANK)?.credit).toBe(2000);
+    });
+
+    it('fails loud on a second, different-amount refund against the same deposit (no per-refund identity)', async () => {
+      const patient = await makePatient(ctx, '6660000022');
+      const deposit = await ctx.inTenant(() =>
+        depositsService.create({ patientId: patient.id, amount: 5000, receivedBy: STAFF_ID }),
+      );
+      await ctx.inTenant(() => depositsService.refund(deposit.id, { amount: 1000, refundedBy: STAFF_ID }));
+
+      // deposits.service.ts documents this: DepositsService.refund itself succeeds (the balance
+      // update has no idempotency concept), but the SECOND refund's ledger posting — keyed on the
+      // deposit id, since there is no per-refund identity — collides with the first refund's
+      // journal and fails loud rather than silently mis-booking it.
+      await expect(postRefundJournalDirectly(deposit.id, 1500)).rejects.toThrow(ConflictException);
+    });
   });
 
   describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {

@@ -55,6 +55,8 @@ import { AddAuditColumnsToPlatformTables1000000000054 } from './0054-add-audit-c
 import { DropSubscriptionsTenantFkCascade1000000000055 } from './0055-drop-subscriptions-tenant-fk-cascade.js';
 import { AddTenantPurged1000000000056 } from './0056-add-tenant-purged.js';
 import { AddAccountPatientLink3000000000057 } from './0057-add-account-patient-link.js';
+import { AddJournalSourceRef3000000000058 } from './0058-add-journal-source-ref.js';
+import { SeedDefaultLedgerAccounts3000000000059 } from './0059-seed-default-ledger-accounts.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -124,4 +126,6 @@ export const TENANT_MIGRATIONS = [
   AddInvoiceItemChargeUnique0049,
   AddAuditColumnsToTenantTables1000000000053,
   AddAccountPatientLink3000000000057,
+  AddJournalSourceRef3000000000058,
+  SeedDefaultLedgerAccounts3000000000059,
 ];

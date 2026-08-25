@@ -5,6 +5,12 @@ import { Deposit } from './entities/deposit.entity.js';
 import { Patient } from '../patients/entities/patient.entity.js';
 import { roundMoney } from './money.util.js';
 import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export interface CreateDepositInput {
   patientId: string;
@@ -25,6 +31,7 @@ export class DepositsService {
   constructor(
     private readonly tenantConnection: TenantConnectionService,
     private readonly tenantContext: TenantContextService,
+    private readonly accountingService: AccountingService,
   ) {}
 
   /**
@@ -48,7 +55,7 @@ export class DepositsService {
         throw new NotFoundException(`Patient ${input.patientId} not found`);
       }
       const repository = manager.getRepository(Deposit);
-      return repository.save(
+      const deposit = await repository.save(
         repository.create({
           patientId: input.patientId,
           amount: input.amount,
@@ -57,6 +64,23 @@ export class DepositsService {
           notes: input.notes ?? null,
         }),
       );
+
+      // Backs the Patient Deposits Payable liability that a later Deposit-sourced payment settles
+      // — without this, that settlement would debit a liability that was never credited. Fails
+      // loud, same as the other billing-to-accounting hooks.
+      await this.accountingService.postAutoJournal(manager, {
+        sourceType: 'Deposit',
+        sourceId: deposit.id,
+        entryDate: today(),
+        narration: `Deposit received for patient ${input.patientId}`,
+        actor: deposit.receivedBy,
+        lines: [
+          { accountId: LEDGER_ACCOUNT_IDS.CASH_AND_BANK, debit: input.amount },
+          { accountId: LEDGER_ACCOUNT_IDS.PATIENT_DEPOSITS_PAYABLE, credit: input.amount },
+        ],
+      });
+
+      return deposit;
     });
   }
 
@@ -89,7 +113,27 @@ export class DepositsService {
       deposit.balance = roundMoney(deposit.balance - input.amount);
       deposit.refundedBy = this.resolveActor(input.refundedBy);
       deposit.refundedAt = new Date();
-      return repository.save(deposit);
+      const saved = await repository.save(deposit);
+
+      // sourceId is the deposit id, not a per-refund id: Deposit has no separate refund-event
+      // record (only one refundedBy/refundedAt pair). A second, same-amount refund against the
+      // same deposit is treated as a safe retry (postAutoJournal no-ops); a second, DIFFERENT-
+      // amount refund is a genuine conflict on a reused source key and fails loud
+      // (ConflictException) — surfacing that pre-existing data-model gap rather than silently
+      // mis-booking it. Documented out-of-scope limitation; see Development-Standards.md.
+      await this.accountingService.postAutoJournal(manager, {
+        sourceType: 'DepositRefund',
+        sourceId: id,
+        entryDate: today(),
+        narration: `Refund for deposit ${id}`,
+        actor: saved.refundedBy ?? undefined,
+        lines: [
+          { accountId: LEDGER_ACCOUNT_IDS.PATIENT_DEPOSITS_PAYABLE, debit: input.amount },
+          { accountId: LEDGER_ACCOUNT_IDS.CASH_AND_BANK, credit: input.amount },
+        ],
+      });
+
+      return saved;
     });
   }
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EntityManager, In } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
@@ -11,6 +11,12 @@ import { Return } from './entities/return.entity.js';
 import { roundMoney } from './money.util.js';
 import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 import { withAdvisoryLock } from '../database/advisory-lock.util.js';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export interface CreateInvoiceItemInput {
   description: string;
@@ -65,9 +71,12 @@ export function formatFinancialYear(startYear: number): string {
 
 @Injectable()
 export class InvoicesService {
+  private readonly logger = new Logger(InvoicesService.name);
+
   constructor(
     private readonly tenantConnection: TenantConnectionService,
     private readonly tenantContext: TenantContextService,
+    private readonly accountingService: AccountingService,
   ) {}
 
   /**
@@ -240,7 +249,10 @@ export class InvoicesService {
    * Best-effort by design: the caller (a TypeORM subscriber inside the business transaction) never
    * rethrows, so a pricing problem cannot roll back a lab verification. Unpriced items are skipped
    * (captured: false, reason 'unpriced') until the catalog price is set. Idempotent: an item that
-   * already has an invoice line (sourceOrderItemId) is never charged twice.
+   * already has an invoice line (sourceOrderItemId) is never charged twice. Revenue-journal posting
+   * (Patient AR / Patient Service Revenue) shares this best-effort envelope: its own try/catch below
+   * logs and swallows rather than rethrows, for the same "never roll back a clinical completion"
+   * reason — unlike the fail-loud posting in recordPayment/createReturn.
    */
   async captureChargeForOrderItem(
     manager: EntityManager,
@@ -317,7 +329,7 @@ export class InvoicesService {
     const invoice = openInvoice ?? (await this.createCaptureInvoice(manager, patientId, orderItem.completedBy));
 
     const unitPrice = roundMoney(price);
-    await manager.getRepository(InvoiceItem).save(
+    const invoiceItem = await manager.getRepository(InvoiceItem).save(
       manager.getRepository(InvoiceItem).create({
         invoiceId: invoice.id,
         sourceOrderItemId: orderItem.id,
@@ -341,6 +353,34 @@ export class InvoicesService {
           ? 'PartiallyPaid'
           : 'Unpaid';
     await invoiceRepository.save(invoice);
+
+    // Revenue recognized now, at charge-capture (not at payment) — see Development-Standards.md
+    // "Automatic ledger posting from Billing". Best-effort, unlike recordPayment/createReturn
+    // above: this runs inside the same transaction as a Lab/Radiology/Pharmacy completion, and per
+    // the same human ruling documented on this method's class-level doc comment, a ledger problem
+    // must never roll back that clinical completion. Known limitation shared with the rest of this
+    // method: if this throws, the invoice item still exists, so a later reRunChargeCapture retry
+    // short-circuits on "already-charged" and never retries the revenue posting — recovery is
+    // manual, matching the pre-existing "no re-run endpoint for a failed capture" caveat.
+    try {
+      await this.accountingService.postAutoJournal(manager, {
+        sourceType: 'InvoiceItem',
+        sourceId: invoiceItem.id,
+        entryDate: today(),
+        narration: `Charge capture: ${description}`,
+        actor: orderItem.completedBy,
+        lines: [
+          { accountId: LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE, debit: unitPrice },
+          { accountId: LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE, credit: unitPrice },
+        ],
+      });
+    } catch (error) {
+      this.logger.error(
+        `Revenue posting failed for invoice item ${invoiceItem.id} (order item ${orderItem.id}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
 
     return { captured: true };
   }
@@ -485,6 +525,28 @@ export class InvoicesService {
       invoice.status = invoice.paidAmount >= invoice.totalAmount ? 'Paid' : 'PartiallyPaid';
       await invoiceRepository.save(invoice);
 
+      // Cash/bank (or the deposit liability, for a Deposit-sourced payment) settles what the
+      // patient owes (Patient AR) — revenue was already recognized at charge-capture. Runs in this
+      // same transaction and fails loud: a ledger-mapping bug must never silently under-book money
+      // (see Development-Standards.md "Automatic ledger posting from Billing").
+      await this.accountingService.postAutoJournal(manager, {
+        sourceType: 'Payment',
+        sourceId: payment.id,
+        entryDate: today(),
+        narration: `Payment ${input.paymentMode} received for invoice ${invoiceId}`,
+        actor: payment.receivedBy,
+        lines: [
+          {
+            accountId:
+              input.paymentMode === 'Deposit'
+                ? LEDGER_ACCOUNT_IDS.PATIENT_DEPOSITS_PAYABLE
+                : LEDGER_ACCOUNT_IDS.CASH_AND_BANK,
+            debit: input.amount,
+          },
+          { accountId: LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE, credit: input.amount },
+        ],
+      });
+
       return payment;
     });
   }
@@ -523,6 +585,20 @@ export class InvoicesService {
       invoice.paidAmount = roundMoney(invoice.paidAmount - input.amount);
       invoice.status = invoice.paidAmount >= invoice.totalAmount ? 'Paid' : 'PartiallyPaid';
       await invoiceRepository.save(invoice);
+
+      // Contra-revenue entry: reverses the amount originally recognized at charge-capture against
+      // Patient AR. Fails loud, same as recordPayment above.
+      await this.accountingService.postAutoJournal(manager, {
+        sourceType: 'Return',
+        sourceId: returnRecord.id,
+        entryDate: today(),
+        narration: `Return/credit note for invoice ${invoiceId}: ${input.reason}`,
+        actor: returnRecord.returnedBy,
+        lines: [
+          { accountId: LEDGER_ACCOUNT_IDS.SALES_RETURNS, debit: input.amount },
+          { accountId: LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE, credit: input.amount },
+        ],
+      });
 
       return returnRecord;
     });

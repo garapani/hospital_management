@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AccountingModule } from '../accounting/accounting.module.js';
 import { BillingSettingsService } from './billing-settings.service.js';
 import { BillingSettingsController } from './billing-settings.controller.js';
 import { InvoicesService } from './invoices.service.js';
@@ -8,6 +9,7 @@ import { DepositsController } from './deposits.controller.js';
 import { ChargeCaptureSubscriber } from './charge-capture.subscriber.js';
 
 @Module({
+  imports: [AccountingModule],
   controllers: [BillingSettingsController, InvoicesController, DepositsController],
   providers: [BillingSettingsService, InvoicesService, DepositsService, ChargeCaptureSubscriber],
   exports: [BillingSettingsService, InvoicesService, DepositsService],

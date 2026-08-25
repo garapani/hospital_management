@@ -33,6 +33,18 @@ export class JournalEntry extends SoftDeletableEntity {
 
   @Column({ type: 'timestamptz', nullable: true })
   postedAt!: Date | null;
+
+  /**
+   * Set only on journals created by AccountingService.postAutoJournal (automatic billing
+   * postings). Null for manually-created journals. The pair is unique (partial index, migration
+   * 0058) — the idempotency mechanism for auto-posting: postAutoJournal looks up an existing
+   * journal by this pair before inserting a new one.
+   */
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  sourceType!: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  sourceId!: string | null;
 }
 
 @Entity('journal_lines')

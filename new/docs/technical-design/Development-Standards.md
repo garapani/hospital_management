@@ -2565,3 +2565,72 @@ Admin/Receptionist — the desk roles, not Doctor/Nurse) and anchors the new acc
 *existing* `Patient.id` staff already verified belongs to that person. Self-registration was
 explicitly rejected for Phase 1: nothing in an open sign-up flow proves the caller is actually the
 patient they claim to be, and getting that wrong is a PHI-exposure bug, not a UX gap to fix later.
+
+## 63. Automatic ledger posting from Billing (2026-08-24)
+
+2.8's item: billing events (payments, deposits, returns, charge-capture revenue) now post
+balanced, immediately-`Posted` journal entries automatically — the accounting module previously
+only supported manual `POST /accounting/journals`.
+
+**Recognition timing — the deliberate choice.** Revenue is recognized at charge-capture (when
+`InvoicesService.captureChargeForOrderItem` appends an invoice line), not at payment. A payment
+only settles what's already owed. This needed a **Patient Accounts Receivable** asset account as
+the pivot, not explicitly named in the original ask but structurally required for the two events
+to net out: charge-capture debits AR / credits Revenue; payment debits Cash-or-Bank (or, for a
+Deposit-sourced payment, debits Deposits Payable) / credits AR. A simpler "recognize revenue at
+payment" model was considered and rejected — it would misstate revenue for any invoice that's
+partially paid or never paid at all, which is common (deposits, insurance, partial settlements).
+
+**Chart-of-accounts seed, referenced by fixed id, not by code.** Migration `0059` seeds five
+accounts with hardcoded UUIDs (`apps/api/src/accounting/ledger-account-codes.ts` documents the
+mapping): Patient AR (`1000`), Cash and Bank (`1010`, covers Cash/Card/UPI/Cheque — no per-mode
+sub-accounts), Patient Deposits Payable (`2000`), Patient Service Revenue (`4000`), Sales Returns
+(`4900`, a contra-Income account carrying debit-normal balances). Billing code resolves accounts by
+these fixed ids, never by querying `accountCode` — `ledger_accounts.accountCode` has no DB-level
+uniqueness constraint (pre-existing gap, unchanged by this work), so a code lookup could silently
+resolve the wrong row if an admin later creates a duplicate-coded account via the manual API; a
+primary-key lookup can't.
+
+**Idempotency: `(sourceType, sourceId)` on `journal_entries`, not a naive "already posted"
+boolean.** Migration `0058` adds nullable `sourceType`/`sourceId` columns plus a partial unique
+index (`WHERE "sourceType" IS NOT NULL`). `AccountingService.postAutoJournal(manager, input)` looks
+up an existing journal by that pair first. If found with **matching** lines (same accounts, same
+debit/credit amounts), it's a safe retry — returned unchanged, nothing duplicated. If found with
+**different** lines, the source key was reused for a genuinely different event and this is a
+conflict, not a retry — it throws `ConflictException` rather than silently dropping the second
+event. This distinction matters concretely for `DepositsService.refund`: `Deposit` has no
+per-refund identity (only one `refundedBy`/`refundedAt` pair despite the method allowing repeated
+partial refunds), so a second refund's journal is keyed on the same deposit id as the first. A
+same-amount second refund would incorrectly no-op under a naive "exists → skip" idempotency check;
+comparing lines makes a same-amount collision the only case that (documented, accepted) silently
+no-ops, while every different-amount second refund fails loud instead of silently mis-booking.
+Manual journals (`createJournal`/`postJournal`, unchanged) leave both columns null and are
+unaffected by any of this.
+
+**Hook points and the fail-loud/best-effort asymmetry (human ruling).** `postAutoJournal` runs on
+the **caller's** `EntityManager` — no transaction of its own — so it commits atomically with
+whatever billing write triggered it, mirroring `captureChargeForOrderItem`'s existing
+manager-passing pattern (§27). It skips `Draft` entirely: auto-posted journals are created directly
+as `Posted`, since there's no human review step for system-generated entries (corrections are new
+entries, per the existing no-reversal convention). Two different failure-handling policies apply
+depending on the hook:
+- **Fail loud** (`InvoicesService.recordPayment`/`createReturn`, `DepositsService.create`/`refund`):
+  no try/catch. An unbalanced input or a missing/inactive mapped account (an accounting
+  configuration bug — `postAutoJournal` checks account existence/`isActive` itself, since
+  `journal_lines.accountId` has no FK constraint) throws and aborts the whole billing transaction.
+  Money-under-booking must never happen silently.
+- **Best-effort** (`captureChargeForOrderItem`'s revenue posting only): wrapped in its own
+  try/catch, logs and swallows, matching `ChargeCaptureSubscriber`'s existing "never roll back a
+  Lab/Radiology/Pharmacy completion" rule (§27) — this runs inside that same clinical-completion
+  transaction. Known limitation, same shape as the pre-existing "no re-run endpoint for a failed
+  [pricing] capture": if revenue posting fails, the invoice item still exists, so a later
+  `reRunChargeCapture` retry short-circuits on `already-charged` and never retries the posting;
+  recovery is manual.
+
+**Explicit out-of-scope for this iteration** (not silently skipped — documented): manually-created
+invoice lines (via `InvoicesService.create`, not charge-capture) are never auto-posted, so a
+manually-invoiced-and-paid invoice will show Cash/Bank and Patient AR movement but no matching
+revenue entry; GST (CGST/SGST) is not split into a separate payable account, revenue posts at the
+full line total; and, per the idempotency section above, a second different-amount refund against
+the same deposit fails loud rather than posting, since `Deposit` has no per-refund identity to key
+on.
