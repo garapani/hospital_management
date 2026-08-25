@@ -377,6 +377,15 @@ cd frontend && CI=true pnpm exec nx run staff-console:test -- --testPathPatterns
 cd frontend && CI=true pnpm exec nx run staff-console:build
 ```
 
+**Follow-up (2026-08-25) — login-page text fields, done.** Extended `tenant_branding` with
+`tagline`/`description`/`footerText`/`supportText` (migration `0060`), so the login page's
+headline, subtitle paragraph, footer/copyright trailer, and "trouble signing in" line are also
+per-tenant-configurable, same Super-Admin-only model as displayName/color/logo. See
+`Development-Standards.md` §64. Backend: 19/19 relevant tests green (2 new + 17 existing),
+full suite 770/770 (1 pre-existing skip) after fixing a stale `toEqual` assertion in
+`app-module-auth-wiring.integration-spec.ts` this change exposed. Frontend: 418/418 suite green,
+production build succeeds.
+
 ### 2.13 Fix payroll payslips 500: `month=undefined&year=undefined` query params
 **Status: done (2026-08-22), frontend commit `21083b8`.** Fixed at the frontend layer per the
 "Cleanest fix" option below — `PayrollApiService.listPayslips` now builds the query object

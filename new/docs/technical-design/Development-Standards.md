@@ -2634,3 +2634,40 @@ revenue entry; GST (CGST/SGST) is not split into a separate payable account, rev
 full line total; and, per the idempotency section above, a second different-amount refund against
 the same deposit fails loud rather than posting, since `Deposit` has no per-refund identity to key
 on.
+
+## 64. Per-tenant branding: login-page copy fields (2026-08-25)
+
+Extends §51's white-label config with four more nullable `tenant_branding` columns — `tagline`,
+`description`, `footerText`, `supportText` — so a hospital's login page copy (not just its name,
+color, and logo) can be overridden. Migration `0060` (platform-schema `ALTER TABLE`, no backfill
+needed — nullable columns on a table only ever migrated once via `migrate.ts`, never replayed
+per-tenant). Same trust model as every other branding field: Super-Admin-only write
+(`system-admin.tenants.manage`), public unauthenticated read via `GET /branding`, unconfigured
+means "show the default Vaidya copy."
+
+**Validation and clearing semantics generalized, not duplicated per field.**
+`PlatformBrandingService.upsertBranding` used to hand-check `displayName` alone for "blank string
+rejected, `null` clears it, `undefined` leaves unchanged"; a `BLANK_CHECKED_TEXT_FIELDS` tuple now
+drives both the validation loop and the assignment loop across all five text fields (`displayName`
+plus the four new ones), keyed by DTO/entity property name shared between them. `primaryColor`
+stays hand-written since its validation (hex-format regex) doesn't fit the same shape. Adding a
+sixth text field with the same semantics is a one-line addition to the tuple, not a new
+if-block pair.
+
+**Frontend fallback lives in the template, not the service.** `BrandingService` exposes the four
+new fields as plain signals (`tagline`/`description`/`footerText`/`supportText`, default `null`,
+same pattern as `displayName`) with no fallback baked in — `login.html` does
+`branding.tagline() ?? 'Hospital operations, one screen at a time.'` at each of the four call
+sites, matching how `displayName ?? 'Vaidya'` already worked. Kept the literal default copy
+in the template (not a shared constant) since each of the four strings is only read once, in
+exactly one place — the existing `displayName ?? 'Vaidya'` sites already establish this as the
+convention here, not an exception to it. `footerText` composes as *trailing* text after the
+existing `© {year}` prefix (falling back through `footerText ?? displayName ?? 'Vaidya'`),
+not a full-line override — a tenant customizing the footer still gets a correctly-dated
+copyright line rather than needing to embed the year in their own copy.
+
+**Not built:** hospital-admin self-service editing (Super Admin remains the sole writer, per
+§51's original design note that this is "a tenant-registry-adjacent setting, not a
+hospital-editable preference" — confirmed unchanged for this iteration); localization/i18n of
+this copy; per-field character-count UI (server-side `@MaxLength` is enforced but the tenant-detail
+form doesn't surface a live counter).
