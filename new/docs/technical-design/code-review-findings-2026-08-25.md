@@ -106,7 +106,7 @@ the root `CLAUDE.md`.
 - [ ] **P3** — `itemType` is unconstrained free text — a typo silently orphans an unbillable order line. (`dto/create-order.dto.ts:6`)
 
 ### lab
-- [ ] **P1** — Lab result entry/overwrite produces no audit trail — raw `INSERT...ON CONFLICT DO UPDATE` bypasses the audit subscriber entirely. (`lab/lab-workflow.service.ts:191-206`, `libs/audit-emitter/src/lib/audit.subscriber.ts:30-56`)
+- [x] **P1** — Lab result entry/overwrite produces no audit trail — raw `INSERT...ON CONFLICT DO UPDATE` bypasses the audit subscriber entirely. (`lab/lab-workflow.service.ts:191-206`, `libs/audit-emitter/src/lib/audit.subscriber.ts:30-56`) — **Fixed 2026-08-25:** `enterResult` now does find-then-`repository.save()` instead of a raw upsert, so `AuditSubscriber`'s `afterInsert`/`afterUpdate` fire naturally (the existing `pessimistic_write` lock on the requisition already serializes concurrent calls, so no race window). Added a module-bootstrap spec (`lab-audit-wiring.integration-spec.ts`) proving both a create and an overwrite actually publish audit events, plus a plain overwrite-semantics regression test.
 - [ ] **P2** — `isAbnormal` is entirely operator-supplied — reference ranges are never evaluated. (`lab-workflow.service.ts:203`, `entities/lab-test-component.entity.ts:19-22`)
 - [ ] **P2** — The status machine is untested in this patient-safety-critical module (no test for out-of-order transitions, overwrite path, post-Verified edits). (`lab-workflow.service.integration-spec.ts:17-172`)
 - [ ] **P2** — No lab worklist endpoint — technician must already know the order item id. (`lab-workflow.service.ts:131`, `lab-workflow.controller.ts:33-37`)
