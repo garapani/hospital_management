@@ -163,6 +163,24 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
       expect(result.enteredBy).toBe(AUTHENTICATED_ACCOUNT);
     });
 
+    it('re-entering a result for the same component overwrites the value in place (one row)', async () => {
+      const { test, requisition } = await makeRequisition();
+      await withActor(() => labWorkflowService.collectSample(requisition.id, 'ignored'));
+      const component = await ctx.inTenant(() => catalogService.listComponentsByTest(test.id));
+
+      const first = await withActor(() =>
+        labWorkflowService.enterResult(requisition.id, { componentId: component[0].id, value: '12.5' }),
+      );
+      const second = await withActor(() =>
+        labWorkflowService.enterResult(requisition.id, { componentId: component[0].id, value: '13.1', isAbnormal: true }),
+      );
+
+      expect(second.id).toBe(first.id);
+      expect(second.value).toBe('13.1');
+      expect(second.isAbnormal).toBe(true);
+      expect(second.enteredAt.getTime()).toBeGreaterThanOrEqual(first.enteredAt.getTime());
+    });
+
     it('verify records the authenticated account as verifiedBy and as the order item completedBy', async () => {
       const { test, orderItem, requisition } = await makeRequisition();
       await withActor(() => labWorkflowService.collectSample(requisition.id, 'ignored'));

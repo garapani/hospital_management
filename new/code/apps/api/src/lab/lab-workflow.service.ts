@@ -188,22 +188,35 @@ export class LabWorkflowService {
         );
       }
 
-      const result = await manager.query(
-        `
-        INSERT INTO lab_results ("requisitionId", "componentId", value, "isAbnormal", "enteredBy")
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT ("requisitionId", "componentId")
-        DO UPDATE SET value = $3, "isAbnormal" = $4, "enteredBy" = $5, "enteredAt" = now()
-        RETURNING *
-        `,
-        [
-          requisitionId,
-          input.componentId,
-          input.value,
-          input.isAbnormal ?? false,
-          this.resolveActor(input.enteredBy),
-        ],
-      );
+      // Uses find-then-save (not a raw INSERT ... ON CONFLICT upsert) so a result overwrite goes
+      // through TypeORM's repository layer and fires AuditSubscriber's afterInsert/afterUpdate —
+      // a raw-query upsert bypasses subscribers entirely, leaving no audit trail for a result
+      // being silently replaced with a different value (code-review-findings-2026-08-25 P1). The
+      // pessimistic_write lock on the requisition above already serializes concurrent
+      // enterResult calls for the same requisition, so this find-then-save has no race window.
+      const resultRepository = manager.getRepository(LabResult);
+      const existingResult = await resultRepository.findOne({
+        where: { requisitionId, componentId: input.componentId },
+      });
+
+      let result: LabResult;
+      if (existingResult) {
+        existingResult.value = input.value;
+        existingResult.isAbnormal = input.isAbnormal ?? false;
+        existingResult.enteredBy = this.resolveActor(input.enteredBy);
+        existingResult.enteredAt = new Date();
+        result = await resultRepository.save(existingResult);
+      } else {
+        result = await resultRepository.save(
+          resultRepository.create({
+            requisitionId,
+            componentId: input.componentId,
+            value: input.value,
+            isAbnormal: input.isAbnormal ?? false,
+            enteredBy: this.resolveActor(input.enteredBy),
+          }),
+        );
+      }
 
       if (requisition.status !== 'ResultsEntered') {
         const enteredResults = await manager.getRepository(LabResult).find({ where: { requisitionId } });
@@ -216,7 +229,7 @@ export class LabWorkflowService {
         }
       }
 
-      return result[0] as LabResult;
+      return result;
     });
   }
 
