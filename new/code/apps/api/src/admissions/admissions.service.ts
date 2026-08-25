@@ -111,6 +111,14 @@ export class AdmissionsService {
         throw new NotFoundException(`Patient ${input.patientId} not found`);
       }
 
+      const admissionRepositoryForCheck = manager.getRepository(Admission);
+      const activeAdmission = await admissionRepositoryForCheck.findOne({
+        where: { patientId: input.patientId, status: 'Admitted' },
+      });
+      if (activeAdmission) {
+        throw new ConflictException(`Patient ${input.patientId} already has an active admission`);
+      }
+
       const bedRepository = manager.getRepository(Bed);
       const bed = await bedRepository.findOne({ where: { id: input.bedId } });
       if (!bed) {
@@ -136,8 +144,14 @@ export class AdmissionsService {
           }),
         );
       } catch (error) {
-        if (error instanceof QueryFailedError && (error as QueryFailedError & { code?: string }).code === '23505') {
-          throw new ConflictException(`Bed ${input.bedId} is not available (status: Occupied)`);
+        if (error instanceof QueryFailedError) {
+          const constraint = (error as QueryFailedError & { constraint?: string }).constraint;
+          if (constraint === 'UQ_admissions_active_patient') {
+            throw new ConflictException(`Patient ${input.patientId} already has an active admission`);
+          }
+          if (constraint === 'UQ_admissions_active_bed' || (error as QueryFailedError & { code?: string }).code === '23505') {
+            throw new ConflictException(`Bed ${input.bedId} is not available (status: Occupied)`);
+          }
         }
         throw error;
       }

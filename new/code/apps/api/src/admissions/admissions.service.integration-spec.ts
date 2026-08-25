@@ -237,13 +237,15 @@ describe('AdmissionsService (integration)', () => {
     // in this environment), we force the same failure deterministically: insert an
     // 'Admitted' row for this bed directly via the repository, bypassing admit()'s
     // own bed-status check entirely, so the Bed row is left 'Available' while an
-    // active Admission for it already exists. A subsequent admit() call for the
-    // same bed then passes the bed-status check (bed is still 'Available') and only
-    // fails when its own Admission insert hits the partial unique index
-    // (UQ_admissions_active_bed on (bedId) WHERE status = 'Admitted') — exactly the
-    // path the real race would take. This must surface as ConflictException, not a
-    // raw QueryFailedError.
-    const patient = await makePatient(ctx, '3330000016');
+    // active Admission for it already exists. A subsequent admit() call for a
+    // *different* patient into the same bed then passes the bed-status check (bed is
+    // still 'Available') and the patient-active-admission pre-check (this patient has
+    // none), and only fails when its own Admission insert hits the partial unique
+    // index (UQ_admissions_active_bed on (bedId) WHERE status = 'Admitted') — exactly
+    // the path the real race would take. This must surface as ConflictException, not
+    // a raw QueryFailedError.
+    const patientA = await makePatient(ctx, '3330000016');
+    const patientB = await makePatient(ctx, '3330000017');
     const bed = await makeBed(ctx, 'ADTRACE');
 
     await ctx.inTenant(() =>
@@ -251,7 +253,7 @@ describe('AdmissionsService (integration)', () => {
         const repository = manager.getRepository(Admission);
         await repository.save(
           repository.create({
-            patientId: patient.id,
+            patientId: patientA.id,
             admissionSource: 'Direct',
             admittingDoctorId: DOCTOR_ID,
             wardId: bed.wardId,
@@ -264,9 +266,57 @@ describe('AdmissionsService (integration)', () => {
 
     await expect(
       ctx.inTenant(() =>
-        admissionsService.admit({ patientId: patient.id, admissionSource: 'Direct', admittingDoctorId: DOCTOR_ID, bedId: bed.id }),
+        admissionsService.admit({ patientId: patientB.id, admissionSource: 'Direct', admittingDoctorId: DOCTOR_ID, bedId: bed.id }),
       ),
     ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects admitting a patient who already has an active admission in a different bed', async () => {
+    const patient = await makePatient(ctx, '3330000018');
+    const bedA = await makeBed(ctx, 'ADT7A');
+    const bedB = await makeBed(ctx, 'ADT7B');
+
+    await ctx.inTenant(() =>
+      admissionsService.admit({ patientId: patient.id, admissionSource: 'Direct', admittingDoctorId: DOCTOR_ID, bedId: bedA.id }),
+    );
+
+    await expect(
+      ctx.inTenant(() =>
+        admissionsService.admit({ patientId: patient.id, admissionSource: 'Direct', admittingDoctorId: DOCTOR_ID, bedId: bedB.id }),
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('UQ_admissions_active_patient rejects a second concurrent Admitted row for the same patient', async () => {
+    // admit()'s own pre-check (SELECT then throw) closes the sequential case, but two
+    // truly concurrent admit() calls for the same patient can both pass that SELECT
+    // before either commits its INSERT. This proves the DB constraint itself — the
+    // backstop for that race — actually exists and rejects the second insert, the
+    // same way UQ_admissions_active_bed is proven for beds two tests above.
+    const patient = await makePatient(ctx, '3330000019');
+    const bedA = await makeBed(ctx, 'ADTRACE2A');
+    const bedB = await makeBed(ctx, 'ADTRACE2B');
+
+    const results = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) => {
+        const repository = manager.getRepository(Admission);
+        const admitted = (bedId: string) =>
+          repository.save(
+            repository.create({
+              patientId: patient.id,
+              admissionSource: 'Direct',
+              admittingDoctorId: DOCTOR_ID,
+              wardId: bedA.wardId,
+              bedId,
+              status: 'Admitted',
+            }),
+          );
+        return Promise.allSettled([admitted(bedA.id), admitted(bedB.id)]);
+      }),
+    );
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
   });
 
   it('transfers a patient to a new bed, freeing the old one and occupying the new one', async () => {
