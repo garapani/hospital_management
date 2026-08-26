@@ -88,10 +88,16 @@ import { AddHelpdeskTicketIndexes3000000000088 } from './0088-add-helpdesk-ticke
 import { AddReferralSourcesNameUnique3000000000089 } from './0089-add-referral-sources-name-unique.js';
 import { AddAuditRecordsIndexes3000000000090 } from './0090-add-audit-records-indexes.js';
 import { AddEmployeeEmailPhoneUnique3000000000091 } from './0091-add-employee-email-phone-unique.js';
+import { AddRemainingTenantFilterIndexes3000000000092 } from './0092-add-remaining-tenant-filter-indexes.js';
 import { AddSubscriptionInvoiceNumberTaxAndFullPeriodUnique1000000000084 } from './0084-add-subscription-invoice-number-tax-and-full-period-unique.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
+// ORDERING: TypeORM runs array-loaded migrations in ARRAY order (verified against the
+// migrations-table history — see index.spec.ts). New migrations are APPENDED at the end, never
+// inserted mid-array; the name suffix's last-13-digit timestamp must stay unique and the modern
+// (3-prefix) block ascending (both enforced by index.spec.ts, code-review-findings-2026-08-25
+// database P3).
 export const PLATFORM_MIGRATIONS = [
   CreateRbacCatalogTables,
   AddRolePermissionsUniqueConstraint,
@@ -192,4 +198,5 @@ export const TENANT_MIGRATIONS = [
   AddReferralSourcesNameUnique3000000000089,
   AddAuditRecordsIndexes3000000000090,
   AddEmployeeEmailPhoneUnique3000000000091,
+  AddRemainingTenantFilterIndexes3000000000092,
 ];

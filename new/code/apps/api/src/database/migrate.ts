@@ -8,9 +8,9 @@ async function main(): Promise<void> {
 
 // Explicit process.exit(0) is load-bearing, not cosmetic: this script runs under the swc-node ESM
 // loader (nx api:migrate target), whose worker IPC pipes keep the event loop alive after main()
-// finishes, and data-source.ts's pool-monitor setInterval (NODE_ENV != 'test') adds another
-// permanent timer — without an explicit exit the command appears to hang forever even though all
-// migrations applied.
+// finishes — without an explicit exit the command appears to hang forever even though all
+// migrations applied. (The old pool-monitor setInterval that also kept it alive was removed —
+// see data-source.ts, database P2.)
 main()
   .then(() => process.exit(0))
   .catch((error: unknown) => {

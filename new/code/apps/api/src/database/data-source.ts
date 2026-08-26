@@ -85,12 +85,19 @@ import { PLATFORM_MIGRATIONS } from './migrations/index.js';
 const logger = new Logger('DataSource');
 
 export function createDataSource(): DataSource {
+  // Production guard for the DB password, mirroring resolveJwtSecret: silently falling back to
+  // the dev credential in production would connect to (and provision) a database with a known
+  // default password (code-review-findings-2026-08-25 database P2).
+  const dbPassword = process.env['DB_PASSWORD'];
+  if (!dbPassword && process.env['NODE_ENV'] === 'production') {
+    throw new Error('DB_PASSWORD must be set in production');
+  }
   const ds = new DataSource({
     type: 'postgres',
     host: process.env['DB_HOST'] ?? 'localhost',
     port: Number(process.env['DB_PORT'] ?? 5433),
     username: process.env['DB_USERNAME'] ?? 'identity_access',
-    password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
+    password: dbPassword ?? 'identity_access_dev_password',
     database: process.env['DB_DATABASE'] ?? 'identity_access',
     entities: [Role, Permission, RolePermission, Package, Account, AccountRole, Tenant, AuditRecord, DepartmentCatalog, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, DischargeSummary, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, Return, ReportingEvent, LabTestCategory, LabTest, LabTestComponent, LabRequisition, LabResult, RadiologyImagingType, RadiologyImagingItem, RadiologyRequisition, InventoryItemCategory, InventoryItemSubCategory, InventoryItem, InventoryVendor, PurchaseOrder, PurchaseOrderItem, StockBatch, StockBalance, StockTransaction, StockRequisition, StockRequisitionItem, PharmacyDispensing, Notification, FixedAssetCategory, FixedAsset, AssetDepreciationEntry, InsurancePayer, PatientPolicy, InsuranceClaim, LedgerAccount, JournalEntry, JournalLine, WardStockBalance, WardStockBatch, WardStockTransaction, NursingTask, MedicationAdministration, OtSurgery, MaternityRecord, CssdInstrument, CssdSterilizationCycle, Employee, Payslip, FractionRule, FractionEntry, HelpdeskTicket, ReferralSource, PatientReferral, SsuCase, VaccinationRecord, Subscription, SubscriptionInvoice, TenantBranding],
     migrations: PLATFORM_MIGRATIONS,
@@ -111,36 +118,10 @@ export function createDataSource(): DataSource {
     },
   });
 
-  // Add periodic pool monitoring for observability
-  if (process.env['NODE_ENV'] !== 'test') {
-    const monitorPool = () => {
-      try {
-        const pool = (ds.driver as any).queryRunner?.connection?.pool;
-        if (pool) {
-          const pendingCount = pool.pendingCount ?? 0;
-          const activeCount = pool.activeCount ?? 0;
-          const idleCount = pool.idleCount ?? 0;
-          const totalCount = pool.max ?? Number(process.env['DB_POOL_MAX'] ?? 20);
-          
-          logger.log(`DB Pool Stats: active=${activeCount}, idle=${idleCount}, pending=${pendingCount}, max=${totalCount}`);
-          
-          // Log warning if pool is near exhaustion
-          if (pendingCount > 0 || activeCount > totalCount * 0.8) {
-            logger.warn(`DB Pool approaching capacity: ${activeCount}/${totalCount} active, ${pendingCount} pending`);
-          }
-        }
-      } catch (error) {
-        logger.debug('Unable to read pool stats', error);
-      }
-    };
-
-    // Monitor every 30 seconds after initialization
-    setTimeout(() => {
-      monitorPool();
-      setInterval(monitorPool, 30000);
-    }, 5000);
-  }
-
+  // Pool monitoring was removed: it tried to read `(ds.driver as any).queryRunner?.connection
+  // ?.pool` — TypeORM exposes no pg Pool there, so it was dead code that logged nothing while
+  // holding an uncleared setInterval for the process lifetime (code-review-findings-2026-08-25
+  // database P2). Real pool observability belongs to the observability stack (new-features #10).
   return ds;
 }
 
