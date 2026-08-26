@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { TriageService } from './triage.service.js';
 import { PatientsService } from '../../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../../patients/patient-number-generator.service.js';
@@ -103,6 +103,53 @@ describe('TriageService (integration)', () => {
 
       const linked = await triageService.linkPatient(entry.id, patient.id);
       expect(linked.patientId).toBe(patient.id);
+    });
+  });
+
+  it('rejects linking to a nonexistent patient', async () => {
+    await tenantB.inTenant(async () => {
+      const entry = await triageService.create({ chiefComplaint: 'Unlinked' });
+      await expect(
+        triageService.linkPatient(entry.id, '11111111-1111-1111-1111-111111111111'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  it('rejects re-linking an entry that already has a patient', async () => {
+    await tenantB.inTenant(async () => {
+      const entry = await triageService.create({ chiefComplaint: 'Already linked' });
+      const patientA = await patientsService.create({
+        firstName: 'A', lastName: 'Patient', gender: 'Female', phoneNumber: '3333333333',
+      });
+      const patientB = await patientsService.create({
+        firstName: 'B', lastName: 'Patient', gender: 'Female', phoneNumber: '4444444444',
+      });
+      await triageService.linkPatient(entry.id, patientA.id);
+
+      await expect(triageService.linkPatient(entry.id, patientB.id)).rejects.toThrow(ConflictException);
+    });
+  });
+
+  it('rejects linking a closed entry to a patient', async () => {
+    await tenantB.inTenant(async () => {
+      const entry = await triageService.create({ chiefComplaint: 'Will be discharged' });
+      await triageService.update(entry.id, { status: 'Discharged' });
+      const patient = await patientsService.create({
+        firstName: 'Closed', lastName: 'Entry', gender: 'Female', phoneNumber: '5555555555',
+      });
+
+      await expect(triageService.linkPatient(entry.id, patient.id)).rejects.toThrow(ConflictException);
+    });
+  });
+
+  it('rejects updating a closed entry', async () => {
+    await ctx.inTenant(async () => {
+      const entry = await triageService.create({ chiefComplaint: 'Will be discharged' });
+      await triageService.update(entry.id, { status: 'Discharged' });
+
+      await expect(triageService.update(entry.id, { chiefComplaint: 'trying to edit' })).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 

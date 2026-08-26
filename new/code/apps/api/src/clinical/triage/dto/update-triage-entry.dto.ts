@@ -1,10 +1,6 @@
-import { IsBoolean, IsDate, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsDate, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class UpdateTriageEntryDto {
-  @IsOptional()
-  @IsString()
-  patientId?: string;
-
   @IsOptional()
   @IsString()
   firstName?: string;
@@ -43,6 +39,7 @@ export class UpdateTriageEntryDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(5)
   acuityLevel?: number;
 
   @IsOptional()

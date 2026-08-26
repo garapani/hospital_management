@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { TriageEntry } from './entities/triage-entry.entity.js';
 import { SearchTriageDto } from './dto/search-triage.dto.js';
+import { Patient } from '../../patients/entities/patient.entity.js';
 
 const CLOSED_STATUSES = ['Discharged', 'Admitted', 'Deceased'];
 
@@ -25,7 +26,10 @@ export interface CreateTriageEntryInput {
   status?: string;
   dischargeRemarks?: string | null;
 }
-export type UpdateTriageEntryInput = Partial<CreateTriageEntryInput>;
+// patientId is deliberately excluded: linking a triage entry to a patient is a one-way,
+// validated action (see linkPatient below), not a field this general-purpose update() should
+// silently overwrite.
+export type UpdateTriageEntryInput = Partial<Omit<CreateTriageEntryInput, 'patientId'>>;
 
 @Injectable()
 export class TriageService {
@@ -77,6 +81,12 @@ export class TriageService {
       if (!entry) {
         throw new NotFoundException(`Triage entry ${id} not found`);
       }
+      // Closed entries (Discharged/Admitted/Deceased) are the end of this record's lifecycle —
+      // the transition INTO one of these statuses is still this same call (entry.status is still
+      // open at the point this check runs), only a later edit or reopen attempt hits the guard.
+      if (CLOSED_STATUSES.includes(entry.status)) {
+        throw new ConflictException(`Triage entry ${id} is already ${entry.status} and cannot be updated`);
+      }
 
       const { triagedBy, ...rest } = input;
       Object.assign(entry, rest);
@@ -95,6 +105,17 @@ export class TriageService {
 
       if (!entry) {
         throw new NotFoundException(`Triage entry ${id} not found`);
+      }
+      if (CLOSED_STATUSES.includes(entry.status)) {
+        throw new ConflictException(`Triage entry ${id} is ${entry.status} and cannot be linked to a patient`);
+      }
+      if (entry.patientId) {
+        throw new ConflictException(`Triage entry ${id} is already linked to a patient`);
+      }
+
+      const patient = await manager.getRepository(Patient).findOne({ where: { id: patientId } });
+      if (!patient) {
+        throw new NotFoundException(`Patient ${patientId} not found`);
       }
 
       entry.patientId = patientId;

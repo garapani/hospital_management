@@ -1,4 +1,4 @@
-import { IsBoolean, IsDate, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsDate, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class CreateTriageEntryDto {
   @IsOptional()
@@ -43,6 +43,7 @@ export class CreateTriageEntryDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(5)
   acuityLevel?: number;
 
   @IsOptional()
