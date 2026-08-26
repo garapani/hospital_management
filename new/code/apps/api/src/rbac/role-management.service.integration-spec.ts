@@ -41,7 +41,6 @@ describe('RoleManagementService (integration)', () => {
     expect(role.name).toBe(`${PREFIX}Ward Coordinator`);
     expect(role.isActive).toBe(true);
     expect(role.isCrossTenant).toBe(false);
-    expect(role.bypassesPermissionChecks).toBe(false);
   });
 
   it('rejects a duplicate role name with 409', async () => {

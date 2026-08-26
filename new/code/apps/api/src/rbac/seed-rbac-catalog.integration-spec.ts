@@ -42,12 +42,11 @@ describe('seedRbacCatalog (integration)', () => {
     expect(roles.map((r: Role) => r.name).sort()).toEqual([...expectedNames].sort());
   });
 
-  it('marks Super Admin as bypassing checks and cross-tenant', async () => {
+  it('marks Super Admin as cross-tenant', async () => {
     await seedRbacCatalog(ctx.dataSource);
     const superAdmin = await ctx.dataSource.getRepository(Role).findOneOrFail({
       where: { name: 'Super Admin' },
     });
-    expect(superAdmin.bypassesPermissionChecks).toBe(true);
     expect(superAdmin.isCrossTenant).toBe(true);
   });
 
@@ -310,5 +309,38 @@ describe('seedRbacCatalog (integration)', () => {
       'Receptionist / Front Desk',
       'Super Admin',
     ]);
+  });
+
+  // Regression test for the P1 in code-review-findings-2026-08-25.md: Hospital Admin's seed was
+  // missing the Lab/Radiology workflow permissions, all Pharmacy permissions, and several
+  // Inventory permissions, despite its description claiming "full access within a single hospital
+  // tenant" — and `bypassesPermissionChecks` (now removed) never covered the gap since
+  // PermissionGuard never read it.
+  it.each([
+    'lab.requisition.create',
+    'lab.result.enter',
+    'lab.result.verify',
+    'radiology.requisition.create',
+    'radiology.report.enter',
+    'radiology.report.verify',
+    'pharmacy.read',
+    'pharmacy.dispensing.create',
+    'pharmacy.dispensing.dispense',
+    'inventory.purchase-order.create',
+    'inventory.goods-receipt.enter',
+    'inventory.requisition.create',
+    'inventory.dispatch.fulfill',
+  ])('maps %s to Hospital Admin', async (permissionName) => {
+    await seedRbacCatalog(ctx.dataSource);
+    const permission = await ctx.dataSource
+      .getRepository(Permission)
+      .findOneOrFail({ where: { name: permissionName } });
+    const hospitalAdmin = await ctx.dataSource
+      .getRepository(Role)
+      .findOneOrFail({ where: { name: 'Hospital Admin' } });
+    const mapping = await ctx.dataSource.getRepository(RolePermission).findOne({
+      where: { permissionId: permission.id, roleId: hospitalAdmin.id },
+    });
+    expect(mapping).not.toBeNull();
   });
 });

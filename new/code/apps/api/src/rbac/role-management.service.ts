@@ -24,7 +24,6 @@ export class RoleManagementService {
     description: string;
     priority: number;
     isCrossTenant?: boolean;
-    bypassesPermissionChecks?: boolean;
   }): Promise<Role> {
     const repository = this.dataSource.getRepository(Role);
     const existing = await repository.findOne({ where: { name: input.name } });
@@ -38,7 +37,6 @@ export class RoleManagementService {
         description: input.description,
         priority: input.priority,
         isCrossTenant: input.isCrossTenant ?? false,
-        bypassesPermissionChecks: input.bypassesPermissionChecks ?? false,
         isActive: true,
       }),
     );
@@ -46,10 +44,7 @@ export class RoleManagementService {
 
   /** Edits catalog metadata. The name is immutable — renaming would orphan tenant_roles and
    *  account-role references and break role annotations everywhere. */
-  async updateRole(
-    id: string,
-    input: { description?: string; priority?: number; bypassesPermissionChecks?: boolean },
-  ): Promise<Role> {
+  async updateRole(id: string, input: { description?: string; priority?: number }): Promise<Role> {
     const repository = this.dataSource.getRepository(Role);
     const role = await repository.findOne({ where: { id } });
     if (!role) {
@@ -57,9 +52,6 @@ export class RoleManagementService {
     }
     if (input.description !== undefined) role.description = input.description;
     if (input.priority !== undefined) role.priority = input.priority;
-    if (input.bypassesPermissionChecks !== undefined) {
-      role.bypassesPermissionChecks = input.bypassesPermissionChecks;
-    }
     return repository.save(role);
   }
 

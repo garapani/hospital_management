@@ -198,14 +198,12 @@ export async function seedInitialRolesAndPermissions(
       description:
         'Cross-hospital vendor/ops access to every service and tenant.',
       priority: 100,
-      bypassesPermissionChecks: true,
       isCrossTenant: true,
     },
     {
       name: 'Hospital Admin',
       description: 'Full access within a single hospital tenant.',
       priority: 90,
-      bypassesPermissionChecks: true,
       isCrossTenant: false,
     },
   ];

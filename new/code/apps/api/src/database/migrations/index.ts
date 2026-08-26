@@ -61,6 +61,7 @@ import { SeedDefaultLedgerAccounts3000000000059 } from './0059-seed-default-ledg
 import { CreateAssetDepreciationEntriesTable3000000000061 } from './0061-create-asset-depreciation-entries.js';
 import { AddAdmissionsActivePatientUnique3000000000062 } from './0062-add-admissions-active-patient-unique.js';
 import { AddFractionEntriesUnique3000000000063 } from './0063-add-fraction-entries-unique.js';
+import { DropRoleBypassesPermissionChecks3000000000064 } from './0064-drop-role-bypasses-permission-checks.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -78,6 +79,7 @@ export const PLATFORM_MIGRATIONS = [
   DropSubscriptionsTenantFkCascade1000000000055,
   AddTenantPurged1000000000056,
   AddBrandingTextFields1000000000060,
+  DropRoleBypassesPermissionChecks3000000000064,
 ];
 
 // Tenant-scoped migrations: create per-tenant-schema tables. Run once per tenant by

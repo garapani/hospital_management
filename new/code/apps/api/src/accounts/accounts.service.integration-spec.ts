@@ -336,7 +336,6 @@ describe('AccountsService (integration)', () => {
           description: 'Temporary deactivated role',
           priority: 1,
           isCrossTenant: false,
-          bypassesPermissionChecks: false,
           isActive: false,
         }),
       );

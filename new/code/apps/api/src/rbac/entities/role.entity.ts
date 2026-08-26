@@ -16,9 +16,6 @@ export class Role extends SoftDeletableEntity {
   priority!: number;
 
   @Column({ type: 'boolean', default: false })
-  bypassesPermissionChecks!: boolean;
-
-  @Column({ type: 'boolean', default: false })
   isCrossTenant!: boolean;
 
   @Column({ type: 'boolean', default: true })
