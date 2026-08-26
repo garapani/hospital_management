@@ -84,6 +84,35 @@ describe('VitalsService (integration)', () => {
     });
   });
 
+  it('leaves BMI unset rather than overflowing its decimal(5,2) column on an extreme height/weight combo', async () => {
+    await ctx.inTenant(async () => {
+      const patient = await patientsService.create({
+        firstName: 'Extreme', lastName: 'Combo', gender: 'Male', phoneNumber: '1234500001',
+      });
+
+      // Both individually within CreateVitalDto's range, but height=30cm/weight=500kg computes
+      // to a BMI (~5555) far past decimal(5,2)'s 999.99 ceiling.
+      const vital = await vitalsService.create({ patientId: patient.id, height: 30, weight: 500 });
+      expect(vital.bmi).toBeFalsy();
+    });
+  });
+
+  it('nulls a stale BMI when height/weight no longer both resolve to a valid combination', async () => {
+    await ctx.inTenant(async () => {
+      const patient = await patientsService.create({
+        firstName: 'Stale', lastName: 'Bmi', gender: 'Female', phoneNumber: '1234500002',
+      });
+
+      const created = await vitalsService.create({ patientId: patient.id, height: 160, weight: 60 });
+      expect(created.bmi).toBe(23.44);
+
+      // height=0 fails calculateBmi's own truthiness check (falls back to "no BMI"), simulating
+      // the same "no longer computable" case a real height clear would hit.
+      const updated = await vitalsService.update(created.id, { height: 0 });
+      expect(updated.bmi).toBeFalsy();
+    });
+  });
+
   it('voids vitals correctly', async () => {
     await tenantB.inTenant(async () => {
       const patient = await patientsService.create({

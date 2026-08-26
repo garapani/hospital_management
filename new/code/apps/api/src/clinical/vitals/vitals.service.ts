@@ -18,7 +18,12 @@ export class VitalsService {
     }
     const heightM = heightCm / 100;
     const bmi = weightKg / (heightM * heightM);
-    return Math.round(bmi * 100) / 100; // Round to 2 decimal places
+    const rounded = Math.round(bmi * 100) / 100; // Round to 2 decimal places
+    // bmi is a decimal(5,2) column (max magnitude 999.99) — an extreme-but-DTO-valid height/
+    // weight combo (e.g. height near CreateVitalDto's 0 floor) can still produce a value past
+    // that ceiling, which would otherwise throw a raw Postgres overflow error on save(). No BMI
+    // recorded is preferable to a 500.
+    return rounded <= 999.99 ? rounded : undefined;
   }
 
   async create(input: CreateVitalInput): Promise<Vital> {
@@ -55,12 +60,15 @@ export class VitalsService {
       }
 
       Object.assign(vital, input);
-      
-      // Recalculate BMI if height or weight is updated
+
+      // Recalculate BMI if height or weight is updated. `?? null`, not left as undefined: a
+      // plain entity save() skips undefined properties in the generated UPDATE rather than
+      // nulling them, so clearing height/weight (making calculateBmi return undefined) would
+      // otherwise leave the previous, now-stale BMI sitting in the row untouched.
       if (input.height !== undefined || input.weight !== undefined) {
-        vital.bmi = this.calculateBmi(vital.height, vital.weight);
+        vital.bmi = this.calculateBmi(vital.height, vital.weight) ?? null;
       }
-      
+
       return repository.save(vital);
     });
   }
@@ -69,15 +77,6 @@ export class VitalsService {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       return manager.getRepository(Vital).find({
         where: { patientId },
-        order: { recordedAt: 'DESC' },
-      });
-    });
-  }
-
-  async listByAppointment(appointmentId: string): Promise<Vital[]> {
-    return this.tenantConnection.runInTenantSchema(async (manager) => {
-      return manager.getRepository(Vital).find({
-        where: { appointmentId },
         order: { recordedAt: 'DESC' },
       });
     });

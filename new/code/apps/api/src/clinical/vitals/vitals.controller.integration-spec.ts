@@ -8,13 +8,20 @@ import {
   teardownTenantTestContext,
   TenantTestContext,
 } from '../../testing/tenant-test-context.js';
+import { signTestToken } from '../../testing/test-jwt.js';
 
 describe('VitalsController (e2e)', () => {
   let app: INestApplication;
   let ctx: TenantTestContext;
+  let token: string;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'vitals_e2e' });
+    token = await signTestToken({
+      sub: 'vitals-spec-user',
+      hospitalId: ctx.tenantId,
+      permissions: ['vitals.manage'],
+    });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -48,5 +55,31 @@ describe('VitalsController (e2e)', () => {
       .get('/vitals/patient/00000000-0000-0000-0000-000000000000');
 
     expect(res.status).toBe(401);
+  });
+
+  it('rejects an out-of-range vital sign with 400', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/vitals')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({
+        patientId: '00000000-0000-0000-0000-000000000000',
+        spO2: 150, // percentage — cannot exceed 100
+      });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a negative pain scale with 400', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/vitals')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({
+        patientId: '00000000-0000-0000-0000-000000000000',
+        painScale: -1,
+      });
+
+    expect(res.status).toBe(400);
   });
 });

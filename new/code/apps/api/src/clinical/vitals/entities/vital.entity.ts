@@ -19,7 +19,7 @@ export class Vital extends SoftDeletableEntity {
   weight?: number;
 
   @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
-  bmi?: number;
+  bmi?: number | null;
 
   @Column({ type: 'decimal', precision: 4, scale: 1, nullable: true })
   temperature?: number;
