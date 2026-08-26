@@ -253,7 +253,7 @@ the root `CLAUDE.md`.
 - [ ] **P3** — Concurrent duplicate role creation races to a raw 500 instead of 409. (`rbac/role-management.service.ts:30-35`)
 
 ### tenants
-- [ ] **P1** — `provisionTenant`'s failure cleanup can delete another request's tenant under a concurrent provisioning race. (`tenants/tenants.service.ts:100-103,209-215`)
+- [x] **P1** — `provisionTenant`'s failure cleanup can delete another request's tenant under a concurrent provisioning race. (`tenants/tenants.service.ts:100-103,209-215`) — **Fixed 2026-08-26:** the actual mechanism was worse than a delete — `repository.save()` on hospitalId's manually-assigned primary key silently UPDATEd the winner's row in place instead of erroring, so the loser's cleanup then deleted the row it had just corrupted. Replaced with a raw `INSERT` (no `ON CONFLICT`) so the PK constraint rejects a concurrent duplicate with a real error, mapped to the same 409 the existence check already returns; cleanup now only runs when this call's own insert is the one that succeeded.
 - [ ] **P2** — Provisioning retry isn't idempotent past the bootstrap admin — a failure after that insert leaves the tenant unretryable without manual DB surgery. (`tenants.service.ts:204-215,221-243`)
 - [ ] **P2** — A purged tenant can be restored into a broken "active" state (suspend/reactivate/archive/restore don't check current status). (`tenants.service.ts:439,457,516,527`)
 - [ ] **P2** — Deactivated catalog roles can still be enabled for a tenant. (`tenants.service.ts:119-123,290`)
