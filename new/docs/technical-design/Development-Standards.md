@@ -4150,3 +4150,26 @@ seed-rbac → seed-packages → seed-initial-setup → seed-ledger-accounts; `se
 (the `apps/api/src/database/seed-ledger-accounts.ts` runner) mirrors `migrate-tenants` for
 already-provisioned schemas. Fresh platform DB: `seed-all`. Existing tenants: `migrate-tenants` +
 `seed-ledger-accounts`.
+
+## 109. DTO file convention: one class per file, `<action>-<entity>.dto.ts` (2026-08-27)
+
+The eleven `<module>.dto.ts` single-file DTOs (ssu, vaccination, payroll, cssd, fraction, nursing,
+maternity, ot, helpdesk, fixed-assets, encounters) were split into per-action files so the whole
+codebase follows ONE naming rule (Tech Lead decision, prompted by the `helpdesk.dto.ts` vs
+`create-department.dto.ts` inconsistency):
+
+- **One DTO class per file.** File name mirrors action + entity: `create-<entity>.dto.ts`,
+  `update-<entity>.dto.ts`, `assign-<entity>.dto.ts`, `cancel-<entity>.dto.ts`, … — whatever verb
+  the endpoint performs (`record-delivery.dto.ts`, `run-depreciation.dto.ts`, `skip-
+  administration.dto.ts`). List/search DTOs are `list-<entity>.dto.ts` / `search-<entity>.dto.ts`
+  even when the class is named `List<Entity>QueryDto` (matching the pre-existing
+  `list-invoices`/`search-patients` files). Only module-local constants a class needs (e.g.
+  maternity's `DELIVERY_TYPES`) travel with it.
+- **Every new DTO file follows this rule** — a `<module>.dto.ts` catch-all is a convention
+  violation, same as a hand-rolled list DTO that duplicates `PaginationQueryDto` (§86).
+- **Near-identical entity names get a disambiguating prefix.** The platform `department_catalog`
+  DTOs were renamed `create-platform-department.dto.ts` / `update-platform-department.dto.ts`
+  (`CreatePlatformDepartmentDto`/`UpdatePlatformDepartmentDto`) so they can never be confused with
+  the tenant `departments` DTOs (`create-department.dto.ts`, `CreateDepartmentDto`) — the
+  `platform-` prefix is the repo's established marker for public-schema concepts
+  (platform-billing, platform-branding).
