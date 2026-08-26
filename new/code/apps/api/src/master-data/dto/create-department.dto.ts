@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateDepartmentDto {
   @IsString()
@@ -15,8 +15,10 @@ export class CreateDepartmentDto {
   @IsBoolean()
   isAppointmentApplicable?: boolean;
 
+  // uuid column — a plain string here would turn a bad parent id into a raw 500 on the FK
+  // (code-review-findings-2026-08-25 platform cross-cutting P3).
   @IsOptional()
-  @IsString()
+  @IsUUID()
   parentDepartmentId?: string;
 
   @IsOptional()
