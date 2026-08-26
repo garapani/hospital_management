@@ -35,7 +35,7 @@ export function createReportingDataSource(): DataSource {
     port: Number(process.env['DB_PORT'] ?? 5433),
     username: process.env['DB_USERNAME'] ?? 'identity_access',
     password: process.env['DB_PASSWORD'] ?? 'identity_access_dev_password',
-    database: process.env['DB_DATABASE'] ?? 'identity_access',
+    database: process.env['DB_DATABASE'] ?? 'hospital_db',
     entities: [ReportingEvent],
     migrations: [],
     synchronize: false,

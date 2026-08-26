@@ -95,7 +95,7 @@ export function createDataSource(): DataSource {
     port: Number(process.env['DB_PORT'] ?? 5433),
     username: process.env['DB_USERNAME'] ?? 'identity_access',
     password: dbPassword ?? 'identity_access_dev_password',
-    database: process.env['DB_DATABASE'] ?? 'identity_access',
+    database: process.env['DB_DATABASE'] ?? 'hospital_db',
     entities: [Role, Permission, RolePermission, Package, Account, AccountRole, Tenant, AuditRecord, DepartmentCatalog, Department, Ward, Patient, PatientAddress, PatientKin, PatientSequence, Appointment, Vital, ClinicalNote, Diagnosis, Prescription, TriageEntry, Bed, Admission, BedTransfer, DischargeSummary, Order, OrderItem, BillingSettings, BillingSequence, Invoice, InvoiceItem, Payment, Deposit, Return, ReportingEvent, LabTestCategory, LabTest, LabTestComponent, LabRequisition, LabResult, RadiologyImagingType, RadiologyImagingItem, RadiologyRequisition, InventoryItemCategory, InventoryItemSubCategory, InventoryItem, InventoryVendor, PurchaseOrder, PurchaseOrderItem, StockBatch, StockBalance, StockTransaction, StockRequisition, StockRequisitionItem, PharmacyDispensing, Notification, FixedAssetCategory, FixedAsset, AssetDepreciationEntry, InsurancePayer, PatientPolicy, InsuranceClaim, LedgerAccount, JournalEntry, JournalLine, WardStockBalance, WardStockBatch, WardStockTransaction, NursingTask, MedicationAdministration, OtSurgery, MaternityRecord, CssdInstrument, CssdSterilizationCycle, Employee, Payslip, FractionRule, FractionEntry, HelpdeskTicket, ReferralSource, PatientReferral, SsuCase, VaccinationRecord, Subscription, SubscriptionInvoice, TenantBranding],
     migrations: PLATFORM_MIGRATIONS,
     synchronize: false,

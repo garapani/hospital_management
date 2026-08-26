@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_USER: identity_access
       POSTGRES_PASSWORD: identity_access_dev_password
-      POSTGRES_DB: identity_access
+      POSTGRES_DB: hospital_db
     ports:
       - '5433:5432'
     volumes:
@@ -59,7 +59,7 @@ services:
       DB_PORT: 5432
       DB_USERNAME: identity_access
       DB_PASSWORD: identity_access_dev_password
-      DB_DATABASE: identity_access
+      DB_DATABASE: hospital_db
       REDIS_HOST: api-redis
       REDIS_PORT: 6379
       MINIO_ENDPOINT: api-minio
@@ -83,7 +83,7 @@ services:
       DB_PORT: 5432
       DB_USERNAME: identity_access
       DB_PASSWORD: identity_access_dev_password
-      DB_DATABASE: identity_access
+      DB_DATABASE: hospital_db
     volumes:
       - .:/usr/src/app
     working_dir: /usr/src/app
@@ -101,7 +101,7 @@ services:
       DB_PORT: 5432
       DB_USERNAME: identity_access
       DB_PASSWORD: identity_access_dev_password
-      DB_DATABASE: identity_access
+      DB_DATABASE: hospital_db
     volumes:
       - .:/usr/src/app
     working_dir: /usr/src/app
@@ -119,7 +119,7 @@ services:
       DB_PORT: 5432
       DB_USERNAME: identity_access
       DB_PASSWORD: identity_access_dev_password
-      DB_DATABASE: identity_access
+      DB_DATABASE: hospital_db
     volumes:
       - .:/usr/src/app
     working_dir: /usr/src/app

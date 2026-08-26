@@ -20,7 +20,7 @@ jobs:
         env:
           POSTGRES_USER: identity_access
           POSTGRES_PASSWORD: identity_access_dev_password
-          POSTGRES_DB: identity_access
+          POSTGRES_DB: hospital_db
         ports:
           - 5432:5432
         options: >-
@@ -77,7 +77,7 @@ jobs:
           DB_PORT: 5432
           DB_USERNAME: identity_access
           DB_PASSWORD: identity_access_dev_password
-          DB_DATABASE: identity_access
+          DB_DATABASE: hospital_db
           REDIS_HOST: localhost
           REDIS_PORT: 6379
 
