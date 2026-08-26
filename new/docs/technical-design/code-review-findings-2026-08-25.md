@@ -70,8 +70,8 @@ the root `CLAUDE.md`.
 - [x] **P3** — Tasks/MAR lines creatable against a discharged admission. (`nursing.service.ts:234-239`) — **Fixed 2026-08-26:** `assertAdmissionExists` (the one choke point both `createTask` and `createAdministration` already go through) now also rejects a `Discharged` admission with a 409.
 
 ### maternity
-- [ ] **P2** — Same stripped-pagination bug as nursing — records list pinned to page 1. (`maternity/dto/maternity.dto.ts:76-84`)
-- [ ] **P3** — Nothing prevents multiple maternity records per admission. (`maternity/maternity.service.ts:67-88`)
+- [x] **P2** — Same stripped-pagination bug as nursing — records list pinned to page 1. (`maternity/dto/maternity.dto.ts:76-84`) — **Fixed 2026-08-26:** `ListMaternityRecordsQueryDto` now extends `PaginationQueryDto` (the service already called `paginate()` correctly — only the DTO was stripping `page`/`limit`).
+- [x] **P3** — Nothing prevents multiple maternity records per admission. (`maternity/maternity.service.ts:67-88`) — **Fixed 2026-08-26:** unlike the patients duplicate-check, a second maternity record per admission is never legitimate, so this got a real unique constraint (`UQ_maternity_records_admission`, migration 0069) plus an in-transaction pre-check, mirroring the discharge-summary pattern; `createRecord` maps the constraint violation to a 409.
 
 ### vaccination
 - [ ] **P2** — No duplicate-dose protection — no check, no unique index. (`vaccination/vaccination.service.ts:40-72`)
