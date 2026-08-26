@@ -3251,3 +3251,25 @@ the correct fix anyway (replacing the raw `orders`/`order_items`/`patients` SQL 
 re-introducing the raw SQL to dodge a check that isn't wired up yet. This required updating every
 manual `new LabWorkflowService(...)` construction across four other spec files to pass the new
 `patientsService` constructor argument — a pure DI-wiring ripple, no behavior change in those files.
+
+## 79. Radiology P2/P3 batch: a finding already closed by a root-cause fix still needs its own
+    regression test (2026-08-26)
+
+Two items from the radiology section. The P3 (`listByOrderItem` dead code, no callers) was a plain
+delete — `findAll` already provides the same filter and is what the controller actually wires up.
+
+The P2 is the more useful pattern: it cited the exact same root cause as the orders P1
+(`completeItemInTransaction` resurrecting a Cancelled order item to Completed), which was already
+fixed at its single choke point on 2026-08-25 — every caller, including radiology's `verify()`,
+inherited that fix for free. **A finding closed as a side effect of another fix still needs its own
+regression test scoped to *that* caller**, not just a checkmark citing the other fix: the orders-level
+test only proved the guard works when `completeItemInTransaction` is called directly, not that
+radiology's `verify()` actually reaches it with the right arguments in the right order. Added
+`verify does not resurrect an order item that was independently cancelled` to radiology's own spec,
+constructed to genuinely reproduce the race: this spec builds its services by hand (`new
+RadiologyWorkflowService(...)`) rather than booting the module through Nest's DI, so the
+order-cancellation-cascade subscriber added in the orders batch (§77) — which would otherwise
+cancel the requisition itself the moment the order item is cancelled, making the race unreachable —
+never registers. Cancelling the order item directly via `OrdersService` while the requisition
+sits at `ReportEntered` leaves the requisition untouched, so `verify()` proceeds and must be the one
+thing standing between a cancelled order item and a phantom completion.
