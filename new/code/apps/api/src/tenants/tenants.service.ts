@@ -138,20 +138,31 @@ export class TenantsService {
     // is what previously forced archive+purge just to retry a transient failure. The schema/role
     // created above are deliberately left behind: provisionTenantSchema's CREATE SCHEMA IF NOT
     // EXISTS + idempotent migration runner make re-running it on retry a safe no-op/resume.
+    // Tracks whether THIS call is the one that inserted the registry row — the existence check
+    // above is a plain SELECT, not a lock, so two concurrent provisionTenant() calls for the same
+    // hospitalId can both pass it before either commits its insert. Without this flag, the loser's
+    // catch block below would delete `{ hospitalId }` unconditionally — which, since hospitalId is
+    // the PK, can only be the WINNER's freshly inserted (legitimate) tenant, deleting a hospital
+    // that successfully provisioned out from under it. Cleanup is only safe, and only needed, when
+    // this call's own insert is what exists.
+    let ownInsertSucceeded = false;
     let tenant: Tenant;
     let adminCredentials: AdminCredentials;
     try {
-      tenant = await repository.save(
-        repository.create({
-          hospitalId: input.hospitalId,
-          hospitalName: input.hospitalName,
-          status: 'active',
-          packageCode,
-          activatedAt: new Date(),
-          suspendedAt: null,
-          createdBy: this.resolveActor(input.createdBy),
-        }),
+      // A plain `repository.save()` on an entity keyed by a manually-assigned (non-generated)
+      // primary key does its own existence check and silently UPDATEs in place if a row with that
+      // key already exists, instead of failing — which would make the race above corrupt the
+      // winner's row (overwriting hospitalName/createdBy/etc. with the loser's values) rather than
+      // just mis-firing cleanup. A raw INSERT with no ON CONFLICT clause is what actually leaves
+      // hospitalId's primary-key constraint free to reject a concurrent duplicate, restoring the
+      // "one wins, one gets a real duplicate-key error" guarantee this whole function depends on.
+      await this.dataSource.query(
+        `INSERT INTO tenants ("hospitalId", "hospitalName", status, "packageCode", "activatedAt", "suspendedAt", "createdBy")
+         VALUES ($1, $2, 'active', $3, now(), NULL, $4)`,
+        [input.hospitalId, input.hospitalName, packageCode, this.resolveActor(input.createdBy)],
       );
+      ownInsertSucceeded = true;
+      tenant = await repository.findOneOrFail({ where: { hospitalId: input.hospitalId } });
 
       // Persist the enabled roles explicitly — the ManyToMany cascade on save() silently no-ops
       // for these detached Role rows (tenant_roles stayed empty), so this raw insert is the same
@@ -207,10 +218,17 @@ export class TenantsService {
         password: input.adminPassword,
       });
     } catch (err) {
-      await this.dataSource
-        .getRepository(Tenant)
-        .delete({ hospitalId: input.hospitalId })
-        .catch(() => undefined);
+      if (ownInsertSucceeded) {
+        await this.dataSource
+          .getRepository(Tenant)
+          .delete({ hospitalId: input.hospitalId })
+          .catch(() => undefined);
+      } else if ((err as { code?: string }).code === '23505') {
+        // The losing side of the race described above: the winner's row is untouched, so this is
+        // a real conflict, not an infrastructure fault — surfaced the same way the early
+        // existence-check above reports it, not as a raw QueryFailedError/500.
+        throw new ConflictException(`Tenant ${input.hospitalId} already exists`);
+      }
       throw err;
     }
 

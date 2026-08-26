@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ObjectStorageService } from '@hospital/object-storage';
 import { TenantsService } from './tenants.service.js';
+import { Tenant } from './entities/tenant.entity.js';
 import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
 import { PackagesService } from '../packages/packages.service.js';
 import { TenantBranding } from '../platform-branding/entities/tenant-branding.entity.js';
@@ -108,6 +109,46 @@ describe('TenantsService (integration)', () => {
     });
     expect(retried.hospitalId).toBe(hospitalId);
     expect(retried.status).toBe('active');
+  });
+
+  it('a losing concurrent provisioning race does not delete the winner\'s tenant', async () => {
+    // Regression test for the P1 in code-review-findings-2026-08-25.md: the existence check above
+    // is a plain SELECT, not a lock, so two concurrent provisionTenant() calls for the same
+    // hospitalId can both pass it before either commits its insert — simulated here
+    // deterministically (rather than via flaky real concurrency) by pre-inserting the "winner" row
+    // directly and mocking just this call's existence check to miss it, exactly reproducing the
+    // TOCTOU window without relying on real thread timing. Before the fix, a plain
+    // `repository.save()` on hospitalId's manually-assigned primary key silently UPDATEd the
+    // winner's row in place instead of failing (TypeORM upserts rather than erroring when the
+    // entity's own PK already exists), so the loser's catch-block cleanup then deleted `{
+    // hospitalId }` — deleting the very row it had just silently corrupted. The fix uses a raw
+    // INSERT (no ON CONFLICT) so the PK constraint itself rejects the loser with a real
+    // duplicate-key error, leaving the winner's row untouched.
+    const hospitalId = 'test_tenant_svc_race';
+    const repository = ctx.dataSource.getRepository(Tenant);
+    const winner = await repository.save(
+      repository.create({
+        hospitalId,
+        hospitalName: 'Winner Hospital',
+        status: 'active',
+        packageCode: 'basic',
+        activatedAt: new Date(),
+        createdBy: 'ops.winner',
+      }),
+    );
+
+    const findOneSpy = jest.spyOn(repository, 'findOne').mockResolvedValueOnce(null);
+    try {
+      await expect(
+        tenantsService.provisionTenant({ hospitalId, hospitalName: 'Loser Hospital' }),
+      ).rejects.toThrow(ConflictException);
+    } finally {
+      findOneSpy.mockRestore();
+    }
+
+    const survivor = await repository.findOne({ where: { hospitalId } });
+    expect(survivor).not.toBeNull();
+    expect(survivor?.hospitalName).toBe(winner.hospitalName);
   });
 
   it('lists provisioned tenants', async () => {
