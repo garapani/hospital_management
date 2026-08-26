@@ -81,6 +81,7 @@ import { AddFractionReversalAndDefaultRuleUnique3000000000080 } from './0080-add
 import { AddBillingSettingsDefaultTaxPercent3000000000081 } from './0081-add-billing-settings-default-tax-percent.js';
 import { AddLedgerAccountsCodeUnique3000000000082 } from './0082-add-ledger-accounts-code-unique.js';
 import { AddPatientPoliciesUniqueNumber3000000000083 } from './0083-add-patient-policies-unique-number.js';
+import { AddPayrollLedgerAccountsAndNetCheck3000000000085 } from './0085-add-payroll-ledger-accounts-and-net-check.js';
 import { AddSubscriptionInvoiceNumberTaxAndFullPeriodUnique1000000000084 } from './0084-add-subscription-invoice-number-tax-and-full-period-unique.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
@@ -178,4 +179,5 @@ export const TENANT_MIGRATIONS = [
   AddBillingSettingsDefaultTaxPercent3000000000081,
   AddLedgerAccountsCodeUnique3000000000082,
   AddPatientPoliciesUniqueNumber3000000000083,
+  AddPayrollLedgerAccountsAndNetCheck3000000000085,
 ];

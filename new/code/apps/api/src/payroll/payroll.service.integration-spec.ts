@@ -1,6 +1,10 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PayrollService } from './payroll.service.js';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
+import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
+import { JournalEntry, JournalLine } from '../accounting/entities/journal-entry.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -17,7 +21,15 @@ describe('PayrollService (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'payroll' });
-    payrollService = new PayrollService(ctx.tenantConnection, ctx.tenantContext);
+    payrollService = new PayrollService(
+      ctx.tenantConnection,
+      ctx.tenantContext,
+      new AccountingService(
+        ctx.tenantConnection,
+        new JournalNumberGeneratorService(ctx.tenantConnection),
+        ctx.tenantContext,
+      ),
+    );
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
@@ -146,6 +158,80 @@ describe('PayrollService (integration)', () => {
     await expect(withActor(() => payrollService.markPaid(payslip.id))).rejects.toThrow(ConflictException);
   });
 
+  it('posts a Salary Expense / Salaries Payable journal when a payslip is marked Paid', async () => {
+    const emp = await insertEmployee({ monthlyBasicSalary: 30000 });
+    const created = await ctx.inTenant(() =>
+      payrollService.runMonthlyPayroll(5, 2027, { processedBy: STAFF_ID }),
+    );
+    // The run payslips every live employee in the shared tenant — scope to the one we inserted.
+    const payslip = created.find((p) => p.employeeId === emp)!;
+    expect(payslip.netAmount).toBe(30000);
+
+    const paid = await withActor(() => payrollService.markPaid(payslip.id));
+
+    // P2: payroll previously posted nothing to the ledger — the net payable must be booked.
+    const journal = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema(async (manager) => {
+        const entry = await manager.getRepository(JournalEntry).findOne({
+          where: { sourceType: 'Payslip', sourceId: paid.id },
+        });
+        if (!entry) return null;
+        const lines = await manager.getRepository(JournalLine).find({ where: { journalId: entry.id } });
+        return { ...entry, lines };
+      }),
+    );
+    expect(journal).not.toBeNull();
+    expect(journal!.status).toBe('Posted');
+    expect(
+      journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.SALARY_EXPENSE)?.debit,
+    ).toBe(30000);
+    expect(
+      journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.SALARIES_PAYABLE)?.credit,
+    ).toBe(30000);
+  });
+
+  it('serializes concurrent payroll runs — the second run skips duplicates instead of aborting', async () => {
+    const emp = await insertEmployee({ monthlyBasicSalary: 40000 });
+
+    // Two concurrent runs for the same month: the run-level advisory lock serializes them, so
+    // the second finds the first's payslips and skips — no thrown 500 from the
+    // (employeeId, periodMonth, periodYear) unique constraint (code-review-findings-2026-08-25 P2).
+    const [first, second] = await Promise.allSettled([
+      ctx.inTenant(() => payrollService.runMonthlyPayroll(10, 2026, { processedBy: STAFF_ID })),
+      ctx.inTenant(() => payrollService.runMonthlyPayroll(10, 2026, { processedBy: STAFF_ID })),
+    ]);
+    expect(first.status).toBe('fulfilled');
+    expect(second.status).toBe('fulfilled');
+
+    // Exactly one payslip exists for the employee, across both runs combined.
+    const createdByFirst = first.status === 'fulfilled' ? first.value.filter((p) => p.employeeId === emp) : [];
+    const createdBySecond = second.status === 'fulfilled' ? second.value.filter((p) => p.employeeId === emp) : [];
+    expect(createdByFirst.length + createdBySecond.length).toBe(1);
+
+    const listing = await ctx.inTenant(() =>
+      payrollService.listPayslips({ month: 10, year: 2026, employeeId: emp }),
+    );
+    expect(listing.meta.total).toBe(1);
+  });
+
+  it('excludes soft-deleted employees from the payroll run', async () => {
+    const live = await insertEmployee({ monthlyBasicSalary: 20000 });
+    const removed = await insertEmployee({ monthlyBasicSalary: 50000 });
+    // Soft-delete the employee (raw update — no employee delete endpoint in scope here).
+    await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.query(`UPDATE employees SET "deletedAt" = now() WHERE id = $1`, [removed]),
+      ),
+    );
+
+    const payslips = await ctx.inTenant(() =>
+      payrollService.runMonthlyPayroll(9, 2026, { processedBy: STAFF_ID }),
+    );
+    const employeeIds = payslips.map((p) => p.employeeId);
+    expect(employeeIds).toContain(live);
+    expect(employeeIds).not.toContain(removed);
+  });
+
   it('throws NotFoundException for unknown payslips', async () => {
     await expect(ctx.inTenant(() => payrollService.getPayslip(randomUUID()))).rejects.toThrow(NotFoundException);
     await expect(ctx.inTenant(() => payrollService.markPaid(randomUUID()))).rejects.toThrow(NotFoundException);
@@ -162,6 +248,10 @@ describe('PayrollService (integration)', () => {
     ).rejects.toThrow(BadRequestException);
     await expect(
       ctx.inTenant(() => payrollService.runMonthlyPayroll(1, 2026, { deductionPercent: -5 })),
+    ).rejects.toThrow(BadRequestException);
+    // A deduction above 100% would produce a negative net payslip (P2).
+    await expect(
+      ctx.inTenant(() => payrollService.runMonthlyPayroll(1, 2026, { deductionPercent: 101 })),
     ).rejects.toThrow(BadRequestException);
     await expect(
       ctx.inTenant(() => payrollService.runMonthlyPayroll(1, 2026, { allowancePercent: Number.NaN })),
@@ -195,7 +285,9 @@ describe('PayrollService (integration)', () => {
     await ctx.inTenant(() => payrollService.runMonthlyPayroll(8, 2026, { processedBy: STAFF_ID }));
     const paid = await ctx.inTenant(async () => {
       const listing = await payrollService.listPayslips({ month: 8, year: 2026 });
-      return payrollService.markPaid(listing.data[0].id);
+      // markPaid posts the payroll journal, which needs a resolvable actor (a payroll payment
+      // with no recorded actor is an audit-trail hole) — pass one.
+      return payrollService.markPaid(listing.data[0].id, STAFF_ID);
     });
 
     const all = await ctx.inTenant(() => payrollService.listPayslips({}));

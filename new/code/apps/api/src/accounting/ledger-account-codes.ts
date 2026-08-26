@@ -13,6 +13,8 @@
  * - PATIENT_SERVICE_REVENUE: Income — credited at charge-capture (order item completion).
  * - SALES_RETURNS: Income (contra — carries a debit-normal balance), debited on a return/credit
  *   note against Patient AR.
+ * - SALARY_EXPENSE: Expense — debited when a payslip is marked Paid (payroll, migration 0085).
+ * - SALARIES_PAYABLE: Liability — credited when a payslip is marked Paid (payroll, migration 0085).
  */
 export const LEDGER_ACCOUNT_IDS = {
   PATIENT_ACCOUNTS_RECEIVABLE: '00000000-1000-4000-8000-000000000001',
@@ -20,4 +22,6 @@ export const LEDGER_ACCOUNT_IDS = {
   PATIENT_DEPOSITS_PAYABLE: '00000000-1000-4000-8000-000000000003',
   PATIENT_SERVICE_REVENUE: '00000000-1000-4000-8000-000000000004',
   SALES_RETURNS: '00000000-1000-4000-8000-000000000005',
+  SALARY_EXPENSE: '00000000-1000-4000-8000-000000000006',
+  SALARIES_PAYABLE: '00000000-1000-4000-8000-000000000007',
 } as const;
