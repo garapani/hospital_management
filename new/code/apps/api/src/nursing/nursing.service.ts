@@ -25,6 +25,7 @@ export interface CreateTaskInput {
 
 export interface CreateAdministrationInput {
   admissionId: string;
+  prescriptionId?: string;
   drugName: string;
   dose: string;
   route?: string;
@@ -154,9 +155,13 @@ export class NursingService {
     }
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       await this.assertAdmissionExists(manager, input.admissionId);
+      if (input.prescriptionId) {
+        await this.assertPrescriptionExists(manager, input.prescriptionId);
+      }
       return manager.getRepository(MedicationAdministration).save(
         manager.getRepository(MedicationAdministration).create({
           admissionId: input.admissionId,
+          prescriptionId: input.prescriptionId ?? null,
           drugName: input.drugName.trim(),
           dose: input.dose.trim(),
           route: input.route ?? null,
@@ -164,6 +169,7 @@ export class NursingService {
           status: 'Scheduled',
           administeredBy: null,
           administeredAt: null,
+          skippedBy: null,
           notes: input.notes ?? null,
         }),
       );
@@ -223,6 +229,7 @@ export class NursingService {
         );
       }
       administration.status = 'Skipped';
+      administration.skippedBy = this.resolveActor(actor);
       if (notes !== undefined) {
         administration.notes = notes;
       }
@@ -230,11 +237,25 @@ export class NursingService {
     });
   }
 
-  /** Cross-module reference check (see insurance module): no entity import, raw lookup only. */
+  /**
+   * Cross-module reference check (see insurance module): no entity import, raw lookup only.
+   * Also rejects a discharged admission — tasks/MAR lines only make sense against an active stay.
+   */
   private async assertAdmissionExists(manager: EntityManager, admissionId: string): Promise<void> {
-    const rows = await manager.query(`SELECT id FROM admissions WHERE id = $1`, [admissionId]);
+    const rows = await manager.query(`SELECT id, status FROM admissions WHERE id = $1`, [admissionId]);
     if (rows.length === 0) {
       throw new NotFoundException(`Admission ${admissionId} not found`);
+    }
+    if (rows[0].status === 'Discharged') {
+      throw new ConflictException(`Admission ${admissionId} is discharged`);
+    }
+  }
+
+  /** Cross-module reference check, same shape as assertAdmissionExists: no entity import. */
+  private async assertPrescriptionExists(manager: EntityManager, prescriptionId: string): Promise<void> {
+    const rows = await manager.query(`SELECT id FROM prescriptions WHERE id = $1`, [prescriptionId]);
+    if (rows.length === 0) {
+      throw new NotFoundException(`Prescription ${prescriptionId} not found`);
     }
   }
 }

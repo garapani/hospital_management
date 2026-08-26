@@ -30,6 +30,10 @@ export class CreateAdministrationDto {
   @IsString()
   admissionId!: string;
 
+  @IsOptional()
+  @IsUUID()
+  prescriptionId?: string;
+
   @IsString()
   drugName!: string;
 

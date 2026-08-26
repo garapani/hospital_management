@@ -53,6 +53,30 @@ describe('NursingService (integration)', () => {
     return rows[0].id;
   }
 
+  /** Raw-inserts a prescription row — nursing validates its existence via raw query only. */
+  async function makePrescription(): Promise<string> {
+    seq += 1;
+    const rows = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.query(
+          `INSERT INTO prescriptions ("patientId", "doctorId", "medicationName", "dosage", "frequency", "route", "durationDays")
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id`,
+          [
+            `00000000-0000-0000-0000-${String(seq).padStart(12, '0')}`,
+            STAFF_ID,
+            'Amoxicillin',
+            '500mg',
+            'TID',
+            'Oral',
+            7,
+          ],
+        ),
+      ),
+    );
+    return rows[0].id;
+  }
+
   async function makeTask(admissionId: string, overrides: Record<string, unknown> = {}) {
     return ctx.inTenant(() =>
       nursingService.createTask({
@@ -203,13 +227,15 @@ describe('NursingService (integration)', () => {
     const admissionId = await makeAdmission();
     const administration = await makeAdministration(admissionId);
 
-    const skipped = await ctx.inTenant(() =>
+    const skipped = await withActor(() =>
       nursingService.skipAdministration(administration.id, 'Patient refused'),
     );
     expect(skipped.status).toBe('Skipped');
     expect(skipped.notes).toBe('Patient refused');
     expect(skipped.administeredBy).toBeNull();
     expect(skipped.administeredAt).toBeNull();
+    // §25: a skip now records an actor too, distinct from administeredBy.
+    expect(skipped.skippedBy).toBe(AUTHENTICATED_ACCOUNT);
   });
 
   it('enforces MAR status transitions with ConflictException', async () => {
@@ -251,6 +277,52 @@ describe('NursingService (integration)', () => {
     await expect(
       ctx.inTenant(() => nursingService.administer('00000000-0000-0000-0000-000000000000')),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('links an administration to a real prescription, and rejects a nonexistent one', async () => {
+    const admissionId = await makeAdmission();
+    const prescriptionId = await makePrescription();
+
+    const administration = await ctx.inTenant(() =>
+      nursingService.createAdministration({
+        admissionId,
+        prescriptionId,
+        drugName: 'Amoxicillin',
+        dose: '500mg',
+      }),
+    );
+    expect(administration.prescriptionId).toBe(prescriptionId);
+
+    await expect(
+      ctx.inTenant(() =>
+        nursingService.createAdministration({
+          admissionId,
+          prescriptionId: '00000000-0000-0000-0000-000000000000',
+          drugName: 'Amoxicillin',
+          dose: '500mg',
+        }),
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects creating a task or MAR line against a discharged admission', async () => {
+    const admissionId = await makeAdmission();
+    await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.query(`UPDATE admissions SET status = 'Discharged' WHERE id = $1`, [admissionId]),
+      ),
+    );
+
+    await expect(
+      ctx.inTenant(() =>
+        nursingService.createTask({ admissionId, taskType: 'Vitals Check', description: 'x' }),
+      ),
+    ).rejects.toThrow(ConflictException);
+    await expect(
+      ctx.inTenant(() =>
+        nursingService.createAdministration({ admissionId, drugName: 'Aspirin', dose: '5mg' }),
+      ),
+    ).rejects.toThrow(ConflictException);
   });
 
   it('lists administrations paginated and filterable by admission', async () => {

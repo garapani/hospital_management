@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
 export type NursingTaskStatus = 'Pending' | 'InProgress' | 'Completed' | 'Cancelled';
@@ -42,12 +42,22 @@ export type MedicationAdministrationStatus = 'Scheduled' | 'Administered' | 'Ski
  * Medication administration record (MAR) line for an admission.
  */
 @Entity('medication_administrations')
-export class MedicationAdministration {
+export class MedicationAdministration extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Column({ type: 'uuid' })
   admissionId!: string;
+
+  /**
+   * What authorized this dose, if it originated from a formal prescription
+   * (clinical/encounters' Prescription) — nullable because not every MAR line traces back to one
+   * (e.g. a nurse-initiated PRN intervention). No DB-level FK: same raw-lookup-only convention as
+   * admissionId on this table (see NursingService.assertAdmissionExists) — validated at the
+   * application layer, not the schema layer.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  prescriptionId!: string | null;
 
   @Column({ type: 'varchar' })
   drugName!: string;
@@ -70,12 +80,10 @@ export class MedicationAdministration {
   @Column({ type: 'timestamptz', nullable: true })
   administeredAt!: Date | null;
 
+  /** Set when status becomes 'Skipped' — distinct from administeredBy, which stays null for a skip. */
+  @Column({ type: 'uuid', nullable: true })
+  skippedBy!: string | null;
+
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt!: Date;
 }
