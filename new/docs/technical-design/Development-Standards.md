@@ -3656,3 +3656,38 @@ path once the subscription's `currentPeriodStart` moved on; the full unique inde
 status filter to match. The regression test proves it by resetting a subscription's current
 period onto a PAID invoice's period and asserting the 409 — a state the old index would have
 admitted.
+
+## 90. Payroll P2/P3 batch: the ledger finally sees payroll, and a run-level advisory lock (2026-08-26)
+
+Five items, closing out the payroll section. Two shapes dominate; the other three are pattern-fills.
+
+**Payroll posts to the ledger at the money-moving moment.** `markPaid` now books a Salary Expense
+debit / Salaries Payable credit for the payslip's net amount through `postAutoJournal` on the
+caller's manager (same idempotent `(sourceType, sourceId)` mechanics as every other auto-post,
+fail-loud). Two decisions worth recording: the ledger accounts are **seeded per tenant by
+migration 0085** (`SALARY_EXPENSE`, `SALARIES_PAYABLE`, added to `LEDGER_ACCOUNT_IDS`) — same
+create-only caveat as the original five system accounts, so an existing tenant gets them on the
+next migrate run; and the journal books only the **net** payable — deduction-side liabilities
+(PF/ESI/TDS as separate liabilities between gross and net) are a larger payroll-accounting model,
+explicitly out of scope. One consequence surfaced by tests: a payroll payment now *requires* a
+resolvable actor (the journal's `createdBy` is NOT NULL), so `markPaid` with neither an
+authenticated principal nor a fallback fails — that's the §25 audit-integrity convention doing
+its job, not a regression.
+
+**A run-level advisory lock fixes the concurrent-run abort.** Two concurrent
+`runMonthlyPayroll` calls for the same month both observed "no payslip yet" for an employee, both
+inserted, and the loser aborted its ENTIRE run on the `(employeeId, periodMonth, periodYear)`
+unique violation — the duplicate killed the run, not just the row. `withAdvisoryLock(manager,
+\`payroll:${month}:${year}\`)` inside the transaction serializes the runs: the second waits, its
+pre-check sees the first's committed rows, and it skips. This is the same lock-based serialization
+shape as billing's charge-capture and platform-billing's tenant lock — when a write path has an
+"at most one per key" invariant and a pre-check, add the lock so the loser *waits* instead of
+*crashing*.
+
+**The pattern-fills**: `deductionPercent` capped at 100 (a deduction above gross nets negative)
+with `CHK_payslips_net_non_negative` as the DB backstop; the raw employee query re-applies
+`"deletedAt" IS NULL` by hand (raw SQL bypasses TypeORM's soft-delete filter — see §87); and the
+per-employee `findOne` in the run loop is replaced by one batch `find` into a `Set` (the N+1).
+The spec fixtures also had to learn the module's new reality: the run payslips *every* live
+employee in the shared tenant, so tests must scope assertions to the employee they inserted, and
+the markPaid journal test needs a resolvable actor.
