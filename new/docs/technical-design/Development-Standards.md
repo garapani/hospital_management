@@ -3624,3 +3624,35 @@ shared validator) and the policy-number uniqueness index (`UQ_patient_policies_p
 0083) fill out the batch; `checkCoverage` gained the payer-active requirement with its own
 `payer-inactive` reason, and `submitClaim` stopped stamping `processedBy`/`processedAt` — those
 belong to adjudication, not submission.
+
+## 89. Platform-billing P2/P3 batch: calendar periods, vendor invoices with numbers and GST, and
+    a widened period-uniqueness index (2026-08-26)
+
+Three items landed; proration was deferred to `new-features.md` #21. Three shapes:
+
+**Subscription periods are calendar-sized now.** The 30/365-day constants drifted: "monthly" from
+Jan 31 ended Feb 1 (30 days later), and renewals compounded the drift forever. `addMonths` does
+calendar arithmetic with day-clamping (Jan 31 + 1 month = Feb 28 — the source day is clamped to
+the target month's last day when it doesn't exist), and renewal advances by the invoice's own
+cycle measured in *calendar months*, not ms. Note the test change this forced: the
+advance-by-invoice-length test asserted ms-equality between consecutive periods — which is
+precisely the drift being fixed (Feb 15 → Mar 15 is 28 days, not the 31 of Jan 15 → Feb 15) — so
+it now asserts calendar-cycle consistency instead. When a fix removes a behavior a test
+enshrined, check whether the test was testing the bug.
+
+**The vendor's own invoices got numbers and GST.** `subscription_invoices` gained
+`invoiceNumber`/`taxPercent`/`taxAmount` (migration 0084 — a PLATFORM migration, public schema,
+not tenant; new platform columns require running `nx run api:migrate` against the shared DB, which
+is how the public schema gets every platform migration). The number is derived deterministically
+from (subscriptionId, periodStart) — guaranteed unique by the period index below, no sequence
+table needed. The tax rate is a named constant (`PLATFORM_GST_PERCENT = 18`) rather than a
+hardcoded literal buried in the method — a product decision the platform owner can change in one
+place, surfaced to the Tech Lead in the findings note rather than silently invented.
+
+**The period-uniqueness index widened from open-only to all statuses.** The original partial
+index (`WHERE status='open'`) meant a paid period could theoretically be re-invoiced by a later
+path once the subscription's `currentPeriodStart` moved on; the full unique index on
+(subscriptionId, periodStart) closes that, and `issueInvoice`'s duplicate lookup dropped the
+status filter to match. The regression test proves it by resetting a subscription's current
+period onto a PAID invoice's period and asserting the 409 — a state the old index would have
+admitted.

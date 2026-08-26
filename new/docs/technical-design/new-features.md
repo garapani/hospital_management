@@ -202,6 +202,23 @@ supply cannot be invoiced correctly (the finding's own "live Phase-1 gap"):
 Related review comments: code-review-findings-2026-08-25.md, billing module, P3
 (`invoices.service.ts:156-157`).
 
+### 21. Prorated mid-period subscription changes
+
+A mid-period package upgrade (or downgrade) on a platform subscription re-prices the next full
+period at the new rate with no proration — `subscribe()` updates `pricePerCycle` in place and
+`issueInvoice` snapshots it at issue time, so the current period is never partially re-priced
+(code-review-findings-2026-08-25 platform-billing P3). Add:
+
+- A proration model: partial-period amounts when the package or cycle changes mid-period (e.g.
+  days-remaining-based credit on the old rate plus the new rate from the change date).
+- A decision on the interaction with already-issued invoices (the current invoice snapshots the
+  old price; does the change credit/adjust it, or apply from the next period?).
+- The same treatment for mid-period billing-cycle switches (monthly → annual), which today reset
+  the period start.
+
+Related review comments: code-review-findings-2026-08-25.md, platform-billing module, P3
+(`subscription-billing.service.ts:91-98`).
+
 ## Product Module Backlog
 
 The PRD phases still leave these major domains to add:
