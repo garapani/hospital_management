@@ -136,6 +136,81 @@ describe('AppointmentsService (integration)', () => {
     ).rejects.toThrow(ConflictException);
   });
 
+  it('rejects creating an appointment for a nonexistent patientId', async () => {
+    await expect(
+      ctx.inTenant(() => appointmentsService.create({
+        patientId: '11111111-1111-1111-1111-111111111111',
+        firstName: 'Ghost', lastName: 'Patient', contactNumber: '5550000015',
+        appointmentDate: '2026-08-23', appointmentTime: '09:00', appointmentType: 'Consultation',
+      })),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects updating an appointment to a nonexistent patientId', async () => {
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Real', lastName: 'Patient', contactNumber: '5550000016',
+      appointmentDate: '2026-08-24', appointmentTime: '09:00', appointmentType: 'Consultation',
+    }));
+
+    await expect(
+      ctx.inTenant(() =>
+        appointmentsService.update(created.id, { patientId: '11111111-1111-1111-1111-111111111111' }),
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects creating an appointment in a slot the doctor already has scheduled', async () => {
+    const doctorId = '00000000-0000-0000-0000-0000000000d1';
+    await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'First', lastName: 'Booking', contactNumber: '5550000010',
+      appointmentDate: '2026-08-20', appointmentTime: '09:00', appointmentType: 'Consultation', doctorId,
+    }));
+
+    await expect(
+      ctx.inTenant(() => appointmentsService.create({
+        firstName: 'Second', lastName: 'Booking', contactNumber: '5550000011',
+        appointmentDate: '2026-08-20', appointmentTime: '09:00', appointmentType: 'Consultation', doctorId,
+      })),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects creating an appointment once a department has reached its daily capacity', async () => {
+    const department = await ctx.inTenant(() => masterDataService.createDepartment({
+      departmentCode: `APPT-CREATE-CAP-${Date.now()}`,
+      departmentName: 'Create Capacity Test Dept',
+      isAppointmentApplicable: true,
+    }));
+    await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema(async (manager) => {
+        await manager.getRepository(Department).update(department.id, { maxDailyAppointments: 1 });
+      }),
+    );
+
+    await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'First', lastName: 'InDept', contactNumber: '5550000012',
+      appointmentDate: '2026-08-21', appointmentTime: '09:00', appointmentType: 'Consultation', departmentId: department.id,
+    }));
+
+    await expect(
+      ctx.inTenant(() => appointmentsService.create({
+        firstName: 'Second', lastName: 'InDept', contactNumber: '5550000013',
+        appointmentDate: '2026-08-21', appointmentTime: '10:00', appointmentType: 'Consultation', departmentId: department.id,
+      })),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects cancelling an already-cancelled appointment', async () => {
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Twice', lastName: 'Cancelled', contactNumber: '5550000014',
+      appointmentDate: '2026-08-22', appointmentTime: '09:00', appointmentType: 'Consultation',
+    }));
+    await ctx.inTenant(() => appointmentsService.cancel(created.id, 'First cancellation'));
+
+    await expect(
+      ctx.inTenant(() => appointmentsService.cancel(created.id, 'Second cancellation')),
+    ).rejects.toThrow(ConflictException);
+  });
+
   it('rejects rescheduling into a slot the doctor already has scheduled', async () => {
     const doctorId = '00000000-0000-0000-0000-0000000000d2';
     await ctx.inTenant(() => appointmentsService.create({

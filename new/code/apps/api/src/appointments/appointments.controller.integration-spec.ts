@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, HttpStatus } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../app/app.module.js';
+import { Patient } from '../patients/entities/patient.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -14,6 +15,7 @@ describe('AppointmentsController (e2e)', () => {
   let app: INestApplication;
   let ctx: TenantTestContext;
   let token: string;
+  let patientId: string;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'appointments_ctrl' });
@@ -22,6 +24,20 @@ describe('AppointmentsController (e2e)', () => {
       hospitalId: ctx.tenantId,
       permissions: ['appointment.manage', 'appointment.read'],
     });
+
+    const patient = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.getRepository(Patient).save(
+          manager.getRepository(Patient).create({
+            patientNo: `APPT-CTRL-${Date.now()}`,
+            firstName: 'Fixture',
+            lastName: 'Patient',
+            gender: 'Female',
+          }),
+        ),
+      ),
+    );
+    patientId = patient.id;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -71,7 +87,7 @@ describe('AppointmentsController (e2e)', () => {
 
   it('creates an appointment with a complete valid payload', async () => {
     const validPayload = {
-      patientId: '123e4567-e89b-12d3-a456-426614174000',
+      patientId,
       firstName: 'Jane',
       lastName: 'Doe',
       contactNumber: '9876543210',
@@ -96,7 +112,7 @@ describe('AppointmentsController (e2e)', () => {
     expect(res.body.appointmentTime).toContain('14:00');
     expect(res.body.appointmentType).toBe('Follow-up');
     expect(res.body.reason).toBe('Routine visit');
-    expect(res.body.patientId).toBe('123e4567-e89b-12d3-a456-426614174000');
+    expect(res.body.patientId).toBe(patientId);
   });
 
   it('fails with 400 when creating with empty required string fields', async () => {

@@ -4,6 +4,7 @@ import { AppointmentsService } from './appointments.service.js';
 import { CreateAppointmentDto } from './dto/create-appointment.dto.js';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto.js';
 import { SearchAppointmentsDto } from './dto/search-appointments.dto.js';
+import { CancelAppointmentDto } from './dto/cancel-appointment.dto.js';
 
 @Controller('appointments')
 @UseGuards(PermissionGuard)
@@ -37,7 +38,7 @@ export class AppointmentsController {
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)
   @RequirePermission('appointment.manage')
-  async cancelAppointment(@Param('id') id: string, @Body() body: { cancelledRemarks: string }) {
+  async cancelAppointment(@Param('id') id: string, @Body() body: CancelAppointmentDto) {
     return this.appointmentsService.cancel(id, body.cancelledRemarks);
   }
 

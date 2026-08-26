@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
-import { Not } from 'typeorm';
+import { Not, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Appointment } from './entities/appointment.entity.js';
 import { Department } from '../master-data/entities/department.entity.js';
+import { Patient } from '../patients/entities/patient.entity.js';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 import { SearchAppointmentsDto } from './dto/search-appointments.dto.js';
 
@@ -45,6 +46,13 @@ export class AppointmentsService {
 
   async create(input: CreateAppointmentInput): Promise<Appointment> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      if (input.patientId) {
+        const patient = await manager.getRepository(Patient).findOne({ where: { id: input.patientId } });
+        if (!patient) {
+          throw new NotFoundException(`Patient ${input.patientId} not found`);
+        }
+      }
+
       // Check department schedule capacity if departmentId is provided
       if (input.departmentId && input.appointmentDate) {
         const department = await manager.getRepository(Department).findOne({ 
@@ -92,7 +100,20 @@ export class AppointmentsService {
         ...input,
         status: 'Scheduled',
       });
-      return repo.save(appointment);
+      try {
+        return await repo.save(appointment);
+      } catch (error) {
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint ===
+            'UQ_appointments_active_doctor_slot'
+        ) {
+          throw new ConflictException(
+            `Doctor already has an appointment scheduled at ${input.appointmentTime} on ${input.appointmentDate}`,
+          );
+        }
+        throw error;
+      }
     });
   }
 
@@ -115,6 +136,12 @@ export class AppointmentsService {
       }
       if (appointment.status === 'Cancelled') {
         throw new ConflictException(`Appointment ${id} is cancelled and cannot be updated`);
+      }
+      if (input.patientId) {
+        const patient = await manager.getRepository(Patient).findOne({ where: { id: input.patientId } });
+        if (!patient) {
+          throw new NotFoundException(`Patient ${input.patientId} not found`);
+        }
       }
 
       const isReschedule =
@@ -172,7 +199,20 @@ export class AppointmentsService {
       }
 
       Object.assign(appointment, input);
-      return repo.save(appointment);
+      try {
+        return await repo.save(appointment);
+      } catch (error) {
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint ===
+            'UQ_appointments_active_doctor_slot'
+        ) {
+          throw new ConflictException(
+            `Doctor already has an appointment scheduled at ${appointment.appointmentTime} on ${appointment.appointmentDate}`,
+          );
+        }
+        throw error;
+      }
     });
   }
 
@@ -186,6 +226,9 @@ export class AppointmentsService {
       const appointment = await repo.findOne({ where: { id } });
       if (!appointment) {
         throw new NotFoundException(`Appointment ${id} not found`);
+      }
+      if (appointment.status === 'Cancelled') {
+        throw new ConflictException(`Appointment ${id} is already cancelled`);
       }
       appointment.status = 'Cancelled';
       appointment.cancelledRemarks = cancelledRemarks;

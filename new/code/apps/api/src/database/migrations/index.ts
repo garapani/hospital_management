@@ -63,6 +63,7 @@ import { AddAdmissionsActivePatientUnique3000000000062 } from './0062-add-admiss
 import { AddFractionEntriesUnique3000000000063 } from './0063-add-fraction-entries-unique.js';
 import { DropRoleBypassesPermissionChecks3000000000064 } from './0064-drop-role-bypasses-permission-checks.js';
 import { AddDischargeSummariesAdmissionUnique3000000000065 } from './0065-add-discharge-summaries-admission-unique.js';
+import { AddAppointmentsActiveDoctorSlotUnique3000000000066 } from './0066-add-appointments-active-doctor-slot-unique.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -140,4 +141,5 @@ export const TENANT_MIGRATIONS = [
   AddAdmissionsActivePatientUnique3000000000062,
   AddFractionEntriesUnique3000000000063,
   AddDischargeSummariesAdmissionUnique3000000000065,
+  AddAppointmentsActiveDoctorSlotUnique3000000000066,
 ];
