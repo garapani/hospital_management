@@ -84,6 +84,20 @@ export class HelpdeskService {
       throw new BadRequestException('assigneeAccountId is required');
     }
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      // The assignee must be a real, active staff account — assigning to a bogus id would
+      // silently hand the ticket to nobody (code-review-findings-2026-08-25 helpdesk P3; raw
+      // lookup, no cross-module import).
+      const assignee = await manager.query(
+        `SELECT id, "isActive" FROM accounts WHERE id = $1`,
+        [assigneeAccountId],
+      );
+      if (assignee.length === 0) {
+        throw new NotFoundException(`Account ${assigneeAccountId} not found`);
+      }
+      if (!assignee[0].isActive) {
+        throw new ConflictException(`Account ${assigneeAccountId} is deactivated and cannot be assigned`);
+      }
+
       const repository = manager.getRepository(HelpdeskTicket);
       const ticket = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!ticket) {

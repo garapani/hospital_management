@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { HelpdeskService } from './helpdesk.service.js';
 import { HelpdeskTicketNumberGeneratorService } from './helpdesk-ticket-number-generator.service.js';
+import { Account } from '../accounts/entities/account.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -20,6 +21,20 @@ describe('HelpdeskService (integration)', () => {
       ctx.tenantConnection,
       new HelpdeskTicketNumberGeneratorService(ctx.tenantConnection),
       ctx.tenantContext,
+    );
+    // assignTicket now validates the assignee is a real, active account (P3) — STAFF_ID must
+    // have a backing row for the assign specs.
+    await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.getRepository(Account).save(
+          manager.getRepository(Account).create({
+            id: STAFF_ID,
+            accountType: 'staff',
+            displayName: 'Helpdesk Staff',
+            isActive: true,
+          }),
+        ),
+      ),
     );
   });
 
@@ -112,6 +127,33 @@ describe('HelpdeskService (integration)', () => {
     await expect(ctx.inTenant(() => helpdeskService.assignTicket(ticket.id, STAFF_ID))).rejects.toThrow(
       ConflictException,
     );
+  });
+
+  it('rejects assigning to a nonexistent or deactivated account', async () => {
+    const ticket = await makeTicket();
+
+    // Unknown account (P3 — previously the assignee was never validated).
+    await expect(
+      ctx.inTenant(() =>
+        helpdeskService.assignTicket(ticket.id, '00000000-0000-0000-0000-000000000000'),
+      ),
+    ).rejects.toThrow(NotFoundException);
+
+    // Deactivated account.
+    const inactive = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.getRepository(Account).save(
+          manager.getRepository(Account).create({
+            accountType: 'staff',
+            displayName: 'Inactive Assignee',
+            isActive: false,
+          }),
+        ),
+      ),
+    );
+    await expect(
+      ctx.inTenant(() => helpdeskService.assignTicket(ticket.id, inactive.id)),
+    ).rejects.toThrow(ConflictException);
   });
 
   it('derives requesterAccountId and resolvedBy from the authenticated principal', async () => {

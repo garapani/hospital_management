@@ -84,6 +84,7 @@ import { AddPatientPoliciesUniqueNumber3000000000083 } from './0083-add-patient-
 import { AddPayrollLedgerAccountsAndNetCheck3000000000085 } from './0085-add-payroll-ledger-accounts-and-net-check.js';
 import { AddDepreciationLedgerAccounts3000000000086 } from './0086-add-depreciation-ledger-accounts.js';
 import { AddNotificationQueryShapeIndexes3000000000087 } from './0087-add-notification-query-shape-indexes.js';
+import { AddHelpdeskTicketIndexes3000000000088 } from './0088-add-helpdesk-ticket-indexes.js';
 import { AddSubscriptionInvoiceNumberTaxAndFullPeriodUnique1000000000084 } from './0084-add-subscription-invoice-number-tax-and-full-period-unique.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
@@ -184,4 +185,5 @@ export const TENANT_MIGRATIONS = [
   AddPayrollLedgerAccountsAndNetCheck3000000000085,
   AddDepreciationLedgerAccounts3000000000086,
   AddNotificationQueryShapeIndexes3000000000087,
+  AddHelpdeskTicketIndexes3000000000088,
 ];

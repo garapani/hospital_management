@@ -13,7 +13,7 @@ export class HelpdeskController {
   constructor(private readonly helpdeskService: HelpdeskService) {}
 
   @Post('tickets')
-  @RequirePermission('helpdesk.manage')
+  @RequirePermission('helpdesk.create')
   async createTicket(@Body() dto: CreateTicketDto) {
     return this.helpdeskService.createTicket(dto);
   }

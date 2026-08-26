@@ -389,6 +389,12 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     description: 'Manage helpdesk tickets',
   },
   {
+    // Ordinary staff must be able to RAISE a ticket without helpdesk.manage (which is
+    // admins/agents-only) — code-review-findings-2026-08-25 helpdesk P2.
+    name: 'helpdesk.create',
+    description: 'Raise a helpdesk ticket',
+  },
+  {
     // Notifications are self-scoped (recipient-only), but the controller's PermissionGuard was
     // decorative — no permission existed, so the gate always passed. A real permission makes
     // the gate meaningful (code-review-findings-2026-08-25 notifications P2).
@@ -692,6 +698,20 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'helpdesk.manage' },
   { roleName: 'Helpdesk Agent', permissionName: 'helpdesk.read' },
   { roleName: 'Helpdesk Agent', permissionName: 'helpdesk.manage' },
+  // helpdesk.create goes to every staff role — anyone can raise a ticket; only agents/admins
+  // view and manage the queue.
+  { roleName: 'Super Admin', permissionName: 'helpdesk.create' },
+  { roleName: 'Hospital Admin', permissionName: 'helpdesk.create' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'helpdesk.create' },
+  { roleName: 'Doctor', permissionName: 'helpdesk.create' },
+  { roleName: 'Nurse', permissionName: 'helpdesk.create' },
+  { roleName: 'Lab Technician', permissionName: 'helpdesk.create' },
+  { roleName: 'Radiology Technician', permissionName: 'helpdesk.create' },
+  { roleName: 'Pharmacist', permissionName: 'helpdesk.create' },
+  { roleName: 'Billing/Accounts Staff', permissionName: 'helpdesk.create' },
+  { roleName: 'Inventory/Store Manager', permissionName: 'helpdesk.create' },
+  { roleName: 'HR/Payroll Admin', permissionName: 'helpdesk.create' },
+  { roleName: 'Auditor/Compliance', permissionName: 'helpdesk.create' },
   { roleName: 'Super Admin', permissionName: 'marketing.read' },
   { roleName: 'Super Admin', permissionName: 'marketing.manage' },
   { roleName: 'Hospital Admin', permissionName: 'marketing.read' },
