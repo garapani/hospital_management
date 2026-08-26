@@ -3170,3 +3170,40 @@ column referencing an account is an "actor" column in this sense** — `assigned
 task is *for*, not who performed a sign-off action, so it doesn't need the same accommodation for
 non-uuid test `sub` values (nothing writes a test-signed value into it the way `resolveActor()`
 does for actor fields).
+
+## 77. Orders P2/P3 batch: cross-module cancellation cascade via per-module subscribers, row locks,
+    itemType allowlist (2026-08-26)
+
+Three items from the orders section of `code-review-findings-2026-08-25.md`, opening
+`code-review-findings-2026-08-25.md`'s Diagnostics & Supply Chain pass.
+
+**Cross-module cascade: per-module subscriber, not a single cross-domain one.** The finding
+("cancelling an order item leaves its downstream requisition/dispensing live") needs orders'
+cancellation to reach into lab/radiology/pharmacy — the reverse of those modules' existing
+dependency on `orders`. `ChargeCaptureSubscriber` (billing reacting to `order_items` completing)
+already established the pattern for this shape of problem: an `EntitySubscriberInterface` pushed
+onto the shared `DataSource` from `OnModuleInit`, so it fires inside whatever transaction the
+triggering write happened in. That subscriber had to filter on the raw `tableName` string instead of
+`listenTo(() => OrderItem)`, specifically to avoid creating a new billing → orders module-boundary
+edge. **The same trick doesn't apply here in reverse**: lab/radiology/pharmacy each already import
+the `OrderItem` entity (a sanctioned edge already exists), so `LabOrderCancellationSubscriber` /
+`RadiologyOrderCancellationSubscriber` / `PharmacyOrderCancellationSubscriber` each live in their own
+module and bind via the typed `listenTo(() => OrderItem)`, no boundary workaround needed. Rejected a
+single subscriber that raw-SQLs all three downstream tables from one place (e.g. inside `orders`
+itself): it would dodge the boundary check via raw SQL instead of respecting it, and it would own
+three other domains' status-transition rules (which statuses count as "still live") in a file that
+isn't any of those domains' own. Three small subscribers, one per module, each reusing its own
+module's exported `NON_TERMINAL_STATUSES` constant, keeps the "which statuses are cancellable" rule
+defined exactly once, in the module that owns it.
+
+**Row locks on `completeItem`/`cancelItem`: match the existing convention, no new regression test.**
+Added `lock: { mode: 'pessimistic_write' }` to both lookups — the two-line fix every other
+status-mutating method in this codebase already has. Per this repo's risk-gated test-rigor rule, a
+P2 CRUD-status lock gap (not money, not tenant isolation, not a clinical sign-off field) doesn't
+warrant a dedicated timing-based concurrency test the way the billing P1 deposit-refund lock did;
+existing functional coverage already exercises both methods and passed unchanged.
+
+**`itemType` allowlist: derived from actual call sites, not invented.** Grepped every
+`itemType === '...'` comparison in the codebase (billing charge capture, patient-portal, seed data)
+to confirm `Lab`/`Radiology`/`Pharmacy` are the only three values anything ever checks for, then
+added `@IsIn([...])` — no new enum invented, no value guessed.
