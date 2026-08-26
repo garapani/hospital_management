@@ -156,6 +156,9 @@ describe('SsuService (integration)', () => {
   it('derives appliedBy and approvedBy from the authenticated principal', async () => {
     const patient = await makePatient();
     const spoofed = '00000000-0000-0000-0000-0000000000ff';
+    // The maker/checker split (approveCase P2) requires the approver to differ from the opener,
+    // so the case is opened under AUTHENTICATED_ACCOUNT and approved under a second actor.
+    const APPROVER_ACCOUNT = '00000000-0000-0000-0000-0000000000ab';
     const ssuCase = await withActor(() =>
       ssuService.openCase({
         patientId: patient.id,
@@ -167,17 +170,76 @@ describe('SsuService (integration)', () => {
     // Section 25: the authenticated principal wins over any caller-supplied value.
     expect(ssuCase.appliedBy).toBe(AUTHENTICATED_ACCOUNT);
 
-    const approved = await withActor(() => ssuService.approveCase(ssuCase.id, { approvedBy: spoofed }));
+    const approved = await ctx.tenantContext.run(
+      { tenantId: ctx.tenantId, accountId: APPROVER_ACCOUNT, correlationId: 'ssu-test' },
+      () => ssuService.approveCase(ssuCase.id, { approvedBy: spoofed }),
+    );
     expect(approved.status).toBe('Approved');
-    expect(approved.approvedBy).toBe(AUTHENTICATED_ACCOUNT);
+    expect(approved.approvedBy).toBe(APPROVER_ACCOUNT);
     expect(approved.approvedAt).not.toBeNull();
+  });
+
+  it('enforces a maker/checker split on approval', async () => {
+    const patient = await makePatient();
+    const ssuCase = await withActor(() =>
+      ssuService.openCase({ patientId: patient.id, caseType: 'Full Subsidy', subsidyPercent: 100 }),
+    );
+
+    // The same actor who opened the case cannot approve the write-off.
+    await expect(
+      withActor(() => ssuService.approveCase(ssuCase.id, { decisionNotes: 'self-approval' })),
+    ).rejects.toThrow(ConflictException);
+
+    // A different actor can.
+    const approved = await ctx.tenantContext.run(
+      { tenantId: ctx.tenantId, accountId: '00000000-0000-0000-0000-0000000000ab', correlationId: 'ssu-test' },
+      () => ssuService.approveCase(ssuCase.id, { decisionNotes: 'approved by checker' }),
+    );
+    expect(approved.status).toBe('Approved');
+  });
+
+  it('limits a patient to one Open case at a time', async () => {
+    const patient = await makePatient();
+    const first = await makeCase(patient.id);
+    expect(first.status).toBe('Open');
+
+    // A second Open case for the same patient is rejected.
+    await expect(
+      ctx.inTenant(() => ssuService.openCase({ patientId: patient.id, caseType: 'X', appliedBy: STAFF_ID })),
+    ).rejects.toThrow(ConflictException);
+
+    // Once the first case leaves Open, a new one may be opened.
+    const approved = await ctx.inTenant(() =>
+      ssuService.approveCase(first.id, { decisionNotes: 'ok', approvedBy: '00000000-0000-0000-0000-0000000000ee' }),
+    );
+    expect(approved.status).toBe('Approved');
+    const second = await ctx.inTenant(() =>
+      ssuService.openCase({ patientId: patient.id, caseType: 'Medicine Only', appliedBy: STAFF_ID }),
+    );
+    expect(second.status).toBe('Open');
+  });
+
+  it('records who closed a case and when', async () => {
+    const patient = await makePatient();
+    const ssuCase = await makeCase(patient.id);
+    await ctx.inTenant(() =>
+      ssuService.approveCase(ssuCase.id, { decisionNotes: 'ok', approvedBy: '00000000-0000-0000-0000-0000000000ee' }),
+    );
+
+    const closed = await ctx.inTenant(() => ssuService.closeCase(ssuCase.id, STAFF_ID));
+    expect(closed.status).toBe('Closed');
+    expect(closed.closedBy).toBe(STAFF_ID);
+    expect(closed.closedAt).not.toBeNull();
   });
 
   it('filters cases by patientId and status', async () => {
     const patient = await makePatient();
     const first = await makeCase(patient.id);
+    const approved = await ctx.inTenant(() =>
+      ssuService.approveCase(first.id, { decisionNotes: 'ok', approvedBy: '00000000-0000-0000-0000-0000000000ee' }),
+    );
+    // Only one Open case may exist per patient, so the second case opens after the first is Approved.
     await makeCase(patient.id, { caseType: 'Medicine Only', subsidyPercent: 75 });
-    const approved = await ctx.inTenant(() => ssuService.approveCase(first.id, { decisionNotes: 'ok' }));
 
     const patientList = await ctx.inTenant(() => ssuService.listCases({ patientId: patient.id }));
     expect(patientList.data.map((c) => c.id)).toContain(approved.id);

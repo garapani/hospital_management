@@ -48,6 +48,14 @@ export class SsuCase extends SoftDeletableEntity {
   @Column({ type: 'timestamptz', nullable: true })
   approvedAt!: Date | null;
 
+  /** Actor who closed the case (see §25); varchar like the audit columns (test tokens sign
+   *  non-uuid sub values — §73). */
+  @Column({ type: 'varchar', nullable: true })
+  closedBy!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  closedAt!: Date | null;
+
   @Column({ type: 'text', nullable: true })
   decisionNotes!: string | null;
 }

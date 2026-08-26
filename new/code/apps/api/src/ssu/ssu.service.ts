@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -63,20 +64,43 @@ export class SsuService {
       if (patient.length === 0) {
         throw new NotFoundException(`Patient ${input.patientId} not found`);
       }
-      return manager.getRepository(SsuCase).save(
-        manager.getRepository(SsuCase).create({
-          caseNumber,
-          patientId: input.patientId,
-          caseType: input.caseType.trim(),
-          eligibilityNotes: input.eligibilityNotes ?? null,
-          subsidyPercent: input.subsidyPercent ?? 0,
-          status: 'Open',
-          appliedBy: this.resolveActor(input.appliedBy),
-          approvedBy: null,
-          approvedAt: null,
-          decisionNotes: null,
-        }),
+
+      const active = await manager.query(
+        `SELECT id FROM ssu_cases WHERE "patientId" = $1 AND status = 'Open'`,
+        [input.patientId],
       );
+      if (active.length > 0) {
+        throw new ConflictException(`Patient ${input.patientId} already has an Open SSU case`);
+      }
+
+      const repository = manager.getRepository(SsuCase);
+      try {
+        return await repository.save(
+          repository.create({
+            caseNumber,
+            patientId: input.patientId,
+            caseType: input.caseType.trim(),
+            eligibilityNotes: input.eligibilityNotes ?? null,
+            subsidyPercent: input.subsidyPercent ?? 0,
+            status: 'Open',
+            appliedBy: this.resolveActor(input.appliedBy),
+            approvedBy: null,
+            approvedAt: null,
+            closedBy: null,
+            closedAt: null,
+            decisionNotes: null,
+          }),
+        );
+      } catch (error) {
+        // Race-safety backstop for the pre-check above (partial unique index, migration 0079).
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint === 'UQ_ssu_cases_active_patient'
+        ) {
+          throw new ConflictException(`Patient ${input.patientId} already has an Open SSU case`);
+        }
+        throw error;
+      }
     });
   }
 
@@ -104,7 +128,11 @@ export class SsuService {
     });
   }
 
-  /** Open -> Approved: the deciding actor is the authenticated principal (§25). */
+  /**
+   * Open -> Approved: the deciding actor is the authenticated principal (§25). A revenue
+   * write-off needs a maker/checker split — the actor who opened the case cannot be the one
+   * who approves it (code-review-findings-2026-08-25 ssu P2).
+   */
   async approveCase(id: string, input: DecideCaseInput = {}): Promise<SsuCase> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(SsuCase);
@@ -115,8 +143,14 @@ export class SsuService {
       if (ssuCase.status !== 'Open') {
         throw new ConflictException(`SSU case ${id} cannot move from ${ssuCase.status} to Approved`);
       }
+      const approver = this.resolveActor(input.approvedBy);
+      if (approver && ssuCase.appliedBy === approver) {
+        throw new ConflictException(
+          `SSU case ${id} was opened by the same actor — approval requires a different maker/checker actor`,
+        );
+      }
       ssuCase.status = 'Approved';
-      ssuCase.approvedBy = this.resolveActor(input.approvedBy);
+      ssuCase.approvedBy = approver;
       ssuCase.approvedAt = new Date();
       ssuCase.decisionNotes = input.decisionNotes ?? ssuCase.decisionNotes;
       return repository.save(ssuCase);
@@ -147,10 +181,10 @@ export class SsuService {
   }
 
   /**
-   * Approved/Rejected -> Closed. Open cases must be decided first. `actor` is accepted for
-   * signature parity with the other transitions; the entity has no closure-actor column.
+   * Approved/Rejected -> Closed. Open cases must be decided first. Records who closed the case
+   * and when (closedBy/closedAt, migration 0079) — the closure is a decision like any other.
    */
-  async closeCase(id: string, _actor?: string): Promise<SsuCase> {
+  async closeCase(id: string, actor?: string): Promise<SsuCase> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(SsuCase);
       const ssuCase = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
@@ -161,6 +195,8 @@ export class SsuService {
         throw new ConflictException(`SSU case ${id} cannot move from ${ssuCase.status} to Closed`);
       }
       ssuCase.status = 'Closed';
+      ssuCase.closedBy = this.resolveActor(actor) || null;
+      ssuCase.closedAt = new Date();
       return repository.save(ssuCase);
     });
   }
