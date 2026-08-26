@@ -76,8 +76,12 @@ describe('Radiology report PDF export (integration)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    // Teardown BEFORE app.close(): closing the app runs DatabaseModule.onModuleDestroy, which
+    // destroys the shared DataSource (this spec overrides the provider with ctx.dataSource) —
+    // teardown after that would see isInitialized=false and silently skip the schema/role drops,
+    // leaking tenant_<prefix>_1 schemas. See the ordering rule documented in database.module.ts.
     await teardownTenantTestContext(ctx);
+    await app.close();
   });
 
   const DOCTOR_ID = '00000000-0000-0000-0000-0000000000e4';
