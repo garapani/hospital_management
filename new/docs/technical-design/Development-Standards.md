@@ -2986,3 +2986,40 @@ Added migration 0067 with the same `ADD COLUMN IF NOT EXISTS` shape as 0053, and
 `TriageEntry` to extend `SoftDeletableEntity` like every sibling clinical entity — dropping its
 duplicated `@CreateDateColumn`/`@UpdateDateColumn` in favor of the inherited ones (same column
 types, so no data-shape change for those two).
+
+## 72. Clinical/vitals P2/P3 batch: range validation, BMI overflow, stale-BMI nulling, dead code
+    (2026-08-26)
+
+Four items from the clinical/vitals section of `code-review-findings-2026-08-25.md`.
+
+**Range-validate every vital sign, at bounds that also keep `decimal` columns from overflowing.**
+None of the nine vital-sign fields had any `@Min`/`@Max` — a mistyped SpO2 of 970 or a negative pain
+scale reached the DB as-is. Added bounds chosen at clinically plausible extremes, comfortably inside
+each column's actual precision ceiling (`decimal(5,2)` maxes at 999.99, `decimal(4,1)` at 999.9):
+height 0-300cm, weight 0-500kg, temperature 20-45°C, pulse/bpSystolic 0-300, bpDiastolic 0-200,
+respiratoryRate 0-100, spO2 0-100, painScale 0-10 (matching the column comment's own documented
+0-10 scale). Also switched the `int`-column fields (pulse, bpSystolic, bpDiastolic,
+respiratoryRate, painScale) from `@IsNumber` to `@IsInt` while touching them — a decimal value for
+an int column was silently truncating before, not rejected.
+
+**`calculateBmi` no longer lets a valid-per-field-but-extreme height/weight combo overflow its own
+column.** Both height and weight can independently sit inside their new DTO bounds (e.g. height
+30cm, weight 500kg — a newborn's height with an adult's weight) and still compute a BMI (~5555) far
+past `bmi`'s `decimal(5,2)` ceiling, which would have thrown a raw Postgres `numeric field overflow`
+on `save()`. `calculateBmi` now returns `undefined` (no BMI recorded) instead of a value it can't
+actually store — a derived/computed field should never be allowed to violate the column it's
+headed for; skip persisting it rather than let the DB throw.
+
+**Stale BMI nulling: `?? null`, not a bare `undefined`, when the recompute yields nothing.**
+`repository.save(entity)` skips `undefined` properties in the generated UPDATE rather than nulling
+them — assigning `vital.bmi = calculateBmi(...)` when that call returns `undefined` left whatever
+BMI was already stored untouched. `update()` now assigns `calculateBmi(...) ?? null` whenever a
+recompute is triggered, so a height/weight combination that no longer yields a valid BMI (cleared,
+one side missing, or the overflow case above) actually nulls the column. Worth remembering as a
+general rule: **anywhere a service recomputes a nullable derived field and skips reassigning it
+when the computation yields nothing, check whether that's actually clearing the field or just
+leaving a stale value in place** — `save()`'s undefined-skipping behavior makes the two look
+identical in code but very different in the database.
+
+**`listByAppointment` deleted.** No controller route, no other caller, no test coverage — genuinely
+dead code, not a case of "used by future work."
