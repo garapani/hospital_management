@@ -156,18 +156,63 @@ describe('OtService (integration)', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('runs the lifecycle schedule -> start -> complete', async () => {
+  it('runs the lifecycle schedule -> start -> complete, recording each transition actor', async () => {
     const patient = await makePatient();
     const surgery = await schedule(patient.id);
     expect(surgery.status).toBe('Scheduled');
 
-    const started = await ctx.inTenant(() => otService.startSurgery(surgery.id));
+    const started = await withActor(() => otService.startSurgery(surgery.id));
     expect(started.status).toBe('InProgress');
     expect(started.startedAt).not.toBeNull();
+    expect(started.startedBy).toBe(AUTHENTICATED_ACCOUNT);
 
-    const completed = await ctx.inTenant(() => otService.completeSurgery(surgery.id));
+    const completed = await withActor(() =>
+      otService.completeSurgery(surgery.id, undefined, 'Uneventful recovery'),
+    );
     expect(completed.status).toBe('Completed');
     expect(completed.endedAt).not.toBeNull();
+    expect(completed.completedBy).toBe(AUTHENTICATED_ACCOUNT);
+    expect(completed.postOpNotes).toBe('Uneventful recovery');
+  });
+
+  it('records the cancelling actor and reason', async () => {
+    const patient = await makePatient();
+    const surgery = await schedule(patient.id);
+
+    const cancelled = await withActor(() =>
+      otService.cancelSurgery(surgery.id, undefined, 'Patient rescheduled'),
+    );
+    expect(cancelled.status).toBe('Cancelled');
+    expect(cancelled.cancelledBy).toBe(AUTHENTICATED_ACCOUNT);
+    expect(cancelled.cancellationReason).toBe('Patient rescheduled');
+  });
+
+  it('rejects scheduling two surgeries into the same room at the same instant', async () => {
+    const patient = await makePatient();
+    const scheduledAt = '2026-09-01T09:00:00.000Z';
+    await schedule(patient.id, { otRoom: 'OT-2', scheduledAt });
+
+    await expect(
+      ctx.inTenant(() =>
+        otService.scheduleSurgery({
+          patientId: patient.id,
+          procedureName: 'Conflicting Procedure',
+          otRoom: 'OT-2',
+          scheduledAt,
+        }),
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects starting a second surgery in a room that already has one in progress', async () => {
+    const patient = await makePatient();
+    const first = await schedule(patient.id, { otRoom: 'OT-3', scheduledAt: '2026-09-02T09:00:00.000Z' });
+    const second = await schedule(patient.id, { otRoom: 'OT-3', scheduledAt: '2026-09-02T14:00:00.000Z' });
+
+    await ctx.inTenant(() => otService.startSurgery(first.id));
+    await expect(ctx.inTenant(() => otService.startSurgery(second.id))).rejects.toThrow(
+      ConflictException,
+    );
   });
 
   it('enforces the status machine with conflicts', async () => {

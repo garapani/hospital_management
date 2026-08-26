@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -72,6 +73,25 @@ export class OtService {
         }
       }
 
+      // Exact-slot conflict: two surgeries booked into the same room at the same instant. This
+      // doesn't catch overlapping-but-offset bookings (no duration/end-time model exists to
+      // compare against — a larger feature, see the finding's checklist annotation); the
+      // "same room, same instant" case is the one this data model can actually detect today.
+      if (input.otRoom && input.scheduledAt) {
+        const conflicting = await manager.getRepository(OtSurgery).findOne({
+          where: {
+            otRoom: input.otRoom,
+            scheduledAt: new Date(input.scheduledAt),
+            status: 'Scheduled',
+          },
+        });
+        if (conflicting) {
+          throw new ConflictException(
+            `OT room ${input.otRoom} already has a surgery scheduled at ${new Date(input.scheduledAt).toISOString()}`,
+          );
+        }
+      }
+
       return manager.getRepository(OtSurgery).save(
         manager.getRepository(OtSurgery).create({
           surgeryNumber,
@@ -131,12 +151,26 @@ export class OtService {
       }
       surgery.status = 'InProgress';
       surgery.startedAt = new Date();
-      return repository.save(surgery);
+      surgery.startedBy = this.resolveActor(actor);
+      try {
+        return await repository.save(surgery);
+      } catch (error) {
+        // Backstop for the race the pre-check in scheduleSurgery can't close: two concurrent
+        // starts for the same OT room, closed by UQ_ot_surgeries_active_room.
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint ===
+            'UQ_ot_surgeries_active_room'
+        ) {
+          throw new ConflictException(`OT room ${surgery.otRoom} already has a surgery in progress`);
+        }
+        throw error;
+      }
     });
   }
 
   /** InProgress -> Completed: the surgery finishes; endedAt is stamped now. */
-  async completeSurgery(id: string, actor?: string): Promise<OtSurgery> {
+  async completeSurgery(id: string, actor?: string, postOpNotes?: string): Promise<OtSurgery> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(OtSurgery);
       const surgery = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
@@ -148,12 +182,16 @@ export class OtService {
       }
       surgery.status = 'Completed';
       surgery.endedAt = new Date();
+      surgery.completedBy = this.resolveActor(actor);
+      if (postOpNotes !== undefined) {
+        surgery.postOpNotes = postOpNotes;
+      }
       return repository.save(surgery);
     });
   }
 
   /** Scheduled -> Cancelled: only a not-yet-started surgery can be cancelled. */
-  async cancelSurgery(id: string, actor?: string): Promise<OtSurgery> {
+  async cancelSurgery(id: string, actor?: string, reason?: string): Promise<OtSurgery> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(OtSurgery);
       const surgery = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
@@ -164,6 +202,10 @@ export class OtService {
         throw new ConflictException(`Surgery ${id} cannot move from ${surgery.status} to Cancelled`);
       }
       surgery.status = 'Cancelled';
+      surgery.cancelledBy = this.resolveActor(actor);
+      if (reason !== undefined) {
+        surgery.cancellationReason = reason;
+      }
       return repository.save(surgery);
     });
   }

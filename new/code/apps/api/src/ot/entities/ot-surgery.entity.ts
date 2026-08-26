@@ -44,9 +44,25 @@ export class OtSurgery extends SoftDeletableEntity {
   @Column({ type: 'timestamptz', nullable: true })
   endedAt!: Date | null;
 
+  /** Pre-op notes, set at scheduling time — distinct from postOpNotes below. */
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
 
   @Column({ type: 'uuid' })
   scheduledBy!: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  startedBy!: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  completedBy!: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  cancelledBy!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  cancellationReason!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  postOpNotes!: string | null;
 }

@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { OtService } from './ot.service.js';
-import { CreateSurgeryDto, ListSurgeriesQueryDto } from './dto/ot.dto.js';
+import { CancelSurgeryDto, CompleteSurgeryDto, CreateSurgeryDto, ListSurgeriesQueryDto } from './dto/ot.dto.js';
 
 @Controller('ot')
 @UseGuards(PermissionGuard)
@@ -34,13 +34,13 @@ export class OtController {
 
   @Post('surgeries/:id/complete')
   @RequirePermission('ot.manage')
-  async completeSurgery(@Param('id') id: string) {
-    return this.otService.completeSurgery(id);
+  async completeSurgery(@Param('id') id: string, @Body() dto: CompleteSurgeryDto) {
+    return this.otService.completeSurgery(id, undefined, dto.postOpNotes);
   }
 
   @Post('surgeries/:id/cancel')
   @RequirePermission('ot.manage')
-  async cancelSurgery(@Param('id') id: string) {
-    return this.otService.cancelSurgery(id);
+  async cancelSurgery(@Param('id') id: string, @Body() dto: CancelSurgeryDto) {
+    return this.otService.cancelSurgery(id, undefined, dto.reason);
   }
 }
