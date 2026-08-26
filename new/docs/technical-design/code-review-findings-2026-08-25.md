@@ -140,11 +140,11 @@ the root `CLAUDE.md`.
 - [x] **P3** — Inventory/Store Manager holds no `ward-supply.*` permission despite PRD §6.1 scoping. (`rbac/seed-rbac-catalog.ts:570-575`) — **Fixed 2026-08-26:** granted `ward-supply.read`/`ward-supply.manage` to Inventory/Store Manager — Ward Supply is in that role's primary scope per PRD §6.1, alongside Inventory and Fixed Asset. Same create-only-seed caveat as every other seed fix in this file: an already-provisioned tenant keeps the gap until its seed is re-run.
 
 ### cssd
-- [ ] **P2** — `cssd_instruments.code` has no UNIQUE constraint or duplicate check. (`migrations/0040-create-cssd-tables.ts:9-19`)
-- [ ] **P2** — Nothing prevents concurrent InProgress cycles for the same instrument. (`cssd/cssd.service.ts:150-179`)
-- [ ] **P2** — No index on the cycles table's `instrumentId`, despite being the list filter. (`migrations/0040-create-cssd-tables.ts:20-34`)
-- [ ] **P3** — `sterileExpiryAt` is written but never read. (`cssd.service.ts:200`)
-- [ ] **P3** — `reactivateInstrument` doesn't conflict-check, unlike deactivate. (`cssd.service.ts:136-146`)
+- [x] **P2** — `cssd_instruments.code` has no UNIQUE constraint or duplicate check. (`migrations/0040-create-cssd-tables.ts:9-19`) — **Fixed 2026-08-26:** added `UQ_cssd_instruments_code` (migration 0078) plus a conflict catch in `createInstrument` mapping it to a 409, same shape as the lab_tests code-uniqueness fix (migration 0074).
+- [x] **P2** — Nothing prevents concurrent InProgress cycles for the same instrument. (`cssd/cssd.service.ts:150-179`) — **Fixed 2026-08-26:** `startCycle` now rejects with a 409 when the instrument already has an InProgress cycle (in-transaction pre-check plus a partial unique index `UQ_cssd_sterilization_cycles_active_instrument` on `(instrumentId) WHERE status='InProgress'`, migration 0078, mapped to 409 as the race-safety backstop — mirroring the admissions/ot patterns). A completed/failed cycle frees the instrument for a new one.
+- [x] **P2** — No index on the cycles table's `instrumentId`, despite being the list filter. (`migrations/0040-create-cssd-tables.ts:20-34`) — **Fixed 2026-08-26:** added plain non-unique indexes on both `listCycles` filter columns — `instrumentId` and `status` (migration 0078).
+- [x] **P3** — `sterileExpiryAt` is written but never read. (`cssd.service.ts:200`) — **Fixed 2026-08-26:** added `CssdService.getSterility()` + `GET /cssd/instruments/:id/sterility` (`cssd.read`) — derives an instrument's current sterile state from its latest Completed cycle (`isSterile` = a completed cycle whose `sterileExpiryAt` is still in the future), returning `lastCompletedAt`/`sterileExpiryAt` alongside.
+- [x] **P3** — `reactivateInstrument` doesn't conflict-check, unlike deactivate. (`cssd.service.ts:136-146`) — **Fixed 2026-08-26:** `reactivateInstrument` now 409s on an already-active instrument, mirroring `deactivateInstrument`'s already-deactivated guard.
 
 ### ssu
 - [ ] **P2** — `subsidyPercent` is validated but applied to nothing — Billing has no idea the case exists. (`ssu/ssu.service.ts:72`)

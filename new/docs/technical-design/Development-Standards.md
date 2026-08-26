@@ -3411,3 +3411,37 @@ continues to be a scoped raw lookup, not a new dependency edge. Note the DTOs fo
 were also switched from `@IsString()` to `@IsUUID()` on every uuid field while they were being
 touched — the read DTO already used `@IsUUID`, and leaving write DTOs looser turns a bad id from
 a clean 400 into a raw Postgres 500 (see the platform-group P3 that calls this class of bug out).
+
+## 83. CSSD P2/P3 batch: a status-partial unique index, the third code-uniqueness fix, and
+    closing a write-only field with a read endpoint (2026-08-26)
+
+Five items, closing out the cssd section entirely. Three shapes, all already established in this
+file, worth noting for how they compose.
+
+**The InProgress-cycle guard is the admissions/ot pattern verbatim**: an in-transaction pre-check
+(`SELECT ... WHERE "instrumentId" = $1 AND status = 'InProgress'`) that gives a friendly 409, plus
+a partial unique index (`UQ_cssd_sterilization_cycles_active_instrument` on `(instrumentId) WHERE
+status = 'InProgress'`) as the race-safety backstop, with the constraint name checked in the catch
+so a concurrent duplicate still maps to 409 instead of a raw 500. A status-partial unique index is
+how this codebase says "at most one *active* row per X" — it has now been applied to admissions
+(patient/bed), appointments (doctor slot), ot (room), and cssd (instrument). When a status value
+moves a row out of the guarded set (Completed/Failed frees the instrument), no index surgery is
+needed — the row simply stops matching the predicate.
+
+**The code-uniqueness fix is the lab pattern for the third time** (`UQ_cssd_instruments_code` +
+a `QueryFailedError` catch checking `error.constraint === 'UQ_cssd_instruments_code'`, 0078 after
+0074/0076). One recurring pitfall worth stating: the catch must check the *constraint name*, not
+a bare `23505` code, because a `23505` can arrive from any unique index the insert touches — a
+bare code check mislabels unrelated collisions (see the lab P3 finding that fixed exactly this).
+
+**The sterility read closes a write-only field with a derivation, not a new column.**
+`sterileExpiryAt` was computed on every Completed cycle but nothing ever consulted it, so the
+instrument's usable sterile state was unknowable. Rather than storing a redundant
+`isCurrentlySterile` flag (which would go stale and need its own lifecycle), `getSterility()`
+derives it on read from the latest Completed cycle (`isSterile = sterileExpiryAt > now`), exposed
+as `GET /cssd/instruments/:id/sterility`. Deriving a status from authoritative timestamps beats
+caching it: there is exactly one source of truth and no transition to maintain.
+
+Also folded in: `reactivateInstrument` gained the already-active 409 that `deactivateInstrument`
+already had (symmetric idempotency guards), and plain non-unique indexes were added on the cycles
+table's two filter columns (`instrumentId`, `status`).
