@@ -3445,3 +3445,35 @@ caching it: there is exactly one source of truth and no transition to maintain.
 Also folded in: `reactivateInstrument` gained the already-active 409 that `deactivateInstrument`
 already had (symmetric idempotency guards), and plain non-unique indexes were added on the cycles
 table's two filter columns (`instrumentId`, `status`).
+
+## 84. SSU P2/P3 batch: a maker/checker split on the write-off decision, and two status-lifecycle
+    guards (2026-08-26)
+
+Three items landed; the fourth (subsidyPercent applied to nothing) was deferred to
+`new-features.md` #19 because it is a cross-module money feature, not a batch fix. Three shapes:
+
+**The maker/checker split is a new guard shape for this codebase.** `approveCase` is where a
+charity subsidy (a revenue write-off) becomes real, so it now rejects with a 409 when the
+resolved approver equals the case's `appliedBy` — the same actor cannot both create and approve a
+write-off. Two details worth copying: the guard runs *after* the status check but *before* any
+mutation (so the transition into Approved is what's being gated), and it compares the *resolved*
+actor (`resolveActor`), not the raw DTO value — a spoofed `approvedBy` cannot dodge it, and an
+unauthenticated non-HTTP caller (no fallback supplied) is skipped entirely rather than spuriously
+409ing. Note the scope decision: only approval is guarded, not rejection — rejecting a case
+writes off nothing, so the maker may still reject their own case; the split protects the
+money-moving transition specifically.
+
+**The one-Open-case-per-patient guard is the status-partial unique index again** (pre-check +
+`UQ_ssu_cases_active_patient` on `(patientId) WHERE status='Open'`, 0079) — the fourth use of the
+"at most one *active* row per X" pattern after admissions, appointments, ot, and cssd. And the
+test restructuring it forced is worth noting: two specs had created two Open cases on one patient
+in sequence, which the new rule makes impossible — the fixture had to interleave the status
+transition (approve the first before opening the second). A new invariant that the old fixtures
+violated is a signal the invariant was real, not a nuisance: "only one Open case per patient"
+meant those fixtures were modeling a state the business had already ruled out.
+
+**`closeCase` got its audit columns** (`closedBy` varchar nullable, `closedAt` timestamptz) via
+migration 0079 — deliberately varchar for the actor column, matching the §73 rationale (test
+tokens sign non-uuid `sub` values) even though the entity's older `appliedBy`/`approvedBy`
+columns are still uuid-typed; new audit-style actor columns follow the varchar convention going
+forward.

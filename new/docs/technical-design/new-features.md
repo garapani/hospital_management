@@ -164,6 +164,25 @@ never whether a doctor is even scheduled to work that day/time. Add:
 Related review comments: code-review-findings-2026-08-25.md, appointments module, P2
 (`appointments.service.ts:165-187`).
 
+### 19. Apply an approved SSU subsidy to Billing
+
+`SsuService` validates `subsidyPercent` (0-100) on `openCase` and records it on the case, but
+nothing applies it: an Approved case's write-off never reaches any invoice, so Billing has no
+idea the case exists. Applying it means touching the invoice money math and the revenue journal:
+
+- A subsidy amount derived from the patient's Approved (not yet Closed) SSU case at invoice
+  total-computation time — `InvoicesService.create()` (manual invoices), and the open-invoice
+  recompute in `captureChargeForOrderItem()` — plus the return path (`createReturn()`) so a
+  subsidized invoice reverses correctly.
+- A contra/discount journal for the write-off portion (the current charge-capture journal books
+  the full line amount), and the invoice-status recompute (`paidAmount >= totalAmount`) staying
+  correct when a subsidy is later closed.
+- A decision on interaction with manual line `discountAmount`, the still-open 0% tax capture
+  gap, and whether a closed subsidy retroactively re-prices outstanding invoices.
+
+Related review comments: code-review-findings-2026-08-25.md, ssu module, P2
+(`ssu.service.ts:72`).
+
 ## Product Module Backlog
 
 The PRD phases still leave these major domains to add:
