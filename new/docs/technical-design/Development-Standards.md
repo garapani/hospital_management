@@ -3973,3 +3973,27 @@ instance.
 the common action, narrow grant for management" shape as `helpdesk.create` (§100) and
 `notification.read` (§99): front-desk roles (Receptionist / Front Desk, Billing/Accounts Staff)
 can record a referral at registration without being able to manage the source catalog.
+
+## 102. Reporting P2/P3 batch: revenue means net money collected, and one pagination contract
+    (2026-08-26)
+
+Three items landed; the CSV-streaming half stayed bounded-but-deferred. Two shapes:
+
+**Revenue is net money actually collected.** The dashboard summed `PaymentRecorded + DepositReceived`
+— a deposit that later funded a payment fired BOTH events, so the same money counted twice, and
+refunds were never subtracted (no return event existed). The fix: revenue =
+`SUM(PaymentRecorded) − SUM(InvoiceReturned)` in one CASE-based query, `DepositReceived` excluded
+(a deposit is a liability until applied), and the reporting subscriber gained a `Return` insert
+handler so returns flow in. The regression test runs in a *fresh tenant* because revenue is a
+whole-tenant aggregate — reusing the shared tenant would sum the other tests' events. When
+testing an aggregate, isolate the tenant. (Deposit refunds were left out: the deposit row stores
+one refundedBy/refundedAt pair with no per-refund identity, so a refund event can't be derived
+from the row — the invoice-return path is the tractable half.)
+
+**One pagination contract.** `listEvents` returned `{ items, total }` while every other list in
+the codebase returns `{ data, meta }` — a second contract the frontend would have to special-case.
+It now goes through the shared `paginate()` + `PaginationQueryDto`, and the controller's
+hand-rolled page/limit parse is gone (the shared DTO clamps identically — this was the "reporting
+hand-rolls a second, divergent pagination contract" finding, and the fix is "use the shared one",
+never "document the divergence"). The date-range filters became `@IsDateString()` DTOs at the same
+time (garbage dates 400 at the pipe instead of reaching SQL).
