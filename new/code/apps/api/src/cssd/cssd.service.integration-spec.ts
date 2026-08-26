@@ -244,6 +244,8 @@ describe('CssdService (integration)', () => {
     const instrumentA = await makeInstrument();
     const instrumentB = await makeInstrument();
     const a1 = await makeCycle(instrumentA.id);
+    // Only one InProgress cycle may exist per instrument, so a1 is completed before a2 starts.
+    await ctx.inTenant(() => cssdService.completeCycle(a1.id, { sterileHours: 12 }));
     const a2 = await makeCycle(instrumentA.id, { method: 'ETO' });
     await makeCycle(instrumentB.id);
 
@@ -258,8 +260,6 @@ describe('CssdService (integration)', () => {
     const inProgress = await ctx.inTenant(() => cssdService.listCycles({ status: 'InProgress' }));
     expect(inProgress.data.every((c) => c.status === 'InProgress')).toBe(true);
 
-    const completedA1 = await ctx.inTenant(() => cssdService.completeCycle(a1.id, { sterileHours: 12 }));
-    expect(completedA1.status).toBe('Completed');
     const byStatus = await ctx.inTenant(() =>
       cssdService.listCycles({ instrumentId: instrumentA.id, status: 'Completed' }),
     );
@@ -273,6 +273,77 @@ describe('CssdService (integration)', () => {
     expect(page.data).toHaveLength(1);
     // Newest first (createdAt DESC): page 2 holds the older cycle.
     expect(page.data[0].id).toBe(a1.id);
+  });
+
+  it('rejects a duplicate instrument code with ConflictException', async () => {
+    const instrument = await makeInstrument();
+    await expect(
+      ctx.inTenant(() =>
+        cssdService.createInstrument({ code: instrument.code, name: 'Duplicate code instrument' }),
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('prevents concurrent InProgress cycles for the same instrument', async () => {
+    const instrument = await makeInstrument();
+    const first = await makeCycle(instrument.id);
+    expect(first.status).toBe('InProgress');
+
+    // A second InProgress cycle on the same instrument is rejected.
+    await expect(
+      ctx.inTenant(() => cssdService.startCycle({ instrumentId: instrument.id, method: 'Steam' })),
+    ).rejects.toThrow(ConflictException);
+
+    // Once the first cycle leaves InProgress, a new one may start.
+    await ctx.inTenant(() => cssdService.completeCycle(first.id, { sterileHours: 24 }));
+    const second = await ctx.inTenant(() =>
+      cssdService.startCycle({ instrumentId: instrument.id, method: 'ETO', operatedBy: STAFF_ID }),
+    );
+    expect(second.status).toBe('InProgress');
+  });
+
+  it('rejects reactivating an already-active instrument', async () => {
+    const instrument = await makeInstrument();
+    await expect(
+      ctx.inTenant(() => cssdService.reactivateInstrument(instrument.id)),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('reports instrument sterility from the latest completed cycle', async () => {
+    const instrument = await makeInstrument();
+
+    // No completed cycle yet -> not sterile.
+    const bare = await ctx.inTenant(() => cssdService.getSterility(instrument.id));
+    expect(bare.isSterile).toBe(false);
+    expect(bare.sterileExpiryAt).toBeNull();
+
+    // Raw-insert two completed cycles: a fresh one (future expiry) then an expired one, so the
+    // expired one is the latest and drives the answer. completedAt values are explicit to make
+    // the ordering deterministic.
+    const rawInsert = (completedAt: string, sterileExpiryAt: string) =>
+      ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.query(
+            `INSERT INTO cssd_sterilization_cycles
+               ("instrumentId", method, status, "startedAt", "completedAt", "sterileExpiryAt", "operatedBy")
+             VALUES ($1, 'Steam', 'Completed', $2, $2, $3, $4)`,
+            [instrument.id, completedAt, sterileExpiryAt, STAFF_ID],
+          ),
+        ),
+      );
+    await rawInsert('2026-08-01T10:00:00Z', '2026-08-02T10:00:00Z');
+    await rawInsert('2026-08-26T10:00:00Z', '2026-08-25T10:00:00Z'); // expired, but latest
+
+    const expired = await ctx.inTenant(() => cssdService.getSterility(instrument.id));
+    expect(expired.isSterile).toBe(false);
+    expect(expired.lastCompletedAt?.toISOString()).toBe('2026-08-26T10:00:00.000Z');
+    expect(expired.sterileExpiryAt?.toISOString()).toBe('2026-08-25T10:00:00.000Z');
+
+    // A fresh latest cycle flips it back to sterile.
+    await rawInsert('2026-08-27T10:00:00Z', '2026-09-01T10:00:00Z');
+    const sterile = await ctx.inTenant(() => cssdService.getSterility(instrument.id));
+    expect(sterile.isSterile).toBe(true);
+    expect(sterile.sterileExpiryAt?.toISOString()).toBe('2026-09-01T10:00:00.000Z');
   });
 
   it('derives operatedBy from the authenticated principal, ignoring spoofed values', async () => {

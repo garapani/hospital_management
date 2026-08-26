@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -78,17 +79,28 @@ export class CssdService {
     if (input.quantity !== undefined && (!Number.isFinite(input.quantity) || input.quantity < 0)) {
       throw new BadRequestException('quantity must be a non-negative number');
     }
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(CssdInstrument).save(
-        manager.getRepository(CssdInstrument).create({
-          code: input.code.trim(),
-          name: input.name.trim(),
-          category: input.category ?? null,
-          quantity: input.quantity ?? 0,
-          isActive: true,
-        }),
-      ),
-    );
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(CssdInstrument);
+      try {
+        return await repository.save(
+          repository.create({
+            code: input.code.trim(),
+            name: input.name.trim(),
+            category: input.category ?? null,
+            quantity: input.quantity ?? 0,
+            isActive: true,
+          }),
+        );
+      } catch (error) {
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint === 'UQ_cssd_instruments_code'
+        ) {
+          throw new ConflictException(`Instrument code ${input.code.trim()} is already in use`);
+        }
+        throw error;
+      }
+    });
   }
 
   async listInstruments(): Promise<CssdInstrument[]> {
@@ -140,6 +152,9 @@ export class CssdService {
       if (!instrument) {
         throw new NotFoundException(`CSSD instrument ${id} not found`);
       }
+      if (instrument.isActive) {
+        throw new ConflictException(`CSSD instrument ${id} is already active`);
+      }
       instrument.isActive = true;
       return repository.save(instrument);
     });
@@ -163,18 +178,76 @@ export class CssdService {
           `CSSD instrument ${input.instrumentId} is deactivated; cannot start a cycle for it`,
         );
       }
-      return manager.getRepository(CssdSterilizationCycle).save(
-        manager.getRepository(CssdSterilizationCycle).create({
-          instrumentId: input.instrumentId,
-          method: input.method,
-          status: 'InProgress',
-          startedAt: new Date(),
-          completedAt: null,
-          sterileExpiryAt: null,
-          operatedBy: this.resolveActor(input.operatedBy),
-          failureReason: null,
-        }),
+
+      const active = await manager.query(
+        `SELECT id FROM cssd_sterilization_cycles WHERE "instrumentId" = $1 AND status = 'InProgress'`,
+        [input.instrumentId],
       );
+      if (active.length > 0) {
+        throw new ConflictException(
+          `CSSD instrument ${input.instrumentId} already has an InProgress sterilization cycle`,
+        );
+      }
+
+      const repository = manager.getRepository(CssdSterilizationCycle);
+      try {
+        return await repository.save(
+          repository.create({
+            instrumentId: input.instrumentId,
+            method: input.method,
+            status: 'InProgress',
+            startedAt: new Date(),
+            completedAt: null,
+            sterileExpiryAt: null,
+            operatedBy: this.resolveActor(input.operatedBy),
+            failureReason: null,
+          }),
+        );
+      } catch (error) {
+        // Race-safety backstop for the pre-check above (partial unique index, migration 0078).
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint ===
+            'UQ_cssd_sterilization_cycles_active_instrument'
+        ) {
+          throw new ConflictException(
+            `CSSD instrument ${input.instrumentId} already has an InProgress sterilization cycle`,
+          );
+        }
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Current sterility of an instrument, derived from its latest Completed cycle: an instrument
+   * is sterile while `now < sterileExpiryAt` of the most recently completed cycle. This is the
+   * read half of the `sterileExpiryAt` write (code-review-findings-2026-08-25 cssd P3).
+   */
+  async getSterility(instrumentId: string): Promise<{
+    instrumentId: string;
+    isSterile: boolean;
+    lastCompletedAt: Date | null;
+    sterileExpiryAt: Date | null;
+  }> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const instrument = await manager.getRepository(CssdInstrument).findOne({
+        where: { id: instrumentId },
+      });
+      if (!instrument) {
+        throw new NotFoundException(`CSSD instrument ${instrumentId} not found`);
+      }
+      const latest = await manager.getRepository(CssdSterilizationCycle).findOne({
+        where: { instrumentId, status: 'Completed' },
+        order: { completedAt: 'DESC' },
+      });
+      const sterileExpiryAt = latest?.sterileExpiryAt ?? null;
+      return {
+        instrumentId,
+        isSterile: sterileExpiryAt !== null && sterileExpiryAt.getTime() > Date.now(),
+        lastCompletedAt: latest?.completedAt ?? null,
+        sterileExpiryAt,
+      };
     });
   }
 

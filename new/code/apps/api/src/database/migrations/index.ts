@@ -75,6 +75,7 @@ import { AddLabTestsCodeUnique3000000000074 } from './0074-add-lab-tests-code-un
 import { AddPharmacyDispensingsReversalColumns3000000000075 } from './0075-add-pharmacy-dispensings-reversal-columns.js';
 import { AddInventoryItemsCodeUniqueAndStockBalanceCheck3000000000076 } from './0076-add-inventory-items-code-unique-and-stock-balance-check.js';
 import { AddWardStockBatchDimension3000000000077 } from './0077-add-ward-stock-batch-dimension.js';
+import { AddCssdCodeUniqueAndCycleConstraints3000000000078 } from './0078-add-cssd-code-unique-and-cycle-constraints.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -164,4 +165,5 @@ export const TENANT_MIGRATIONS = [
   AddPharmacyDispensingsReversalColumns3000000000075,
   AddInventoryItemsCodeUniqueAndStockBalanceCheck3000000000076,
   AddWardStockBatchDimension3000000000077,
+  AddCssdCodeUniqueAndCycleConstraints3000000000078,
 ];

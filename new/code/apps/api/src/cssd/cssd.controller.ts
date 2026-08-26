@@ -46,6 +46,12 @@ export class CssdController {
     return this.cssdService.reactivateInstrument(id);
   }
 
+  @Get('instruments/:id/sterility')
+  @RequirePermission('cssd.read')
+  async getSterility(@Param('id') id: string) {
+    return this.cssdService.getSterility(id);
+  }
+
   // Sterilization cycles
   @Post('cycles')
   @RequirePermission('cssd.manage')
