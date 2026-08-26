@@ -345,6 +345,10 @@ export class InvoicesService {
     );
 
     invoice.subtotal = roundMoney(invoice.subtotal + unitPrice);
+    // taxPercent is hardcoded 0 for every auto-captured line above, so the line's taxable amount
+    // equals its unitPrice — without this, taxableAmount silently stayed 0 forever on every
+    // auto-generated invoice (code-review-findings-2026-08-25 P1).
+    invoice.taxableAmount = roundMoney(invoice.taxableAmount + unitPrice);
     invoice.totalAmount = roundMoney(invoice.subtotal - invoice.discountAmount + invoice.taxAmount);
     invoice.status =
       invoice.paidAmount >= invoice.totalAmount
@@ -464,7 +468,37 @@ export class InvoicesService {
         throw new ConflictException(`Invoice ${id} cannot be cancelled because it has recorded payments`);
       }
       invoice.status = 'Cancelled';
-      return repository.save(invoice);
+      const cancelled = await repository.save(invoice);
+
+      // Reverses exactly the revenue captureChargeForOrderItem posted for this invoice, no more:
+      // paidAmount === 0 is already guaranteed above, so no return/payment has touched this
+      // invoice, and every auto-captured line's totalAmount is exactly what was journaled for it
+      // (unitPrice, 0 tax). Manually-created lines (sourceOrderItemId null) never posted a journal
+      // in the first place, so they're excluded — reversing them would fabricate a debit/credit
+      // pair with no original entry. Without this, cancelling a charge-captured invoice left
+      // Patient AR and Patient Service Revenue permanently overstated (code-review-findings-2026-
+      // 08-25 P1). Fails loud, like recordPayment/createReturn — a cancellation is an explicit
+      // user-initiated financial action, not a best-effort clinical-completion side effect.
+      const capturedRows = await manager.query(
+        `SELECT COALESCE(SUM("totalAmount"), 0) AS total FROM invoice_items
+         WHERE "invoiceId" = $1 AND "sourceOrderItemId" IS NOT NULL`,
+        [id],
+      );
+      const capturedAmount = roundMoney(Number(capturedRows[0].total));
+      if (capturedAmount > 0) {
+        await this.accountingService.postAutoJournal(manager, {
+          sourceType: 'InvoiceCancellation',
+          sourceId: id,
+          entryDate: today(),
+          narration: `Reversal of charge-captured revenue for cancelled invoice ${id}`,
+          lines: [
+            { accountId: LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE, debit: capturedAmount },
+            { accountId: LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE, credit: capturedAmount },
+          ],
+        });
+      }
+
+      return cancelled;
     });
   }
 
@@ -581,6 +615,13 @@ export class InvoicesService {
         }),
       );
 
+      // subtotal (and taxableAmount, since captured lines carry 0 tax) must move with
+      // totalAmount here: captureChargeForOrderItem recomputes totalAmount from subtotal on the
+      // next completion, so if a return only touched totalAmount, that recompute would silently
+      // re-inflate it back up by the amount just returned (code-review-findings-2026-08-25 P1).
+      // A full per-line GST-split reversal (cgst/sgst) is a separate, larger gap — not fixed here.
+      invoice.subtotal = roundMoney(invoice.subtotal - input.amount);
+      invoice.taxableAmount = roundMoney(invoice.taxableAmount - input.amount);
       invoice.totalAmount = roundMoney(invoice.totalAmount - input.amount);
       invoice.paidAmount = roundMoney(invoice.paidAmount - input.amount);
       invoice.status = invoice.paidAmount >= invoice.totalAmount ? 'Paid' : 'PartiallyPaid';

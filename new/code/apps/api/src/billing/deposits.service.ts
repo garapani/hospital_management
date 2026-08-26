@@ -103,7 +103,11 @@ export class DepositsService {
     }
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(Deposit);
-      const deposit = await repository.findOne({ where: { id } });
+      // Row-locked like recordPayment's invoice lookup: without this, two concurrent refunds (or
+      // a refund racing a Deposit-sourced payment, which does lock) can both read the same
+      // balance and each subtract from it, paying out more cash than the deposit ever held
+      // (code-review-findings-2026-08-25 P1).
+      const deposit = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!deposit) {
         throw new NotFoundException(`Deposit ${id} not found`);
       }

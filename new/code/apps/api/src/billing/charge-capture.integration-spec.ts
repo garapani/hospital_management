@@ -76,6 +76,15 @@ describe('Charge capture (integration) — order-item completion auto-charges th
     );
   }
 
+  // Some paths (e.g. cancel()'s reversal journal) need a resolvable actor — inTenant() above
+  // deliberately has no accountId, matching a non-HTTP caller.
+  function withActor<T>(work: () => Promise<T>): Promise<T> {
+    return tenantContextService.run(
+      { tenantId: ctx.tenantId, accountId: STAFF_ID, correlationId: 'charge-capture-test' },
+      work,
+    );
+  }
+
   async function makePatient(phoneNumber: string) {
     return inTenant(() =>
       patientsService.create({
@@ -168,6 +177,7 @@ describe('Charge capture (integration) — order-item completion auto-charges th
     expect(invoices.meta.total).toBe(1);
     const invoice = invoices.data[0];
     expect(invoice.subtotal).toBe(250);
+    expect(invoice.taxableAmount).toBe(250);
     expect(invoice.totalAmount).toBe(250);
     expect(invoice.status).toBe('Unpaid');
 
@@ -311,6 +321,73 @@ describe('Charge capture (integration) — order-item completion auto-charges th
     expect(journal!.status).toBe('Posted');
     expect(journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE)?.debit).toBe(300);
     expect(journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE)?.credit).toBe(300);
+  });
+
+  it('a charge captured after a return does not silently re-inflate totalAmount back up', async () => {
+    // Regression test for the P1 fix: createReturn now moves subtotal/taxableAmount in lockstep
+    // with totalAmount, specifically so a later captureChargeForOrderItem — which recomputes
+    // totalAmount from subtotal — can't erase the return's effect. Uses a partial payment/return
+    // so the invoice stays PartiallyPaid (open) throughout, and the second charge lands on the
+    // SAME invoice rather than opening a new one (a fully Paid invoice is no longer "open").
+    const patient = await makePatient('5560000008');
+    const testA = await makePricedLabTest('Return Then Capture A', 'RTC-A', 300);
+    const testB = await makePricedLabTest('Return Then Capture B', 'RTC-B', 50);
+
+    await completeLabOrderItem(patient.id, testA);
+    const invoiceAfterFirstCharge = (await inTenant(() => invoicesService.list({ patientId: patient.id }))).data[0];
+    expect(invoiceAfterFirstCharge.totalAmount).toBe(300);
+
+    await inTenant(() =>
+      invoicesService.recordPayment(invoiceAfterFirstCharge.id, { amount: 100, paymentMode: 'Cash', receivedBy: STAFF_ID }),
+    );
+    await inTenant(() =>
+      invoicesService.createReturn(invoiceAfterFirstCharge.id, { amount: 100, reason: 'Partial return', returnedBy: STAFF_ID }),
+    );
+    const invoiceAfterReturn = await inTenant(() => invoicesService.findOne(invoiceAfterFirstCharge.id));
+    expect(invoiceAfterReturn.status).toBe('PartiallyPaid'); // still open — the case the bug needs
+    expect(invoiceAfterReturn.totalAmount).toBe(200);
+    expect(invoiceAfterReturn.subtotal).toBe(200);
+
+    await completeLabOrderItem(patient.id, testB);
+    const invoiceAfterSecondCharge = await inTenant(() => invoicesService.findOne(invoiceAfterFirstCharge.id));
+    // Before the fix: totalAmount recomputed from an untouched subtotal (300) + the new 50 line
+    // would have come out to 350 — silently undoing the return. It must reflect only the
+    // post-return balance plus the new charge.
+    expect(invoiceAfterSecondCharge.totalAmount).toBe(250);
+    expect(invoiceAfterSecondCharge.subtotal).toBe(250);
+  });
+
+  it('cancelling a charge-captured invoice reverses the Patient AR / Patient Service Revenue journal', async () => {
+    const patient = await makePatient('5560000009');
+    const test = await makePricedLabTest('Cancel Reversal', 'CANCEL-REV', 175);
+    await completeLabOrderItem(patient.id, test);
+
+    const invoice = (await inTenant(() => invoicesService.list({ patientId: patient.id }))).data[0];
+    const items = await invoiceItemsFor(invoice.id);
+    const originalJournal = await journalForInvoiceItem(items[0].id);
+    expect(originalJournal).not.toBeNull();
+
+    await withActor(() => invoicesService.cancel(invoice.id));
+
+    const reversalJournal = await inTenant(() =>
+      tenantConnection.runInTenantSchema(async (manager) => {
+        const journal = await manager
+          .getRepository(JournalEntry)
+          .findOne({ where: { sourceType: 'InvoiceCancellation', sourceId: invoice.id } });
+        if (!journal) return null;
+        const lines = await manager.getRepository(JournalLine).find({ where: { journalId: journal.id } });
+        return { ...journal, lines };
+      }),
+    );
+
+    expect(reversalJournal).not.toBeNull();
+    expect(reversalJournal!.status).toBe('Posted');
+    expect(
+      reversalJournal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE)?.debit,
+    ).toBe(175);
+    expect(
+      reversalJournal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE)?.credit,
+    ).toBe(175);
   });
 
   it('best-effort: a revenue-posting failure does not roll back the clinical verification', async () => {
