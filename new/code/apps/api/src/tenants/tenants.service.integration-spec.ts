@@ -384,34 +384,40 @@ describe('TenantsService (integration)', () => {
       expect(survivingSubscription.tenantId).toBe(hospitalId);
     });
 
-    it('a failure partway through the drop leaves the registry row intact, blocking hospitalId reuse', async () => {
+    it('a DROP ROLE failure no longer rolls back the purge (the role drops post-commit, best-effort)', async () => {
       const hospitalId = 'test_tenant_svc_purge_fail';
       const roleName = `tenant_${hospitalId}`;
       await tenantsService.provisionTenant({ hospitalId, hospitalName: 'Purge Fail Hospital' });
       await tenantsService.archiveTenant(hospitalId);
 
       // Forces a real DROP ROLE failure (role owns an object outside its own schema, so Postgres
-      // refuses to drop it) so the transaction rolls back partway through — proving the fix's
-      // ordering/atomicity, not just that a BadRequestException short-circuits before any DDL runs.
+      // refuses to drop it). With the fix, DROP ROLE runs AFTER the purge transaction commits,
+      // best-effort — a lingering session or ownership block must never roll back the whole purge
+      // (that was the P3: every retry hit the same block with the purge making no progress).
       await ctx.dataSource.query(`CREATE TABLE public.purge_fail_dummy (id int)`);
       await ctx.dataSource.query(`ALTER TABLE public.purge_fail_dummy OWNER TO "${roleName}"`);
 
       try {
-        await expect(tenantsService.purgeTenant(hospitalId, hospitalId)).rejects.toThrow();
+        // The purge itself succeeds — schema dropped, registry row purged — despite the blocked
+        // role drop.
+        const result = await tenantsService.purgeTenant(hospitalId, hospitalId);
+        expect(result.purged).toBe(hospitalId);
 
         const registryRow = await ctx.dataSource.query(
           `SELECT status FROM tenants WHERE "hospitalId" = $1`,
           [hospitalId],
         );
-        expect(registryRow[0].status).toBe('archived');
+        expect(registryRow[0].status).toBe('purged');
 
         const [schemaRow] = await ctx.dataSource.query(
           `SELECT 1 FROM information_schema.schemata WHERE schema_name = $1`,
           [`tenant_${hospitalId}`],
         );
-        expect(schemaRow).toBeDefined();
+        expect(schemaRow).toBeUndefined();
       } finally {
+        // Releasing the dummy table's ownership lets the leftover role be dropped too.
         await ctx.dataSource.query(`DROP TABLE IF EXISTS public.purge_fail_dummy`);
+        await ctx.dataSource.query(`DROP ROLE IF EXISTS "${roleName}"`).catch(() => undefined);
       }
     });
   });

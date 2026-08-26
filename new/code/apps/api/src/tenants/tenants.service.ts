@@ -121,6 +121,15 @@ export class TenantsService {
         .where('role.id IN (:...ids)', { ids: input.roleIds })
         .getMany();
       this.assertNoCrossTenantRoles(roles);
+      // A deactivated catalog role must not be enabled for a fresh tenant — it's not assignable
+      // to accounts anyway, so enabling it would leave a dangling tenant_roles row
+      // (code-review-findings-2026-08-25 tenants P2).
+      const deactivated = roles.filter((role) => !role.isActive);
+      if (deactivated.length > 0) {
+        throw new BadRequestException(
+          `Role(s) ${deactivated.map((r) => r.name).join(', ')} are deactivated and cannot be enabled`,
+        );
+      }
     } else {
       // Package-driven defaults: when the platform console doesn't hand-pick roles, enable the
       // catalog roles the package names (never Super Admin — cross-tenant ops role). Individual
@@ -133,18 +142,22 @@ export class TenantsService {
     // department-seed/bootstrap-admin both run in their OWN tenant-schema transaction via
     // runInTenantSchema (SET LOCAL ROLE/search_path), which can't be nested inside this
     // platform-schema transaction. So instead: on any failure in this block, best-effort delete
-    // the registry row we just inserted (tenant_roles cascades away with it) before rethrowing.
-    // That keeps `hospitalId` immediately retryable — the alternative (leaving the row behind)
-    // is what previously forced archive+purge just to retry a transient failure. The schema/role
-    // created above are deliberately left behind: provisionTenantSchema's CREATE SCHEMA IF NOT
-    // EXISTS + idempotent migration runner make re-running it on retry a safe no-op/resume.
+    // the registry row we just inserted (tenant_roles cascades away with it) AND drop the tenant
+    // schema/role this call created, before rethrowing. That keeps `hospitalId` immediately
+    // retryable — the alternative (leaving the row behind, or leaving the half-provisioned
+    // schema with its bootstrap admin) is what previously forced archive+purge — or manual DB
+    // surgery — just to retry a transient failure (code-review-findings-2026-08-25 tenants P2:
+    // a failure after the bootstrap-admin insert left an account the retry's createBootstrapAdmin
+    // would collide with, because the schema was resumable but the admin insert wasn't).
     // Tracks whether THIS call is the one that inserted the registry row — the existence check
     // above is a plain SELECT, not a lock, so two concurrent provisionTenant() calls for the same
     // hospitalId can both pass it before either commits its insert. Without this flag, the loser's
     // catch block below would delete `{ hospitalId }` unconditionally — which, since hospitalId is
     // the PK, can only be the WINNER's freshly inserted (legitimate) tenant, deleting a hospital
     // that successfully provisioned out from under it. Cleanup is only safe, and only needed, when
-    // this call's own insert is what exists.
+    // this call's own insert is what exists. The schema/role belong to this provisioning attempt
+    // (a successful provisioning would have committed the registry row and short-circuited the
+    // early existence check), so dropping them here can never destroy a live tenant's data.
     let ownInsertSucceeded = false;
     let tenant: Tenant;
     let adminCredentials: AdminCredentials;
@@ -219,10 +232,16 @@ export class TenantsService {
       });
     } catch (err) {
       if (ownInsertSucceeded) {
+        // Best-effort full cleanup of everything this call created: the registry row (tenant_roles
+        // cascades), then the tenant schema and role — so a retry starts from a clean slate (the
+        // old behavior left the schema's bootstrap admin behind and the retry collided with it).
+        const tenantName = `tenant_${input.hospitalId}`;
         await this.dataSource
           .getRepository(Tenant)
           .delete({ hospitalId: input.hospitalId })
           .catch(() => undefined);
+        await this.dataSource.query(`DROP SCHEMA IF EXISTS "${tenantName}" CASCADE`).catch(() => undefined);
+        await this.dataSource.query(`DROP ROLE IF EXISTS "${tenantName}"`).catch(() => undefined);
       } else if ((err as { code?: string }).code === '23505') {
         // The losing side of the race described above: the winner's row is untouched, so this is
         // a real conflict, not an infrastructure fault — surfaced the same way the early
@@ -315,6 +334,17 @@ export class TenantsService {
     // Cross-tenant roles (Super Admin) are platform-only — a customer tenant must never hold
     // them, or it could carry system-admin permissions (tenant management) in staff JWTs.
     this.assertNoCrossTenantRoles(catalog.filter((role) => roleIds.includes(role.id)));
+
+    // Deactivated catalog roles can't be enabled — they're not assignable to accounts, so an
+    // enabled row would be a dangling reference (code-review-findings-2026-08-25 tenants P2).
+    const requestedDeactivated = catalog.filter(
+      (role) => roleIds.includes(role.id) && !role.isActive,
+    );
+    if (requestedDeactivated.length > 0) {
+      throw new BadRequestException(
+        `Role(s) ${requestedDeactivated.map((r) => r.name).join(', ')} are deactivated and cannot be enabled`,
+      );
+    }
 
     const currentlyEnabled: { roleId: string }[] = await this.dataSource.query(
       `SELECT "roleId" FROM tenant_roles WHERE "tenantId" = $1`,
@@ -454,8 +484,22 @@ export class TenantsService {
     return tenant;
   }
 
+  /**
+   * A purged tenant's schema/role are DROPPED — restoring one to 'active' would create a broken
+   * active state (every login fails on the missing schema), so every status mutator refuses it
+   * (code-review-findings-2026-08-25 tenants P2).
+   */
+  private assertNotPurged(tenant: Tenant, actionLabel: string): void {
+    if (tenant.status === 'purged') {
+      throw new BadRequestException(
+        `Tenant ${tenant.hospitalId} is purged and cannot ${actionLabel} — provision a new tenant instead`,
+      );
+    }
+  }
+
   async suspendTenant(hospitalId: string): Promise<Tenant> {
     const tenant = await this.assertValidHospitalTenant(hospitalId, undefined, 'be suspended');
+    this.assertNotPurged(tenant, 'be suspended');
     // Archived is a distinct state machine (see archiveTenant/restoreTenant) — suspending an
     // archived tenant in place would flip status to 'suspended' while leaving archivedAt stale,
     // since only restoreTenant knows to clear it. Restore first, then suspend if still needed.
@@ -474,6 +518,7 @@ export class TenantsService {
 
   async reactivateTenant(hospitalId: string): Promise<Tenant> {
     const tenant = await this.assertValidHospitalTenant(hospitalId, undefined, 'be reactivated');
+    this.assertNotPurged(tenant, 'be reactivated');
     // Archived tenants go through restoreTenant instead, which clears archivedAt correctly —
     // reactivateTenant only sets activatedAt, so allowing it here would leave archivedAt stale
     // on an otherwise-active tenant.
@@ -496,8 +541,10 @@ export class TenantsService {
     if (!pkg || pkg.defaultRoleNames.length === 0) {
       return [];
     }
+    // Only ACTIVE catalog roles get auto-enabled — a role deactivated in the catalog must not
+    // be silently re-enabled by a package switch (code-review-findings-2026-08-25 tenants P2).
     return this.dataSource.getRepository(Role).find({
-      where: { name: In(pkg.defaultRoleNames) },
+      where: { name: In(pkg.defaultRoleNames), isActive: true },
     });
   }
 
@@ -533,6 +580,7 @@ export class TenantsService {
    */
   async archiveTenant(hospitalId: string): Promise<Tenant> {
     const tenant = await this.assertValidHospitalTenant(hospitalId, undefined, 'be archived');
+    this.assertNotPurged(tenant, 'be archived');
     if (tenant.status === 'archived') {
       return tenant;
     }
@@ -544,6 +592,7 @@ export class TenantsService {
   /** Reverses an archive: back to active, cleared archive timestamp. */
   async restoreTenant(hospitalId: string): Promise<Tenant> {
     const tenant = await this.assertValidHospitalTenant(hospitalId, undefined, 'be restored');
+    this.assertNotPurged(tenant, 'be restored');
     if (tenant.status === 'active') {
       return tenant;
     }
@@ -592,10 +641,16 @@ export class TenantsService {
     // The branding row is looked up and soft-removed *inside* this transaction (not fetched
     // beforehand) so there's no stale-read window between reading it and acting on it, and so a
     // rollback (e.g. DROP SCHEMA failing on a lingering lock) correctly leaves it untouched too.
+    // DROP ROLE is deliberately NOT here: a lingering session connected as this tenant's role
+    // blocks DROP ROLE indefinitely, and inside the transaction that would roll back the whole
+    // purge (schema recreated, registry row still archived) — a no-progress loop on every retry.
+    // It runs after commit instead, best-effort like the logo removal: a leftover role is
+    // harmless (provisionTenantSchema's CREATE ROLE is guarded by an existence check) and can be
+    // dropped later, whereas a blocked purge would keep the tenant stuck
+    // (code-review-findings-2026-08-25 tenants P3).
     let logoObjectKeyToRemove: string | null = null;
     await this.dataSource.transaction(async (manager) => {
       await manager.query(`DROP SCHEMA IF EXISTS "${tenantName}" CASCADE`);
-      await manager.query(`DROP ROLE IF EXISTS "${tenantName}"`);
       tenant.status = 'purged';
       tenant.purgedAt = new Date();
       await manager.getRepository(Tenant).save(tenant);
@@ -614,11 +669,12 @@ export class TenantsService {
       }
     });
 
-    // Best-effort logo removal from object storage, deliberately AFTER the transaction commits
-    // (not transactional with Postgres either way, but ordered so a mid-transaction failure —
-    // e.g. DROP SCHEMA failing on a lingering lock — can never leave the logo file deleted while
-    // the DB rolls back to still-archived-with-branding-intact; that combination would have left
-    // a broken image with no clean way to retry).
+    // Best-effort, AFTER the transaction commits (see the comments above): the tenant role drop
+    // (which a lingering session can block — must not roll the purge back) and the logo removal
+    // from object storage (not transactional with Postgres either way; ordered after commit so a
+    // mid-transaction failure can never leave the logo file deleted while the DB rolls back to
+    // still-archived-with-branding-intact).
+    await this.dataSource.query(`DROP ROLE IF EXISTS "${tenantName}"`).catch(() => undefined);
     if (logoObjectKeyToRemove) {
       await this.objectStorage.removeObject(hospitalId, logoObjectKeyToRemove).catch(() => undefined);
     }

@@ -1,4 +1,4 @@
-import { IsArray, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class ProvisionTenantDto {
   @IsString()
@@ -39,13 +39,15 @@ export class ProvisionTenantDto {
   @IsString()
   createdBy?: string;
 
+  // UUID-typed columns — plain strings would pass validation and turn a bad FK into a raw 500
+  // (code-review-findings-2026-08-25 tenants P3).
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @IsUUID('4', { each: true })
   roleIds?: string[];
 
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @IsUUID('4', { each: true })
   departmentCatalogIds?: string[];
 }
