@@ -321,10 +321,17 @@ export class InvoicesService {
       return { captured: false, reason: 'unpriced' };
     }
 
+    // Row-locked like every other invoice mutator (recordPayment/createReturn/cancel): without
+    // this, a concurrent recordPayment/createReturn/cancel committing between this read and the
+    // save() below leaves this method's paidAmount/status computed from a stale, pre-commit
+    // paidAmount (code-review-findings-2026-08-25 P2). The advisory lock above only serializes
+    // concurrent charge-captures of the same patient (the open-invoice-creation race); it can't
+    // protect an already-existing invoice's row against a concurrent payment/return/cancel.
     const invoiceRepository = manager.getRepository(Invoice);
     const openInvoice = await invoiceRepository.findOne({
       where: { patientId, status: In(['Unpaid', 'PartiallyPaid']) },
       order: { createdAt: 'DESC' },
+      lock: { mode: 'pessimistic_write' },
     });
     const invoice = openInvoice ?? (await this.createCaptureInvoice(manager, patientId, orderItem.completedBy));
 

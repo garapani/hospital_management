@@ -27,13 +27,13 @@ export class InvoicesController {
   }
 
   @Get()
-  @RequirePermission('billing.manage')
+  @RequirePermission('billing.read')
   async list(@Query() query: ListInvoicesDto) {
     return this.invoicesService.list(query);
   }
 
   @Get(':id')
-  @RequirePermission('billing.manage')
+  @RequirePermission('billing.read')
   async findOne(@Param('id') id: string) {
     return this.invoicesService.findOne(id);
   }

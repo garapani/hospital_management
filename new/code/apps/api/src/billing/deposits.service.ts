@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { Deposit } from './entities/deposit.entity.js';
@@ -7,6 +7,7 @@ import { roundMoney } from './money.util.js';
 import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 import { AccountingService } from '../accounting/accounting.service.js';
 import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
+import { JournalEntry, JournalLine } from '../accounting/entities/journal-entry.entity.js';
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -111,6 +112,35 @@ export class DepositsService {
       if (!deposit) {
         throw new NotFoundException(`Deposit ${id} not found`);
       }
+
+      // Idempotency: Deposit has no per-refund identity (only one refundedBy/refundedAt pair
+      // despite the method allowing repeated partial refunds), so a retried request is
+      // indistinguishable from a deliberate second refund except by amount. Checked here, BEFORE
+      // any mutation, by mirroring AccountingService.postAutoJournal's own (sourceType, sourceId)
+      // dedup (accounting.service.ts) rather than relying on it after the fact: previously the
+      // balance was decremented unconditionally and only the journal call afterward detected a
+      // same-amount retry (as a safe no-op) — so a double-submitted refund moved real balance
+      // twice while the ledger only ever showed it once (code-review-findings-2026-08-25 P2). A
+      // different-amount collision against an existing refund still fails loud, now before any
+      // mutation instead of via a rollback triggered later by the journal call.
+      const existingJournal = await manager.getRepository(JournalEntry).findOne({
+        where: { sourceType: 'DepositRefund', sourceId: id },
+      });
+      if (existingJournal) {
+        const existingLines = await manager
+          .getRepository(JournalLine)
+          .find({ where: { journalId: existingJournal.id } });
+        const isSameAmountRetry = existingLines.some(
+          (line) =>
+            line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_DEPOSITS_PAYABLE &&
+            roundMoney(line.debit) === roundMoney(input.amount),
+        );
+        if (isSameAmountRetry) {
+          return deposit;
+        }
+        throw new ConflictException(`Deposit ${id} already has a refund recorded with a different amount`);
+      }
+
       if (input.amount > deposit.balance) {
         throw new BadRequestException(`Refund amount ${input.amount} exceeds deposit balance ${deposit.balance}`);
       }
@@ -120,11 +150,9 @@ export class DepositsService {
       const saved = await repository.save(deposit);
 
       // sourceId is the deposit id, not a per-refund id: Deposit has no separate refund-event
-      // record (only one refundedBy/refundedAt pair). A second, same-amount refund against the
-      // same deposit is treated as a safe retry (postAutoJournal no-ops); a second, DIFFERENT-
-      // amount refund is a genuine conflict on a reused source key and fails loud
-      // (ConflictException) — surfacing that pre-existing data-model gap rather than silently
-      // mis-booking it. Documented out-of-scope limitation; see Development-Standards.md.
+      // record. By this point the pre-check above has already ruled out both a same-amount retry
+      // (returned early) and a different-amount collision (thrown) against an existing refund
+      // journal for this deposit, so this call always posts a genuinely new entry.
       await this.accountingService.postAutoJournal(manager, {
         sourceType: 'DepositRefund',
         sourceId: id,

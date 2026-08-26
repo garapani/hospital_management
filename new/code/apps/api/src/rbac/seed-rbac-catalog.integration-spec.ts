@@ -311,6 +311,28 @@ describe('seedRbacCatalog (integration)', () => {
     ]);
   });
 
+  // Regression test for code-review-findings-2026-08-25.md's billing P2: billing.manage was the
+  // only billing permission, so front desk could issue refunds and auditors couldn't view
+  // invoices. billing.read now exists separately, additionally granted to Auditor/Compliance.
+  it('maps billing.read to the billing.manage roles plus Auditor/Compliance', async () => {
+    await seedRbacCatalog(ctx.dataSource);
+
+    const permission = await ctx.dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'billing.read' },
+    });
+    const mappings = await ctx.dataSource.getRepository(RolePermission).find({
+      where: { permissionId: permission.id },
+    });
+    const roles = await ctx.dataSource.getRepository(Role).find({ where: { id: In(mappings.map((m) => m.roleId)) } });
+    expect(roles.map((r) => r.name).sort()).toEqual([
+      'Auditor/Compliance',
+      'Billing/Accounts Staff',
+      'Hospital Admin',
+      'Receptionist / Front Desk',
+      'Super Admin',
+    ]);
+  });
+
   // Regression test for the P1 in code-review-findings-2026-08-25.md: Hospital Admin's seed was
   // missing the Lab/Radiology workflow permissions, all Pharmacy permissions, and several
   // Inventory permissions, despite its description claiming "full access within a single hospital

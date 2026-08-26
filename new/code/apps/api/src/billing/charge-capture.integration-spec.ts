@@ -390,6 +390,79 @@ describe('Charge capture (integration) — order-item completion auto-charges th
     ).toBe(175);
   });
 
+  // Regression test for code-review-findings-2026-08-25.md's billing P2: captureChargeForOrderItem
+  // read the open invoice with no row lock, unlike recordPayment/createReturn/cancel. A concurrent
+  // recordPayment could commit paidAmount between that read and captureChargeForOrderItem's later
+  // save() — which writes the FULL invoice row, including its stale in-memory paidAmount — silently
+  // reverting the payment. Proven here by holding captureChargeForOrderItem's transaction open past
+  // its own commit and asserting a concurrent recordPayment cannot complete until it does: with the
+  // row lock in place, recordPayment's own SELECT ... FOR UPDATE on the same invoice row must block
+  // for the duration, which Postgres guarantees deterministically (not a timing-dependent flake).
+  it('row-locks the invoice so a concurrent recordPayment cannot complete until charge capture commits', async () => {
+    function sleep(ms: number): Promise<void> {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    const patient = await makePatient('5560000011');
+    const existingTest = await makePricedLabTest('Lock Existing', 'LOCK-EXIST', 200);
+    await completeLabOrderItem(patient.id, existingTest);
+    const invoice = (await inTenant(() => invoicesService.list({ patientId: patient.id }))).data[0];
+
+    // A second order item, driven up to a resulted requisition but never verified — so its charge
+    // is captured only by the manual call below, never by the subscriber, giving full control over
+    // timing (same technique the "idempotent" test above uses for its manual second call).
+    const newTest = await makePricedLabTest('Lock New Charge', 'LOCK-NEW', 100);
+    const order = await inTenant(() =>
+      ordersService.create({ patientId: patient.id, orderedBy: DOCTOR_ID, items: [{ itemType: 'Lab', itemDescription: 'CBC' }] }),
+    );
+    const orderItem = order.items[0];
+    const requisition = await inTenant(() =>
+      labWorkflowService.createRequisition({ orderItemId: orderItem.id, testId: newTest.id, specimenType: 'Blood' }),
+    );
+    await inTenant(() => labWorkflowService.collectSample(requisition.id, STAFF_ID));
+    const component = await inTenant(() => labCatalogService.listComponentsByTest(newTest.id));
+    await inTenant(() =>
+      labWorkflowService.enterResult(requisition.id, { componentId: component[0].id, value: '5.2', enteredBy: STAFF_ID }),
+    );
+
+    let captureStarted = false;
+    let captureCommitted = false;
+    const capturePromise = inTenant(() =>
+      tenantConnection.runInTenantSchema(async (manager) => {
+        captureStarted = true;
+        const result = await invoicesService.captureChargeForOrderItem(manager, {
+          id: orderItem.id,
+          orderId: orderItem.orderId,
+          itemType: 'Lab',
+          itemDescription: 'CBC',
+          completedBy: STAFF_ID,
+        });
+        await sleep(500); // hold the row lock open well past the SELECT ... FOR UPDATE
+        captureCommitted = true;
+        return result;
+      }),
+    );
+
+    await sleep(300); // let charge capture acquire its lock first
+    expect(captureStarted).toBe(true);
+    const payment = await inTenant(() =>
+      invoicesService.recordPayment(invoice.id, { amount: 50, paymentMode: 'Cash', receivedBy: STAFF_ID }),
+    );
+
+    // recordPayment's own row lock on the same invoice must have blocked it from completing until
+    // captureChargeForOrderItem's transaction committed and released the row.
+    expect(captureCommitted).toBe(true);
+    expect(payment.amount).toBe(50);
+
+    const captureResult = await capturePromise;
+    expect(captureResult.captured).toBe(true);
+
+    const finalInvoice = await inTenant(() => invoicesService.findOne(invoice.id));
+    expect(finalInvoice.subtotal).toBe(300);
+    expect(finalInvoice.paidAmount).toBe(50);
+    expect(finalInvoice.status).toBe('PartiallyPaid');
+  });
+
   it('best-effort: a revenue-posting failure does not roll back the clinical verification', async () => {
     // Simulates a ledger misconfiguration (the documented failure mode) by deactivating the
     // revenue account captureChargeForOrderItem posts to. Restored in finally so it doesn't leak

@@ -17,7 +17,7 @@ export class DepositsController {
   }
 
   @Get()
-  @RequirePermission('billing.manage')
+  @RequirePermission('billing.read')
   async list(@Query() query: ListDepositsDto) {
     return this.depositsService.list(query);
   }

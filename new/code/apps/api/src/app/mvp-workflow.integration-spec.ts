@@ -35,6 +35,7 @@ describe('MVP end-to-end workflow (integration)', () => {
     'order.manage',
     'order.read',
     'billing.manage',
+    'billing.read',
     'lab.catalog.manage',
     'lab.read',
     'lab.requisition.create',

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DepositsService } from './deposits.service.js';
+import { Deposit } from './entities/deposit.entity.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
@@ -215,18 +216,57 @@ describe('DepositsService (integration)', () => {
       expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.CASH_AND_BANK)?.credit).toBe(2000);
     });
 
-    it('fails loud on a second, different-amount refund against the same deposit (no per-refund identity)', async () => {
+    it('fails loud posting a journal directly for a different amount than an existing refund journal', async () => {
       const patient = await makePatient(ctx, '6660000022');
       const deposit = await ctx.inTenant(() =>
         depositsService.create({ patientId: patient.id, amount: 5000, receivedBy: STAFF_ID }),
       );
       await ctx.inTenant(() => depositsService.refund(deposit.id, { amount: 1000, refundedBy: STAFF_ID }));
 
-      // deposits.service.ts documents this: DepositsService.refund itself succeeds (the balance
-      // update has no idempotency concept), but the SECOND refund's ledger posting — keyed on the
-      // deposit id, since there is no per-refund identity — collides with the first refund's
-      // journal and fails loud rather than silently mis-booking it.
+      // AccountingService.postAutoJournal's own (sourceType, sourceId) dedup: a directly-posted
+      // journal reusing this deposit's source key with different lines than what's already there
+      // is a conflict, not a retry — fails loud rather than silently mis-booking it.
       await expect(postRefundJournalDirectly(deposit.id, 1500)).rejects.toThrow(ConflictException);
+    });
+
+    // Regression tests for code-review-findings-2026-08-25.md's billing P2: a repeated
+    // same-amount refund() call used to decrement balance a second time for real, while the
+    // ledger posting silently no-op'd — so the deposit's balance and the general ledger
+    // disagreed. refund() itself must now be idempotent, not just its ledger posting.
+    it('treats a repeated same-amount refund() call as a safe no-op, not a second decrement', async () => {
+      const patient = await makePatient(ctx, '6660000023');
+      const deposit = await ctx.inTenant(() =>
+        depositsService.create({ patientId: patient.id, amount: 5000, receivedBy: STAFF_ID }),
+      );
+      const first = await ctx.inTenant(() =>
+        depositsService.refund(deposit.id, { amount: 2000, refundedBy: STAFF_ID }),
+      );
+      expect(first.balance).toBe(3000);
+
+      const retried = await ctx.inTenant(() =>
+        depositsService.refund(deposit.id, { amount: 2000, refundedBy: STAFF_ID }),
+      );
+      expect(retried.balance).toBe(3000);
+
+      const journal = await postRefundJournalDirectly(deposit.id, 2000);
+      expect(journal.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_DEPOSITS_PAYABLE)?.debit).toBe(2000);
+    });
+
+    it('rejects a second refund() call for a different amount against the same deposit before mutating balance', async () => {
+      const patient = await makePatient(ctx, '6660000024');
+      const deposit = await ctx.inTenant(() =>
+        depositsService.create({ patientId: patient.id, amount: 5000, receivedBy: STAFF_ID }),
+      );
+      await ctx.inTenant(() => depositsService.refund(deposit.id, { amount: 1000, refundedBy: STAFF_ID }));
+
+      await expect(
+        ctx.inTenant(() => depositsService.refund(deposit.id, { amount: 1500, refundedBy: STAFF_ID })),
+      ).rejects.toThrow(ConflictException);
+
+      const reloaded = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) => manager.getRepository(Deposit).findOneOrFail({ where: { id: deposit.id } })),
+      );
+      expect(reloaded.balance).toBe(4000);
     });
   });
 

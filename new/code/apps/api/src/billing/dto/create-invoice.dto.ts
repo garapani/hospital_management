@@ -4,6 +4,8 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
 
@@ -24,10 +26,13 @@ export class CreateInvoiceItemDto {
 
   @IsOptional()
   @IsNumber()
+  @Min(0)
   discountAmount?: number;
 
   @IsOptional()
   @IsNumber()
+  @Min(0)
+  @Max(100)
   taxPercent?: number;
 
   @IsOptional()

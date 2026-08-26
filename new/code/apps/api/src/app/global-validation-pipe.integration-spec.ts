@@ -30,6 +30,7 @@ describe('Global ValidationPipe (integration)', () => {
         'lab.catalog.manage',
         'reporting.read',
         'billing.manage',
+        'billing.read',
         'maternity.manage',
         'inventory.catalog.manage',
         'lab.read',
