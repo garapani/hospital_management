@@ -79,9 +79,9 @@ the root `CLAUDE.md`.
 - [x] **P3** — A future `administeredDate` is accepted. (`vaccination.service.ts:50-52`) — **Fixed 2026-08-26:** `record()` now rejects an `administeredDate` after today (plain ISO-string comparison, safe since the field is a validated `YYYY-MM-DD` date).
 
 ### ot
-- [ ] **P2** — No OT-room double-booking check at all — no conflict query, no unique index, no duration model. (`ot/ot.service.ts:43-93`)
-- [ ] **P2** — `start/complete/cancelSurgery` accept and discard an actor parameter — only `scheduledBy` is ever recorded. (`ot.service.ts:122,139,156`)
-- [ ] **P3** — No cancellation reason and no post-op notes capture. (`ot.service.ts:156-169`)
+- [x] **P2** — No OT-room double-booking check at all — no conflict query, no unique index, no duration model. (`ot/ot.service.ts:43-93`) — **Partially fixed 2026-08-26:** added the two conflict checks this data model can actually support without a duration/end-time field — an exact-slot check (`scheduleSurgery` rejects a second surgery in the same room at the exact same `scheduledAt`, mirroring the appointments doctor-slot pattern) and a true-concurrency check (`UQ_ot_surgeries_active_room`, migration 0071, a partial unique index on `otRoom` while `status = 'InProgress'`, mapped to 409 in `startSurgery`). A full interval/duration overlap model for offset-but-overlapping bookings is a larger feature, left open.
+- [x] **P2** — `start/complete/cancelSurgery` accept and discard an actor parameter — only `scheduledBy` is ever recorded. (`ot.service.ts:122,139,156`) — **Fixed 2026-08-26:** added `startedBy`/`completedBy`/`cancelledBy` (migration 0071); each transition now records `resolveActor(actor)` into its own column.
+- [x] **P3** — No cancellation reason and no post-op notes capture. (`ot.service.ts:156-169`) — **Fixed 2026-08-26:** added `cancellationReason` and `postOpNotes` columns (migration 0071, distinct from the pre-op `notes` field); `cancelSurgery`/`completeSurgery` accept them via new `CancelSurgeryDto`/`CompleteSurgeryDto`.
 
 ### patient-portal
 - [ ] **P2** — Three of four list endpoints leak raw internal entities to the patient (staff account IDs, internal free-text notes). (`patient-portal/patient-portal.service.ts:18-31,57-91`)

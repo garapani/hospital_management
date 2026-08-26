@@ -3058,3 +3058,37 @@ existing/future caller through a prescription lookup that may not apply.
 `createTask` and `createAdministration` both call `assertAdmissionExists` before doing anything
 else — added the `status === 'Discharged'` check there instead of duplicating it in both methods,
 so a future third caller of that helper inherits the guard for free.
+
+## 74. OT P2/P3 batch: two-tier room-conflict detection without a duration model, per-transition
+    actors, cancellation/post-op capture (2026-08-26)
+
+Three items from the ot section of `code-review-findings-2026-08-25.md`. The room-conflict item is
+worth a standing pattern note: **when a finding wants conflict detection but the data model has no
+duration/end-time field, don't force a full interval-overlap engine — split the fix into what the
+model actually supports.** `OtSurgery` has `scheduledAt` (an instant) and `status`, but no estimated
+end time, so true "does surgery A's window overlap surgery B's window" detection isn't possible
+without inventing that field (a larger modeling decision, left open). Two narrower, real checks
+*are* supported by the existing fields, and both got implemented:
+
+- **Exact-slot conflict** (schedule-time): `scheduleSurgery` rejects a second surgery booked into
+  the same `otRoom` at the exact same `scheduledAt` instant — same shape as the appointments
+  doctor-slot check.
+- **True-concurrency conflict** (execution-time): a room can't have two surgeries genuinely running
+  at once, regardless of what was scheduled — enforced with `UQ_ot_surgeries_active_room` (migration
+  0071), a partial unique index on `otRoom` while `status = 'InProgress'`, mapped to 409 in
+  `startSurgery` the same way every other constraint-backstop in this codebase is.
+
+Together these close the two conflict shapes the current schema can express; a same-room booking at
+9am and 2pm on the same day still isn't caught (nothing says whether the 9am surgery is done by
+2pm) — that's the "no duration model" half of the finding, correctly left open rather than faked
+with an incomplete overlap check.
+
+**Per-transition actors, not just `scheduledBy`.** `startSurgery`/`completeSurgery`/`cancelSurgery`
+each accepted an `actor` parameter and discarded it — added `startedBy`/`completedBy`/`cancelledBy`
+(migration 0071), each now set via the same `resolveActor()` every sign-off in this codebase goes
+through.
+
+**Cancellation reason and post-op notes: new columns, not a reuse of the pre-op `notes` field.**
+Reusing `notes` (set at scheduling time) for either would silently clobber the pre-op note. Added
+`cancellationReason` and `postOpNotes` (migration 0071) plus `CancelSurgeryDto`/`CompleteSurgeryDto`
+so a caller can supply them on the respective transition.
