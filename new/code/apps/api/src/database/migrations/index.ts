@@ -79,6 +79,7 @@ import { AddCssdCodeUniqueAndCycleConstraints3000000000078 } from './0078-add-cs
 import { AddSsuCaseClosureAndActivePatientUnique3000000000079 } from './0079-add-ssu-case-closure-and-active-patient-unique.js';
 import { AddFractionReversalAndDefaultRuleUnique3000000000080 } from './0080-add-fraction-reversal-and-default-rule-unique.js';
 import { AddBillingSettingsDefaultTaxPercent3000000000081 } from './0081-add-billing-settings-default-tax-percent.js';
+import { AddLedgerAccountsCodeUnique3000000000082 } from './0082-add-ledger-accounts-code-unique.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -172,4 +173,5 @@ export const TENANT_MIGRATIONS = [
   AddSsuCaseClosureAndActivePatientUnique3000000000079,
   AddFractionReversalAndDefaultRuleUnique3000000000080,
   AddBillingSettingsDefaultTaxPercent3000000000081,
+  AddLedgerAccountsCodeUnique3000000000082,
 ];

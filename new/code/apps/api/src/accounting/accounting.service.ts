@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EntityManager, In } from 'typeorm';
+import { EntityManager, In, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -15,6 +15,7 @@ import {
 } from './entities/ledger-account.entity.js';
 import { JournalEntry, JournalLine } from './entities/journal-entry.entity.js';
 import { JournalNumberGeneratorService } from './journal-number-generator.service.js';
+import { LEDGER_ACCOUNT_IDS } from './ledger-account-codes.js';
 
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
@@ -96,6 +97,12 @@ export class AccountingService {
     return this.tenantContext.getAccountId() ?? (fallback as string);
   }
 
+  /** The seeded system accounts are load-bearing for billing's auto-posted journals (fixed ids
+   *  in ledger-account-codes.ts) — they are structural, not ordinary chart-of-accounts rows. */
+  private isSystemAccount(id: string): boolean {
+    return Object.values(LEDGER_ACCOUNT_IDS).includes(id as (typeof LEDGER_ACCOUNT_IDS)[keyof typeof LEDGER_ACCOUNT_IDS]);
+  }
+
   // ---------- Chart of accounts ----------
 
   async createAccount(input: CreateAccountInput): Promise<LedgerAccount> {
@@ -113,14 +120,26 @@ export class AccountingService {
         }
       }
       const repository = manager.getRepository(LedgerAccount);
-      return repository.save(
-        repository.create({
-          accountCode: input.accountCode.trim(),
-          name: input.name.trim(),
-          type: input.type,
-          parentAccountId: input.parentAccountId ?? null,
-        }),
-      );
+      try {
+        return await repository.save(
+          repository.create({
+            accountCode: input.accountCode.trim(),
+            name: input.name.trim(),
+            type: input.type,
+            parentAccountId: input.parentAccountId ?? null,
+          }),
+        );
+      } catch (error) {
+        // ledger_accounts.accountCode is unique (migration 0082) — a duplicate code would
+        // otherwise surface as a raw 500 (code-review-findings-2026-08-25 P3).
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint === 'UQ_ledger_accounts_accountCode'
+        ) {
+          throw new ConflictException(`Ledger account code ${input.accountCode.trim()} is already in use`);
+        }
+        throw error;
+      }
     });
   }
 
@@ -139,6 +158,24 @@ export class AccountingService {
       }
       if (input.type !== undefined && !ACCOUNT_TYPES.includes(input.type)) {
         throw new BadRequestException(`Account type must be one of: ${ACCOUNT_TYPES.join(', ')}`);
+      }
+      // An account's type is structural: changing it after journals reference the account would
+      // silently re-classify history in every report (trial balance / income statement / balance
+      // sheet), and the system accounts are load-bearing for billing's auto-posted journals — a
+      // type change there is never legitimate (code-review-findings-2026-08-25 accounting P2).
+      if (input.type !== undefined && input.type !== account.type) {
+        if (this.isSystemAccount(id)) {
+          throw new ConflictException(`Ledger account ${id} is a system account; its type cannot be changed`);
+        }
+        const journaled = await manager.query(
+          `SELECT 1 FROM journal_lines WHERE "accountId" = $1 LIMIT 1`,
+          [id],
+        );
+        if (journaled.length > 0) {
+          throw new ConflictException(
+            `Ledger account ${id} has journal entries; its type cannot be changed`,
+          );
+        }
       }
       if (input.name !== undefined) account.name = input.name;
       if (input.type !== undefined) account.type = input.type;
@@ -164,6 +201,11 @@ export class AccountingService {
       const account = await repository.findOne({ where: { id } });
       if (!account) {
         throw new NotFoundException(`Ledger account ${id} not found`);
+      }
+      if (this.isSystemAccount(id)) {
+        throw new ConflictException(
+          `Ledger account ${id} is a system account used by automatic billing journals; it cannot be deactivated`,
+        );
       }
       if (!account.isActive) {
         throw new ConflictException(`Ledger account ${id} is already deactivated`);
@@ -239,7 +281,10 @@ export class AccountingService {
    */
   async postJournal(id: string, actor?: string): Promise<JournalEntry & { lines: JournalLine[] }> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      const journal = await this.loadJournal(manager, id);
+      // Row-locked like every other status mutator in the codebase: two concurrent postJournal
+      // calls must serialize, not both observe 'Draft' and double-post
+      // (code-review-findings-2026-08-25 accounting P2).
+      const journal = await this.loadJournal(manager, id, true);
       if (journal.status !== 'Draft') {
         throw new ConflictException(`Journal entry ${id} is already ${journal.status}`);
       }
@@ -416,8 +461,11 @@ export class AccountingService {
     return `JRN-${currentYear}-${String(nextSeq).padStart(5, '0')}`;
   }
 
-  private async loadJournal(manager: EntityManager, id: string): Promise<JournalEntry> {
-    const journal = await manager.getRepository(JournalEntry).findOne({ where: { id } });
+  private async loadJournal(manager: EntityManager, id: string, lock = false): Promise<JournalEntry> {
+    const journal = await manager.getRepository(JournalEntry).findOne({
+      where: { id },
+      ...(lock ? { lock: { mode: 'pessimistic_write' } as const } : {}),
+    });
     if (!journal) {
       throw new NotFoundException(`Journal entry ${id} not found`);
     }
@@ -483,13 +531,18 @@ export class AccountingService {
   /** Per-account debit/credit totals over POSTED journals in the period. */
   async trialBalance(from?: string, to?: string): Promise<TrialBalanceRow[]> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      const rows: { accountId: string; d: number; c: number }[] = await manager.query(
+      // Sums stay numeric (not float8 — float8 can silently drop cents on large money sums,
+      // code-review-findings-2026-08-25 accounting P2), and the join applies the same
+      // soft-delete filter the repository-based reads get (`deletedAt IS NULL` — the raw SQL
+      // bypassed TypeORM's soft-delete machinery, P3).
+      const rows: { accountId: string; d: string; c: string }[] = await manager.query(
         `SELECT l."accountId" AS "accountId",
-                COALESCE(SUM(l.debit), 0)::float8 AS d,
-                COALESCE(SUM(l.credit), 0)::float8 AS c
+                COALESCE(SUM(l.debit), 0)::numeric AS d,
+                COALESCE(SUM(l.credit), 0)::numeric AS c
          FROM journal_lines l
          JOIN journal_entries j ON j.id = l."journalId"
          WHERE j.status = 'Posted'
+           AND j."deletedAt" IS NULL
            AND ($1::date IS NULL OR j."entryDate" >= $1)
            AND ($2::date IS NULL OR j."entryDate" <= $2)
          GROUP BY l."accountId"`,
@@ -501,14 +554,16 @@ export class AccountingService {
         .map((row) => {
           const account = byId.get(row.accountId);
           if (!account) return null;
+          const d = Number(row.d);
+          const c = Number(row.c);
           return {
             accountId: account.id,
             accountCode: account.accountCode,
             accountName: account.name,
             accountType: account.type,
-            debitTotal: roundMoney(row.d),
-            creditTotal: roundMoney(row.c),
-            balance: roundMoney(row.d - row.c),
+            debitTotal: roundMoney(d),
+            creditTotal: roundMoney(c),
+            balance: roundMoney(d - c),
           };
         })
         .filter((row): row is TrialBalanceRow => row !== null)

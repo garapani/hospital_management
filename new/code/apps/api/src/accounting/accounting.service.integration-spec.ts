@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { AccountingService } from './accounting.service.js';
 import { JournalNumberGeneratorService } from './journal-number-generator.service.js';
+import { LEDGER_ACCOUNT_IDS } from './ledger-account-codes.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -45,8 +46,8 @@ describe('AccountingService (integration)', () => {
   }
 
   it('creates accounts, validates type, and enforces parent references', async () => {
-    const cash = await makeAccount('1000', 'Asset');
-    const bank = await makeAccount('1010', 'Asset', { parentAccountId: cash.id });
+    const cash = await makeAccount('6100', 'Asset');
+    const bank = await makeAccount('6110', 'Asset', { parentAccountId: cash.id });
     expect(bank.parentAccountId).toBe(cash.id);
 
     await expect(
@@ -60,7 +61,7 @@ describe('AccountingService (integration)', () => {
   });
 
   it('soft-deletes accounts and rejects self-parenting', async () => {
-    const account = await makeAccount('1100', 'Asset');
+    const account = await makeAccount('6200', 'Asset');
     await ctx.inTenant(() => accountingService.deactivateAccount(account.id));
     await expect(ctx.inTenant(() => accountingService.deactivateAccount(account.id))).rejects.toThrow(
       ConflictException,
@@ -72,9 +73,59 @@ describe('AccountingService (integration)', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('rejects a duplicate accountCode with ConflictException', async () => {
+    const account = await makeAccount('6300', 'Asset');
+    await expect(
+      ctx.inTenant(() =>
+        accountingService.createAccount({ accountCode: account.accountCode, name: 'Duplicate', type: 'Asset' }),
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects changing the type of an account that has journal entries', async () => {
+    const cash = await makeAccount('6400', 'Asset');
+    const revenue = await makeAccount('7410', 'Income');
+    await ctx.inTenant(() =>
+      accountingService.createJournal({
+        entryDate: '2025-06-01',
+        lines: [
+          { accountId: cash.id, debit: 100 },
+          { accountId: revenue.id, credit: 100 },
+        ],
+        createdBy: STAFF_ID,
+      }),
+    );
+
+    await expect(
+      ctx.inTenant(() => accountingService.updateAccount(cash.id, { type: 'Expense' })),
+    ).rejects.toThrow(ConflictException);
+
+    // An un-journaled account can still change type.
+    const fresh = await makeAccount('6401', 'Asset');
+    const changed = await ctx.inTenant(() =>
+      accountingService.updateAccount(fresh.id, { type: 'Expense' }),
+    );
+    expect(changed.type).toBe('Expense');
+  });
+
+  it('protects the seeded system accounts from type changes and deactivation', async () => {
+    const systemId = LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE;
+    await expect(
+      ctx.inTenant(() => accountingService.updateAccount(systemId, { type: 'Expense' })),
+    ).rejects.toThrow(ConflictException);
+    await expect(
+      ctx.inTenant(() => accountingService.deactivateAccount(systemId)),
+    ).rejects.toThrow(ConflictException);
+    // Cosmetic name edits remain allowed.
+    const renamed = await ctx.inTenant(() =>
+      accountingService.updateAccount(systemId, { name: 'Patient AR (renamed)' }),
+    );
+    expect(renamed.name).toBe('Patient AR (renamed)');
+  });
+
   it('creates a balanced journal and rejects unbalanced entries', async () => {
-    const cash = await makeAccount('1000', 'Asset');
-    const revenue = await makeAccount('4000', 'Income');
+    const cash = await makeAccount('6500', 'Asset');
+    const revenue = await makeAccount('7500', 'Income');
 
     const journal = await ctx.inTenant(() =>
       accountingService.createJournal({
@@ -128,8 +179,8 @@ describe('AccountingService (integration)', () => {
   });
 
   it('rejects a manual journal referencing an unknown or deactivated account', async () => {
-    const cash = await makeAccount('1000', 'Asset');
-    const revenue = await makeAccount('4000', 'Income');
+    const cash = await makeAccount('6600', 'Asset');
+    const revenue = await makeAccount('7600', 'Income');
     await ctx.inTenant(() => accountingService.deactivateAccount(revenue.id));
 
     // Unknown account id: previously created a journal_lines row with no matching
@@ -164,8 +215,8 @@ describe('AccountingService (integration)', () => {
   });
 
   it('derives createdBy/postedBy from the authenticated principal', async () => {
-    const cash = await makeAccount('1000', 'Asset');
-    const revenue = await makeAccount('4000', 'Income');
+    const cash = await makeAccount('6700', 'Asset');
+    const revenue = await makeAccount('7700', 'Income');
     const spoofed = '00000000-0000-0000-0000-0000000000ff';
 
     const journal = await withActor(() =>
@@ -187,8 +238,8 @@ describe('AccountingService (integration)', () => {
   });
 
   it('locks a posted journal — no further transitions', async () => {
-    const cash = await makeAccount('1000', 'Asset');
-    const revenue = await makeAccount('4000', 'Income');
+    const cash = await makeAccount('6800', 'Asset');
+    const revenue = await makeAccount('7800', 'Income');
     const journal = await ctx.inTenant(() =>
       accountingService.createJournal({
         entryDate: '2025-06-03',
@@ -212,8 +263,8 @@ describe('AccountingService (integration)', () => {
       // connection/transaction — while running on a manager that (in production callers like
       // recordPayment) is already mid-transaction. This proves postAutoJournal works end-to-end
       // when invoked exactly that way: on an already-open manager, inside a transaction.
-      const cash = await makeAccount('1000', 'Asset');
-      const revenue = await makeAccount('4000', 'Income');
+      const cash = await makeAccount('6900', 'Asset');
+      const revenue = await makeAccount('7900', 'Income');
 
       const [first, second] = await ctx.inTenant(() =>
         ctx.tenantConnection.runInTenantSchema(async (manager) => {
@@ -248,8 +299,8 @@ describe('AccountingService (integration)', () => {
     });
 
     it('rejects an auto-posted journal referencing an unknown or deactivated account', async () => {
-      const cash = await makeAccount('1000', 'Asset');
-      const revenue = await makeAccount('4000', 'Income');
+      const cash = await makeAccount('6910', 'Asset');
+      const revenue = await makeAccount('7910', 'Income');
       await ctx.inTenant(() => accountingService.deactivateAccount(revenue.id));
 
       await expect(
@@ -285,12 +336,12 @@ describe('AccountingService (integration)', () => {
 
     const makeAccountR = (code: string, type: 'Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense') =>
       inReport(() => reportService.createAccount({ accountCode: code, name: type, type }));
-    const cash = await makeAccountR('1000', 'Asset');
-    const bank = await makeAccountR('1010', 'Asset');
-    const payable = await makeAccountR('2000', 'Liability');
-    const capital = await makeAccountR('3000', 'Equity');
-    const revenue = await makeAccountR('4000', 'Income');
-    const expense = await makeAccountR('5000', 'Expense');
+    const cash = await makeAccountR('6100', 'Asset');
+    const bank = await makeAccountR('6110', 'Asset');
+    const payable = await makeAccountR('6200', 'Liability');
+    const capital = await makeAccountR('6300', 'Equity');
+    const revenue = await makeAccountR('6400', 'Income');
+    const expense = await makeAccountR('6500', 'Expense');
 
     // Capital injection: bank 100000 debit, capital 100000 credit.
     const capitalJournal = await inReport(() =>
@@ -333,12 +384,12 @@ describe('AccountingService (integration)', () => {
 
     const trial = await inReport(() => reportService.trialBalance());
     const byCode = new Map(trial.map((r) => [r.accountCode, r]));
-    expect(byCode.get('1000')?.balance).toBe(50000);
-    expect(byCode.get('1010')?.balance).toBe(100000);
-    expect(byCode.get('2000')?.balance).toBe(-20000);
-    expect(byCode.get('3000')?.balance).toBe(-100000);
-    expect(byCode.get('4000')?.balance).toBe(-50000);
-    expect(byCode.get('5000')?.balance).toBe(20000);
+    expect(byCode.get('6100')?.balance).toBe(50000);
+    expect(byCode.get('6110')?.balance).toBe(100000);
+    expect(byCode.get('6200')?.balance).toBe(-20000);
+    expect(byCode.get('6300')?.balance).toBe(-100000);
+    expect(byCode.get('6400')?.balance).toBe(-50000);
+    expect(byCode.get('6500')?.balance).toBe(20000);
     // Trial balance sums to zero.
     expect(trial.reduce((s, r) => s + r.balance, 0)).toBe(0);
 
@@ -354,9 +405,56 @@ describe('AccountingService (integration)', () => {
     expect(sheet.totalLiabilitiesAndEquity).toBe(150000); // 20000 payable + 100000 capital + 30000 retained
   });
 
+  it('excludes soft-deleted journals from the trial balance', async () => {
+    // The trial-balance SQL is raw (not repository-based), so it used to bypass TypeORM's
+    // soft-delete filter — a soft-deleted journal kept moving report totals while every
+    // repository-based read (listJournals etc.) had already excluded it (P3). Runs in its own
+    // tenant like the report test above.
+    const reportCtx = await ctx.createTenant();
+    const reportService = new AccountingService(
+      ctx.tenantConnection,
+      new JournalNumberGeneratorService(ctx.tenantConnection),
+      reportCtx.tenantContext,
+    );
+    const inReport = <T>(work: () => Promise<T>): Promise<T> =>
+      reportCtx.tenantContext.run({ tenantId: reportCtx.tenantId, correlationId: 'report' }, work);
+    const makeAccountR = (code: string, type: 'Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense') =>
+      inReport(() => reportService.createAccount({ accountCode: code, name: type, type }));
+    const cash = await makeAccountR('6100', 'Asset');
+    const revenue = await makeAccountR('6400', 'Income');
+
+    const journal = await inReport(() =>
+      reportService.createJournal({
+        entryDate: '2025-06-01',
+        lines: [
+          { accountId: cash.id, debit: 1000 },
+          { accountId: revenue.id, credit: 1000 },
+        ],
+        createdBy: STAFF_ID,
+      }),
+    );
+    await inReport(() => reportService.postJournal(journal.id, STAFF_ID));
+
+    const before = await inReport(() => reportService.trialBalance());
+    expect(before.find((r) => r.accountId === cash.id)?.debitTotal).toBe(1000);
+
+    // Soft-delete the journal (raw update — there is no delete endpoint for journals).
+    await inReport(() =>
+      reportCtx.tenantConnection.runInTenantSchema((manager) =>
+        manager.query(
+          `UPDATE journal_entries SET "deletedAt" = now(), "deletedBy" = $1 WHERE id = $2`,
+          [STAFF_ID, journal.id],
+        ),
+      ),
+    );
+
+    const after = await inReport(() => reportService.trialBalance());
+    expect(after.find((r) => r.accountId === cash.id)).toBeUndefined();
+  });
+
   it('enforces tenant isolation', async () => {
     const tenantB = await ctx.createTenant();
-    const account = await makeAccount('1000', 'Asset');
+    const account = await makeAccount('6920', 'Asset');
     await expect(tenantB.inTenant(() => accountingService.listAccounts())).resolves.not.toContainEqual(
       expect.objectContaining({ id: account.id }),
     );

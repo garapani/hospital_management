@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsDateString,
   IsIn,
   IsNumber,
   IsOptional,
@@ -8,6 +9,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { PaginationQueryDto } from '@hospital/pagination';
 import type { AccountType } from '../entities/ledger-account.entity.js';
 
 export class CreateAccountDto {
@@ -59,7 +61,7 @@ export class JournalLineDto {
 }
 
 export class CreateJournalDto {
-  @IsString()
+  @IsDateString()
   entryDate!: string;
 
   @IsOptional()
@@ -72,7 +74,7 @@ export class CreateJournalDto {
   lines!: JournalLineDto[];
 }
 
-export class ListJournalsQueryDto {
+export class ListJournalsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(['Draft', 'Posted'])
   status?: 'Draft' | 'Posted';
