@@ -221,10 +221,10 @@ the root `CLAUDE.md`.
 - [x] **P3** — `resolveActor()` has no fallback parameter, unlike the sibling-module convention. (`fixed-assets.service.ts:118-120`) — **Fixed 2026-08-26:** `resolveActor(fallback?)` now falls back to the caller-supplied value for non-HTTP callers; `runDepreciationAccrual` accepts an optional `actor` parameter.
 
 ### accounts
-- [ ] **P2** — Admin-supplied passwords bypass the 8-character minimum (`createStaffAccount`/`resetPassword` only check non-empty). (`accounts/accounts.service.ts:134-142,274,303,446-452`)
-- [ ] **P2** — Failed-login counting is a read-modify-write with no lock — undercounts under concurrent brute-force. (`accounts.service.ts:326-336`)
-- [ ] **P3** — Duplicate staff usernames 500 instead of 409, unlike the identical check for patient accounts. (`accounts.service.ts:144-162,197-207`)
-- [ ] **P3** — Deactivating an already-deactivated account isn't rejected, unlike the catalog-service convention. (`accounts.service.ts:402-424`)
+- [x] **P2** — Admin-supplied passwords bypass the 8-character minimum (`createStaffAccount`/`resetPassword` only check non-empty). (`accounts/accounts.service.ts:134-142,274,303,446-452`) — **Fixed 2026-08-26:** both `createStaffAccount` (admin-supplied `password`) and `resetPassword` (admin-supplied temporary password) now reject anything under 8 characters with a 400, matching every other password path (`changePasswordByUsername`/`changeOwnPassword` already enforced it). The DTO half of the sibling auth finding (tenants `provision-tenant.dto.ts`) is handled in the tenants batch.
+- [x] **P2** — Failed-login counting is a read-modify-write with no lock — undercounts under concurrent brute-force. (`accounts.service.ts:326-336`) — **Fixed 2026-08-26:** `recordFailedLogin` and `lockAccount` now load the account with `pessimistic_write` — concurrent failed attempts serialize instead of lost-updating the counter below the lockout threshold.
+- [x] **P3** — Duplicate staff usernames 500 instead of 409, unlike the identical check for patient accounts. (`accounts.service.ts:144-162,197-207`) — **Fixed 2026-08-26:** `createStaffAccount` now catches the `23505` unique-violation on the account insert and maps it to a 409 ("Username ... is already in use"), the same shape as the patient-account path.
+- [x] **P3** — Deactivating an already-deactivated account isn't rejected, unlike the catalog-service convention. (`accounts.service.ts:402-424`) — **Fixed 2026-08-26:** `deactivateAccount` now 409s on an already-deactivated account (mirroring the catalog modules); the spec's old "idempotent" assertion was updated to expect the rejection.
 
 ### cross-cutting (financial group)
 - [ ] **P2** — Test gaps on money-touching paths per this repo's own risk gate (cancel-vs-reversal-journal, capture-after-return, concurrent deposit refunds, `updatePolicy`, claim-cap-vs-invoice, back-filled depreciation, concurrent payroll/accrual runs).

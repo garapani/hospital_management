@@ -3723,3 +3723,28 @@ fields stay editable. `salvageValue > purchaseCost` is rejected on create and re
 post-update (a negative depreciable base otherwise), and `resolveActor` gained the standard
 fallback parameter. This closes the Financial & Billing group's money modules except the two
 remaining cross-cutting items.
+
+## 92. Accounts P2/P3 batch: one password policy everywhere, and the failed-login counter gets a
+    lock (2026-08-26)
+
+Four items, closing out the accounts section. Two shapes:
+
+**Password policy is enforced at the service, once per path.** `createStaffAccount` and
+`resetPassword` accepted admin-supplied passwords of any length (only "non-empty" was effectively
+checked) while `changePasswordByUsername`/`changeOwnPassword` enforced 8 characters — a tenant
+could be provisioned with a 1-character Hospital Admin password through the admin path. Both admin
+paths now reject `password.length < 8` with a 400 before hashing. The rule: **every path that
+accepts a password enforces the same minimum at the service layer** — DTO validation is a
+convenience, not the guarantee, because service methods are also called directly (seeds, other
+services, tests). The tenants-side DTO half of the sibling auth finding stays in the tenants
+batch, per the file's file-scoped batch convention.
+
+**The failed-login counter is a row-locked read-modify-write now.** `recordFailedLogin` and
+`lockAccount` loaded the account without a lock, so concurrent brute-force attempts could
+lost-update the counter below the lockout threshold — the exact failure mode the lockout is meant
+to stop. Both now use `pessimistic_write`, matching every other read-modify-write in the
+codebase. Also folded in: duplicate staff usernames map `23505` to a 409 (the patient-account
+path already did; the staff path now matches), and `deactivateAccount` 409s an already-deactivated
+account — the catalog convention the finding names. Note the spec fixture that asserted
+idempotent double-deactivation had to flip to expect the rejection: the finding's whole point was
+that the old behavior was wrong, so the test was testing the bug.
