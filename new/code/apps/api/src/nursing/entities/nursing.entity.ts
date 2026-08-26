@@ -29,7 +29,9 @@ export class NursingTask extends SoftDeletableEntity {
   @Column({ type: 'uuid', nullable: true })
   assignedTo!: string | null;
 
-  @Column({ type: 'uuid', nullable: true })
+  // varchar, not uuid: matches the audit-columns convention (auditable.entity.ts) — this
+  // codebase's test suite signs tokens with human-readable sub values a uuid column would reject.
+  @Column({ type: 'varchar', nullable: true })
   completedBy!: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
@@ -74,14 +76,17 @@ export class MedicationAdministration extends SoftDeletableEntity {
   @Column({ type: 'varchar', default: 'Scheduled' })
   status!: MedicationAdministrationStatus;
 
-  @Column({ type: 'uuid', nullable: true })
+  // varchar, not uuid: matches the audit-columns convention (auditable.entity.ts) — this
+  // codebase's test suite signs tokens with human-readable sub values a uuid column would reject.
+  @Column({ type: 'varchar', nullable: true })
   administeredBy!: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   administeredAt!: Date | null;
 
-  /** Set when status becomes 'Skipped' — distinct from administeredBy, which stays null for a skip. */
-  @Column({ type: 'uuid', nullable: true })
+  /** Set when status becomes 'Skipped' — distinct from administeredBy, which stays null for a skip.
+   *  varchar, not uuid — see completedBy above for why. */
+  @Column({ type: 'varchar', nullable: true })
   skippedBy!: string | null;
 
   @Column({ type: 'text', nullable: true })

@@ -43,7 +43,9 @@ export class TriageEntry extends SoftDeletableEntity {
   @Column({ type: 'varchar', nullable: true })
   colorCode!: string | null; // Red, Orange, Yellow, Green, Blue
 
-  @Column({ type: 'uuid', nullable: true })
+  // varchar, not uuid: matches the audit-columns convention (auditable.entity.ts) — this
+  // codebase's test suite signs tokens with human-readable sub values a uuid column would reject.
+  @Column({ type: 'varchar', nullable: true })
   triagedBy!: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })

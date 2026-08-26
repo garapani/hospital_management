@@ -69,6 +69,8 @@ import { AddMedicationAdministrationsAuditAndPrescriptionLink3000000000068 } fro
 import { AddMaternityRecordsAdmissionUnique3000000000069 } from './0069-add-maternity-records-admission-unique.js';
 import { AddVaccinationRecordsDuplicateDoseUnique3000000000070 } from './0070-add-vaccination-records-duplicate-dose-unique.js';
 import { AddOtSurgeriesActorAndOutcomeColumns3000000000071 } from './0071-add-ot-surgeries-actor-and-outcome-columns.js';
+import { AddClinicalGroupFilterIndexes3000000000072 } from './0072-add-clinical-group-filter-indexes.js';
+import { ConvertClinicalGroupActorColumnsToVarchar3000000000073 } from './0073-convert-clinical-group-actor-columns-to-varchar.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -152,4 +154,6 @@ export const TENANT_MIGRATIONS = [
   AddMaternityRecordsAdmissionUnique3000000000069,
   AddVaccinationRecordsDuplicateDoseUnique3000000000070,
   AddOtSurgeriesActorAndOutcomeColumns3000000000071,
+  AddClinicalGroupFilterIndexes3000000000072,
+  ConvertClinicalGroupActorColumnsToVarchar3000000000073,
 ];

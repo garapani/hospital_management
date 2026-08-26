@@ -265,7 +265,9 @@ describe('seedRbacCatalog (integration)', () => {
     ]);
   });
 
-  it('maps order.manage to Doctor, Nurse, Hospital Admin, Super Admin and order.read additionally to Receptionist', async () => {
+  // PRD §6.1: Nurse gets full access to Nursing/Clinical-EMR/Admission/Ward Supply but only
+  // read-only on Order — order.manage stays with Doctor/Hospital Admin/Super Admin only.
+  it('maps order.manage to Doctor, Hospital Admin, Super Admin (not Nurse — PRD §6.1 read-only) and order.read additionally to Receptionist and Nurse', async () => {
     await seedRbacCatalog(ctx.dataSource);
 
     const managePermission = await ctx.dataSource.getRepository(Permission).findOneOrFail({
@@ -275,7 +277,7 @@ describe('seedRbacCatalog (integration)', () => {
       where: { permissionId: managePermission.id },
     });
     const manageRoles = await ctx.dataSource.getRepository(Role).find({ where: { id: In(manageMappings.map((m) => m.roleId)) } });
-    expect(manageRoles.map((r) => r.name).sort()).toEqual(['Doctor', 'Hospital Admin', 'Nurse', 'Super Admin']);
+    expect(manageRoles.map((r) => r.name).sort()).toEqual(['Doctor', 'Hospital Admin', 'Super Admin']);
 
     const readPermission = await ctx.dataSource.getRepository(Permission).findOneOrFail({
       where: { name: 'order.read' },
