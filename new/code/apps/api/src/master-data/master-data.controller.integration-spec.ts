@@ -25,7 +25,7 @@ describe('MasterDataController (integration)', () => {
     adminToken = await signTestToken({
       sub: 'master-data-controller-admin',
       hospitalId: ctx.tenantId,
-      permissions: ['master-data.manage'],
+      permissions: ['master-data.manage', 'master-data.read'],
     });
     receptionistToken = await signTestToken({
       sub: 'master-data-controller-receptionist',
@@ -161,12 +161,21 @@ describe('MasterDataController (integration)', () => {
     expect(listResponse.body.some((b: { id: string }) => b.id === bedResponse.body.id)).toBe(true);
   });
 
-  it('allows read-only access (GET) to departments, wards, and beds for any authenticated user, but rejects mutations (POST/PATCH) with 403', async () => {
-    const listRes = await request(app.getHttpServer())
+  it('gates the GET endpoints behind master-data.read — a non-read token 403s, a read token 200s, mutations need manage', async () => {
+    // P2: the GET endpoints were previously unguarded — any authenticated account (including a
+    // patient-portal one) could enumerate the department/ward/bed layout. Now they require
+    // master-data.read.
+    const forbidden = await request(app.getHttpServer())
       .get('/departments')
       .set('Authorization', `Bearer ${receptionistToken}`);
-    expect(listRes.status).toBe(200);
+    expect(forbidden.status).toBe(403);
 
+    const allowed = await request(app.getHttpServer())
+      .get('/departments')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(allowed.status).toBe(200);
+
+    // Mutations still need master-data.manage (the receptionist lacks it).
     const postRes = await request(app.getHttpServer())
       .post('/departments')
       .set('Authorization', `Bearer ${receptionistToken}`)

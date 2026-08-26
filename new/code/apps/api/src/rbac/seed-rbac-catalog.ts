@@ -121,6 +121,13 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     description: 'Create, list, deactivate, and reactivate departments and wards.',
   },
   {
+    // Dedicated read permission for the master-data GET endpoints — they were previously
+    // unguarded (any authenticated account, including patient-portal ones, could enumerate the
+    // department/ward/bed layout; code-review-findings-2026-08-25 master-data P2).
+    name: 'master-data.read',
+    description: 'View the department, ward, and bed layout.',
+  },
+  {
     name: 'patients.read',
     description: 'Read patient master records and search catalog',
   },
@@ -422,6 +429,14 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Super Admin', permissionName: 'rbac.manage' },
   { roleName: 'Hospital Admin', permissionName: 'master-data.manage' },
   { roleName: 'Super Admin', permissionName: 'master-data.manage' },
+  // master-data.read: staff roles that need the department/ward/bed layout for their screens —
+  // patient-portal accounts are deliberately NOT granted it (the P2 the finding names).
+  { roleName: 'Super Admin', permissionName: 'master-data.read' },
+  { roleName: 'Hospital Admin', permissionName: 'master-data.read' },
+  { roleName: 'Doctor', permissionName: 'master-data.read' },
+  { roleName: 'Nurse', permissionName: 'master-data.read' },
+  { roleName: 'Billing/Accounts Staff', permissionName: 'master-data.read' },
+  { roleName: 'Inventory/Store Manager', permissionName: 'master-data.read' },
   // Super Admin is mapped to every other module's permissions (appointment, vitals, encounter,
   // triage, admission, order, billing, lab, radiology, inventory, pharmacy, reporting); patients
   // was the one omission — seed-initial-setup already grants Super Admin ALL permissions (it is

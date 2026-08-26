@@ -92,6 +92,27 @@ describe('MasterDataService (integration)', () => {
         ctx.inTenant(() => masterDataService.reactivateDepartment('00000000-0000-0000-0000-000000000000')),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('rejects reactivating a department whose parent is deactivated, with 409', async () => {
+      const parent = await ctx.inTenant(() =>
+        masterDataService.createDepartment({ departmentCode: 'CARDIAC', departmentName: 'Cardiology' }),
+      );
+      const child = await ctx.inTenant(() =>
+        masterDataService.createDepartment({
+          departmentCode: 'CARDIAC-ICU',
+          departmentName: 'Cardiac ICU',
+          parentDepartmentId: parent.id,
+        }),
+      );
+      // Deactivate the child first (deactivate's child-check blocks deactivating the parent
+      // while the child is active), then the parent.
+      await ctx.inTenant(() => masterDataService.deactivateDepartment(child.id));
+      await ctx.inTenant(() => masterDataService.deactivateDepartment(parent.id));
+
+      await expect(ctx.inTenant(() => masterDataService.reactivateDepartment(child.id))).rejects.toThrow(
+        ConflictException,
+      );
+    });
   });
 
   describe('wards', () => {
@@ -138,6 +159,32 @@ describe('MasterDataService (integration)', () => {
       await expect(
         ctx.inTenant(() => masterDataService.deactivateWard('00000000-0000-0000-0000-000000000000')),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects deactivating a ward with an occupied bed, with 409', async () => {
+      const ward = await ctx.inTenant(() => masterDataService.createWard({ wardCode: 'W-OCC', wardName: 'Occupied Ward' }));
+      const bed = await ctx.inTenant(() =>
+        masterDataService.createBed({ wardId: ward.id, bedNumber: '1' }),
+      );
+      // Mark the bed occupied (raw update — beds' status is moved by the admissions module).
+      await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.query(`UPDATE beds SET status = 'Occupied' WHERE id = $1`, [bed.id]),
+        ),
+      );
+
+      await expect(ctx.inTenant(() => masterDataService.deactivateWard(ward.id))).rejects.toThrow(
+        ConflictException,
+      );
+
+      // Once no bed is occupied, the ward deactivates.
+      await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.query(`UPDATE beds SET status = 'Available' WHERE id = $1`, [bed.id]),
+        ),
+      );
+      const deactivated = await ctx.inTenant(() => masterDataService.deactivateWard(ward.id));
+      expect(deactivated.isActive).toBe(false);
     });
   });
 

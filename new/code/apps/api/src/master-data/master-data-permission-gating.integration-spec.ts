@@ -74,16 +74,28 @@ describe('MasterDataController permission gating (integration)', () => {
     expect(response.status).toBe(403);
   });
 
-  it('allows listing departments for any authenticated session without master-data.manage permission', async () => {
+  it('gates listing departments behind master-data.read (no-permission session 403s)', async () => {
+    // P2: GET endpoints were previously unguarded — any authenticated session (including a
+    // patient-portal one) could enumerate the layout. They now require master-data.read.
     const response = await request(app.getHttpServer()).get('/departments').set('Authorization', `Bearer ${noPermissionToken}`);
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(403);
+
+    const readToken = await signTestToken({
+      sub: 'master-data-permgate-reader',
+      hospitalId: ctx.tenantId,
+      permissions: ['master-data.read'],
+    });
+    const allowed = await request(app.getHttpServer())
+      .get('/departments')
+      .set('Authorization', `Bearer ${readToken}`);
+    expect(allowed.status).toBe(200);
   });
 
-  it('allows getting a single department for any authenticated session without master-data.manage permission', async () => {
+  it('gates getting a single department behind master-data.read', async () => {
     const response = await request(app.getHttpServer())
       .get(`/departments/${departmentId}`)
       .set('Authorization', `Bearer ${noPermissionToken}`);
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(403);
   });
 
   it('rejects department deactivate/reactivate with 403 when no master-data.manage permission is granted', async () => {
@@ -106,8 +118,8 @@ describe('MasterDataController permission gating (integration)', () => {
     expect(createResponse.status).toBe(403);
   });
 
-  it('allows listing wards for any authenticated session without master-data.manage permission', async () => {
+  it('gates listing wards behind master-data.read', async () => {
     const listResponse = await request(app.getHttpServer()).get('/wards').set('Authorization', `Bearer ${noPermissionToken}`);
-    expect(listResponse.status).toBe(200);
+    expect(listResponse.status).toBe(403);
   });
 });
