@@ -2827,3 +2827,51 @@ closing the "auditors can't view invoices" half of the finding. Same caveat as e
 seed-only RBAC change so far: the seed is create-only (`ON CONFLICT DO NOTHING`, itself a tracked
 P2), so this permission reaches an already-provisioned tenant only via that pipeline's existing
 re-seed mechanism.
+
+## 68. Patients P2/P3 batch: PATCH address/kin replacement, deactivation cascade, and an
+    advisory-lock alternative to a unique constraint (2026-08-26)
+
+Four items from the patients section of `code-review-findings-2026-08-25.md`.
+
+**PATCH now replaces `addresses`/`kins` instead of silently dropping them.** `update()` only ever
+copied 11 scalar fields onto the entity — a client sending `addresses`/`kins` in the PATCH body got
+a 200 OK with the record unchanged. Fixed with full-replace semantics matching `create()`: when the
+DTO includes `addresses` or `kins`, the existing rows for that patient are deleted and the DTO's
+array is inserted in their place, inside the same transaction as the scalar-field update. Cascade
+alone (`cascade: true` on the `Patient.addresses`/`kins` OneToMany) isn't enough here — TypeORM only
+inserts/updates the array it's given, it doesn't drop rows missing from it without
+`orphanedRowAction: 'delete'` — so the delete is explicit.
+
+**Deactivating a patient now revokes their portal login too.** `deactivate()` only ever flipped
+`Patient.isActive`; a deactivated patient's portal account stayed fully active, and
+`PatientPortalService.getMe()` didn't check `isActive` either, so an already-issued session could
+keep reading the deactivated patient's own profile. Added `AccountsService.deactivatePatientAccount
+(patientId)` — a no-op if the patient never had a portal account (portal access is opt-in via
+`createPatientAccount`) — called from `PatientsService.deactivate()` after the Patient row is
+saved. `getMe()` now also filters `where: { id: patientId, isActive: true }`, closing the
+already-issued-session gap for that one endpoint. The account-level fix is what actually matters
+for future logins (`AuthService.login` already rejects `!account.isActive`); the `getMe()` filter
+only helps for a session issued before deactivation, and only for that one portal endpoint — the
+patient-portal module's own broader "no `isActive` filter anywhere" finding (its `listAppointments`/
+`listInvoices`/`listPrescriptions`/`listResults` siblings) is tracked separately and intentionally
+left for when that module comes up.
+
+**Duplicate-patient check: an advisory lock, not a unique constraint, because duplicates are a
+deliberate feature here.** Every other P1/P2 fix in this file that closed a "select-then-insert"
+race did it with a backing unique index (`UQ_admissions_active_patient`, `UQ_fraction_entries_
+invoice_doctor`, `UQ_discharge_summaries_admission`, ...). That pattern doesn't apply to patients:
+`create()`'s `allowDuplicate` flag is a supported, deliberate override for legitimate same-identity
+records (twins, a patient re-registered under a slightly different spelling, etc.), so uniqueness on
+`(phoneNumber)` or `(firstName, lastName, dateOfBirth)` can't be enforced unconditionally at the DB
+level without breaking that override. Instead, `create()` now takes a `pg_advisory_xact_lock` (the
+existing `withAdvisoryLock` util, already used by platform-billing) keyed on the same identity
+signature `findDuplicates()` branches on, inside the same transaction as the check-and-insert. Two
+concurrent requests for the same identity now serialize on the lock instead of both observing "no
+duplicate" and both inserting — the DTO-driven `allowDuplicate: true` path is untouched since it
+never takes the lock. This is the pattern to reach for whenever a select-then-insert race can't be
+closed with a unique constraint because the "duplicate" it's guarding against is sometimes valid.
+
+**`check-duplicates` validated via a real DTO.** The endpoint took an inline object-literal type as
+its `@Body()`, which `ValidationPipe` can't validate (no class, no decorators) — any shape reached
+the service. Added `CheckDuplicatesDto` and used it on both the controller and the service method
+signature.
