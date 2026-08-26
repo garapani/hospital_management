@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { EntityManager } from 'typeorm';
 import { AppModule } from './app.module.js';
 import { createApiValidationPipe } from './api-validation-pipe.js';
 import {
@@ -9,6 +10,7 @@ import {
   TenantTestContext,
 } from '../testing/tenant-test-context.js';
 import { signTestToken } from '../testing/test-jwt.js';
+import { Account } from '../accounts/entities/account.entity.js';
 
 /**
  * MVP acceptance walk: the complete registration → visit → bill → lab/radiology/pharmacy flow for
@@ -88,6 +90,22 @@ describe('MVP end-to-end workflow (integration)', () => {
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'mvp_workflow' });
     staffId = '00000000-0000-0000-0000-0000000000aa';
+    // NotificationsService.create() drops notifications addressed to a nonexistent or
+    // deactivated account (notifications P1 fix), so the staff actor used as
+    // admittingDoctorId/doctorId must be a real Account row for the admission/appointment
+    // notifications below to be retained.
+    await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager: EntityManager) =>
+        manager.getRepository(Account).save(
+          manager.getRepository(Account).create({
+            id: staffId,
+            accountType: 'staff',
+            displayName: 'MVP Staff',
+            isActive: true,
+          }),
+        ),
+      ),
+    );
     token = await signTestToken({
       sub: staffId,
       hospitalId: ctx.tenantId,
