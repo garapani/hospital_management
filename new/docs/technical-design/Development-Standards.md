@@ -3828,3 +3828,36 @@ permission whose prefix is in no module key and isn't always-on now logs once pe
 hospital role-picker's `isCrossTenant = false` filter, and the `roles_name_key` 23505 → 409 catch
 for concurrent role creation — the constraint name verified against the live DB (an inline
 `UNIQUE` on a column auto-names as `<table>_<column>_key`, not TypeORM's `UQ_*` scheme).
+
+## 96. Tenants P2/P3 batch: provisioning retry from a clean slate, a purge that can't be
+    deadlocked, and purged tenants that stay dead (2026-08-26)
+
+Five items, closing out the tenants section (its P1 landed earlier). Three shapes:
+
+**Provisioning failure cleanup now removes everything this call created.** The old cleanup deleted
+only the registry row, leaving the tenant schema — and its bootstrap admin account — behind on the
+theory that the schema was "resumable" (`CREATE SCHEMA IF NOT EXISTS` + idempotent migrations).
+But the admin insert isn't idempotent: the retry's `createBootstrapAdmin` collided with the
+leftover account's unique username, so a failure after that insert made the hospitalId
+unretryable without manual DB surgery. The cleanup now drops the schema and role too (best-effort,
+after deleting the registry row). The safety argument is the interesting part: the schema belongs
+to this provisioning attempt because a *successful* provisioning would have committed the registry
+row and the retry's early existence check would have caught it — so dropping the freshly-created
+schema can never destroy a live tenant's data. When a cleanup path deletes partial state, it must
+delete ALL of the partial state it created, not just the first thing it finds.
+
+**DROP ROLE can't deadlock the purge anymore.** `DROP ROLE` is the one DDL in the purge that a
+lingering session (or an ownership block) can hang indefinitely — inside the transaction, that
+hang rolled back the whole purge on every retry, a no-progress loop. It now runs post-commit,
+best-effort, like the logo removal: `DROP SCHEMA` + the registry-row update stay transactional
+(they're the PHI-critical part), and a leftover role is harmless because provisioning's `CREATE
+ROLE` is existence-guarded. The purge-failure spec's premise flipped with the contract — it used
+to prove a blocked role drop rolled everything back; it now proves the purge completes despite the
+block, and cleans the role up once the blocking object is released.
+
+**The remaining three are pattern-fills**: the four status mutators now share an
+`assertNotPurged` guard (a purged tenant's schema is gone — restoring it to 'active' would be a
+tenant every login fails on); deactivated catalog roles can't be enabled (provision `roleIds`,
+`setTenantRoles`, and the package-default resolver all filter/reject `!isActive`); and
+`roleIds`/`departmentCatalogIds` are `@IsUUID({ each: true })` instead of plain strings, so a bad
+id 400s at the pipe instead of 500ing on the FK.
