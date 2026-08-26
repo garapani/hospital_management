@@ -3933,3 +3933,23 @@ warned about, now with a real permission behind the prefix.
 `(recipientAccountId) WHERE isRead = false` (the unread count — a partial index is the canonical
 shape for a boolean-filtered count). Retention (a delete job for old rows) is deferred: this
 codebase has no scheduler, and a cleanup path is an ops feature, not a schema fix.
+
+## 100. Helpdesk P2/P3 batch: raising a ticket is a staff-wide action, and the assignee must be
+    real (2026-08-26)
+
+Three items, closing out the helpdesk section. Two shapes:
+
+**"Anyone can raise, agents manage" is a permission split, not a looseness.** The create endpoint
+required `helpdesk.manage` (admins/agents only), so ordinary staff — the very people tickets are
+for — couldn't raise one. The fix adds a `helpdesk.create` permission granted to every staff role
+(the same "grant the raise action broadly, keep the queue narrow" split the notifications batch
+used for `notification.read`). When a permission gates an action that should be available to most
+users, split it off from the manage permission rather than loosening the manage grant.
+
+**The assignee must be a real, active account.** `assignTicket` took any string — a typo'd id
+silently handed the ticket to nobody. It now raw-looks-up the account (404 missing, 409
+deactivated), same cross-module-reference shape as every sibling module. The spec fixtures had to
+learn the new reality: they assigned to a bare UUID with no backing row, which the new validation
+correctly rejects — the fixtures now seed the account (the pattern established by the
+notifications subscriber spec). The list-filter indexes (`status`/`assigneeAccountId`/`createdAt
+DESC`, migration 0088) round out the batch.

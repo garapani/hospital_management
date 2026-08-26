@@ -276,9 +276,9 @@ the root `CLAUDE.md`.
 - [ ] **P3** — Index shape doesn't match query shape, and there's no retention path. (`migrations/0028-create-notifications-table.ts:22`) — **Partially fixed 2026-08-26:** the index half is closed — migration 0087 replaces the bare `(recipientAccountId)` index with the two shapes the queries actually use (`(recipientAccountId, createdAt DESC)` for the newest-first list, plus a partial `(recipientAccountId) WHERE isRead = false` for the unread count). The retention half — no cleanup path for old notifications — needs a scheduler/ops job (this codebase has no cron), captured as `new-features.md` #23.
 
 ### helpdesk
-- [ ] **P2** — Ordinary staff cannot raise a ticket — `POST` requires `helpdesk.manage`, seeded only to admins/agents. (`helpdesk/helpdesk.controller.ts:16`)
-- [ ] **P3** — `assignTicket` never validates the assignee exists or is active. (`helpdesk.service.ts:82-98`)
-- [ ] **P3** — No index on `status`/`assigneeAccountId`/`createdAt`. (`migrations/0044-create-helpdesk-tables.ts:9-25`)
+- [x] **P2** — Ordinary staff cannot raise a ticket — `POST` requires `helpdesk.manage`, seeded only to admins/agents. (`helpdesk/helpdesk.controller.ts:16`) — **Fixed 2026-08-26:** added a `helpdesk.create` permission granted to every staff role; `POST /helpdesk/tickets` now requires it instead of `helpdesk.manage` — anyone can raise a ticket, only agents/admins view and manage the queue.
+- [x] **P3** — `assignTicket` never validates the assignee exists or is active. (`helpdesk.service.ts:82-98`) — **Fixed 2026-08-26:** `assignTicket` now 404s on a nonexistent assignee and 409s on a deactivated one (raw `accounts` lookup, no cross-module import — same shape as the sibling modules' reference checks). Spec fixtures updated: the assign specs now seed a real account row for the assignee id.
+- [x] **P3** — No index on `status`/`assigneeAccountId`/`createdAt`. (`migrations/0044-create-helpdesk-tables.ts:9-25`) — **Fixed 2026-08-26:** migration 0088 adds the three list-filter indexes (`status`, `assigneeAccountId`, `createdAt DESC`).
 
 ### marketing
 - [ ] **P3** — Referral sources have no uniqueness at any layer. (`marketing/marketing.service.ts:59-76`)
