@@ -3273,3 +3273,50 @@ cancel the requisition itself the moment the order item is cancelled, making the
 never registers. Cancelling the order item directly via `OrdersService` while the requisition
 sits at `ReportEntered` leaves the requisition untouched, so `verify()` proceeds and must be the one
 thing standing between a cancelled order item and a phantom completion.
+
+## 80. Pharmacy P2/P3 batch: stock-only dispensing reversal that deliberately doesn't touch
+    orders or billing (2026-08-26)
+
+Three items from the pharmacy section, closing out that module's checklist entirely (the P1 FEFO
+fix landed earlier, 2026-08-25).
+
+**The reversal path (P2)** is the interesting design decision. The naive fix — reopen the linked
+order item to `Pending` once its dispensing is reversed, so the "true" state is visible on the order
+— was rejected: `orders`/`lab`/`radiology`/`pharmacy` all share one 3-state model
+(`Pending → Completed | Cancelled`) through the single `OrdersService.completeItemInTransaction`
+choke point, and nothing in this codebase ever transitions an item back to `Pending`. Reopening it
+only for pharmacy would (a) break that shared invariant for the other two workflow modules riding on
+the same choke point, and (b) reopen a double-billing risk — `ChargeCaptureSubscriber` fires on every
+`→ Completed` transition, so a reopened-then-recompleted item would charge the invoice a second time
+unless a billing return had already been run manually first.
+
+The fix actually shipped is stock-only: `PharmacyDispensingService.reverseDispensing()` (valid only
+from `Dispensed`, 409 otherwise) walks the `StockTransaction` rows the original dispense created
+(`referenceId = dispensing.id`, `transactionType: 'PharmacyDispense'`), credits each amount back to
+its originating `StockBalance` row under a `pessimistic_write` lock, records new
+`PharmacyDispenseReversal` transactions for the audit trail, and marks the dispensing `Reversed`. The
+order item and any captured invoice charge are left untouched — an invoice correction, if needed, is
+a separate, staff-initiated `InvoicesService.createReturn` call, exactly like every other reversal in
+this codebase (fraction, insurance never auto-reverse on a triggering event either).
+
+To still let staff **re-dispense** against the same order item after a reversal (the actual workflow
+need — a wrong drug/quantity, not a permanently dead order line), `createDispensing()`'s duplicate
+guard was widened from "block unless the existing dispensing is `Cancelled`" to "block only if
+`Pending` or `Dispensed`" — so a `Reversed` row no longer blocks a new one. This is safe without
+touching the order item at all: `dispenseDrug()`'s call to `completeItemInTransaction` is already a
+no-op when the item isn't `Pending`, so re-dispensing against an already-`Completed` item decrements
+stock again but never re-fires `ChargeCaptureSubscriber`. **Any partial unique index backing a
+status-based "no active duplicate" guard must be updated in the same migration as the guard itself**
+— the 0024 index (`WHERE status <> 'Cancelled'`) would otherwise still treat a `Reversed` row as
+active and reject the very insert the widened application check was built to allow; migration 0075
+drops and recreates it as `WHERE status IN ('Pending', 'Dispensed')` to match.
+
+**The RBAC gap (P2)** turned out to be half-fixed already: Hospital Admin's missing `pharmacy.read`
+was a side effect of the rbac-module P1 fix earlier in this same findings pass (that fix granted
+Hospital Admin every Pharmacy permission). Only Pharmacist's missing `inventory.read`/`order.read`
+(PRD §6.1's "Inventory, Order" secondary read scope) needed a new grant — worth checking whether a
+sibling fix already closed part of a finding before assuming the whole thing is still open.
+
+**The dead code (P3)** was `listByOrderItem`, deleted — same shape as the lab/radiology dead-code
+fixes earlier in this file (`findAll` already covers the same filter and is what the controller
+actually wires up).
