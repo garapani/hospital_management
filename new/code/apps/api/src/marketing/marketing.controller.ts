@@ -35,7 +35,7 @@ export class MarketingController {
 
   // Patient referrals
   @Post('referrals')
-  @RequirePermission('marketing.manage')
+  @RequirePermission('marketing.create')
   async recordReferral(@Body() dto: RecordReferralDto) {
     return this.marketingService.recordReferral(dto);
   }

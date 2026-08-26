@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -64,15 +65,29 @@ export class MarketingService {
     if (!SOURCE_TYPES.includes(sourceType)) {
       throw new BadRequestException(`sourceType must be one of: ${SOURCE_TYPES.join(', ')}`);
     }
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(ReferralSource).save(
-        manager.getRepository(ReferralSource).create({
-          name: input.name.trim(),
-          sourceType,
-          isActive: true,
-        }),
-      ),
-    );
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      // Referral source names must be unique — previously nothing enforced it at any layer
+      // (code-review-findings-2026-08-25 marketing P3; backstop UQ_referral_sources_name,
+      // migration 0089).
+      const repository = manager.getRepository(ReferralSource);
+      try {
+        return await repository.save(
+          repository.create({
+            name: input.name.trim(),
+            sourceType,
+            isActive: true,
+          }),
+        );
+      } catch (error) {
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint === 'UQ_referral_sources_name'
+        ) {
+          throw new ConflictException(`Referral source ${input.name.trim()} already exists`);
+        }
+        throw error;
+      }
+    });
   }
 
   async deactivateSource(id: string): Promise<ReferralSource> {

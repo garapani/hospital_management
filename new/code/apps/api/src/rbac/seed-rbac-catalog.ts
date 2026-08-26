@@ -410,6 +410,12 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     description: 'Manage referral sources and record patient referrals',
   },
   {
+    // Front desk captures referrals at registration — recording one must not require full
+    // marketing management (code-review-findings-2026-08-25 marketing P3).
+    name: 'marketing.create',
+    description: 'Record a patient referral',
+  },
+  {
     name: 'ssu.read',
     description: 'View social service unit cases',
   },
@@ -716,6 +722,11 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Super Admin', permissionName: 'marketing.manage' },
   { roleName: 'Hospital Admin', permissionName: 'marketing.read' },
   { roleName: 'Hospital Admin', permissionName: 'marketing.manage' },
+  // marketing.create: the front desk (receptionist + billing) records referrals at registration.
+  { roleName: 'Super Admin', permissionName: 'marketing.create' },
+  { roleName: 'Hospital Admin', permissionName: 'marketing.create' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'marketing.create' },
+  { roleName: 'Billing/Accounts Staff', permissionName: 'marketing.create' },
   { roleName: 'Super Admin', permissionName: 'ssu.read' },
   { roleName: 'Super Admin', permissionName: 'ssu.manage' },
   { roleName: 'Hospital Admin', permissionName: 'ssu.read' },

@@ -69,6 +69,11 @@ describe('MarketingService (integration)', () => {
     await expect(
       ctx.inTenant(() => marketingService.createSource({ name: 'TV' as never, sourceType: 'Television' as never })),
     ).rejects.toThrow(BadRequestException);
+
+    // Duplicate source names are rejected (P3 — previously nothing enforced uniqueness).
+    await expect(
+      ctx.inTenant(() => marketingService.createSource({ name: 'Google Search' })),
+    ).rejects.toThrow(ConflictException);
   });
 
   it('deactivates/reactivates sources; double-deactivate conflicts; deactivated sources reject referrals', async () => {

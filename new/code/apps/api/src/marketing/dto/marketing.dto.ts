@@ -21,14 +21,16 @@ export class CreateSourceDto {
 }
 
 export class RecordReferralDto {
-  @IsString()
+  // UUID-typed columns — the read DTOs already use @IsUUID; the write path must match or a bad
+  // id turns an FK violation into a raw 500 (code-review-findings-2026-08-25 marketing P3).
+  @IsUUID()
   patientId!: string;
 
-  @IsString()
+  @IsUUID()
   sourceId!: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   referredByDoctorId?: string;
 
   @IsOptional()
