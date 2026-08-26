@@ -292,9 +292,9 @@ the root `CLAUDE.md`.
 - [ ] **P3** — CSV export materializes up to 10,000 rows in memory with no streaming. (`reporting-query.service.ts:129-133`) — **Partially fixed 2026-08-26:** the in-memory materialization is explicitly bounded by the 10k-row cap (documented on the method); true response streaming is a response-layer refactor (a streamed `StreamableFile` writing incrementally) that this batch deliberately didn't attempt — the cap keeps the memory footprint bounded meanwhile.
 
 ### audit
-- [ ] **P2** — `audit_records` has no indexes whatsoever. (`migrations/0006-create-audit-records-table.ts:7-18`)
-- [ ] **P2** — Gated by `reporting.read` instead of its own permission. (`audit/audit.controller.ts:14`)
-- [ ] **P3** — Read access to PHI is never audited (only insert/update/remove are tracked).
+- [x] **P2** — `audit_records` has no indexes whatsoever. (`migrations/0006-create-audit-records-table.ts:7-18`) — **Fixed 2026-08-26:** migration 0090 adds indexes on every filter column the `AuditService` queries — `occurredAt DESC` (the default range), `tableName`, `recordId`, `changedByAccountId`, `correlationId`.
+- [x] **P2** — Gated by `reporting.read` instead of its own permission. (`audit/audit.controller.ts:14`) — **Fixed 2026-08-26 (rbac batch):** closed with the rbac P2 — a dedicated `audit.read` permission (catalog + seed, granted to Super Admin / Hospital Admin / Auditor/Compliance) now gates the audit endpoint.
+- [ ] **P3** — Read access to PHI is never audited (only insert/update/remove are tracked). — **Deferred 2026-08-26:** read-auditing is a real compliance feature — a read-tracking mechanism across every PHI read endpoint (there's no read-event infra today; the audit subscriber only fires on insert/update/remove) — not a batch fix. Captured as `new-features.md` #24, tied to the India-compliance roadmap.
 
 ### packages
 - [ ] **P2** — Two sources of truth for a package's module list (DB row vs. in-code catalog) — code changes don't change actual gating until a migration lands. (`packages/packages.service.ts:72`, `packages/package-catalog.ts:49-121`)

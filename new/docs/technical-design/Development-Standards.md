@@ -3997,3 +3997,24 @@ hand-rolled page/limit parse is gone (the shared DTO clamps identically — this
 hand-rolls a second, divergent pagination contract" finding, and the fix is "use the shared one",
 never "document the divergence"). The date-range filters became `@IsDateString()` DTOs at the same
 time (garbage dates 400 at the pipe instead of reaching SQL).
+
+## 103. Audit P2/P3 batch: filter-column indexes for the trail, and the read-audit gap deferred
+    (2026-08-26)
+
+One item landed here; the permission half was closed in the rbac batch; the read-audit half was
+deferred to `new-features.md` #24.
+
+**The audit table got indexes on the columns the search actually filters.** `audit_records` had
+zero indexes — every audit search scanned the whole table, which only gets worse as the trail
+grows (and the trail never shrinks; retention is a separate gap). Migration 0090 adds
+`occurredAt DESC` (the default 24h range), `tableName`, `recordId`, `changedByAccountId`, and
+`correlationId` — each matching a filter the `AuditService` applies. This is the "index the
+filter columns, verified against the service code" shape from the clinical cross-cutting batch.
+
+**The read-audit gap is a genuine compliance feature, not a schema fix.** Auditing reads means
+tracking who *viewed* a patient record — the audit subscriber only fires on entity
+insert/update/remove, and there's no read-event infra anywhere. That's net-new platform work
+(read-event volume, storage/index design, endpoint coverage decisions), captured as
+`new-features.md` #24 and tied to the India-compliance roadmap rather than half-built into this
+batch. The `audit.read` permission half of the section was already closed by the rbac batch
+(§95) — the trail no longer rides on `reporting.read`.

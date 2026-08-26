@@ -251,6 +251,23 @@ notifications P3, index half fixed in migration 0087). Add:
 Related review comments: code-review-findings-2026-08-25.md, notifications module, P3
 (`migrations/0028-create-notifications-table.ts:22`).
 
+### 24. Audit read-access to PHI
+
+The audit trail records inserts/updates/deletes of auditable entities, but reads are never
+tracked — there's no read-event infrastructure at all (code-review-findings-2026-08-25 audit P3).
+For a hospital EMR, knowing who *viewed* a patient record is as compliance-relevant as who
+changed it. Add:
+
+- A read-tracking mechanism: either audit events on PHI read endpoints (patient master, clinical
+  notes, results, prescriptions, billing) or a lighter access-log that records (accountId, record
+  type, recordId, timestamp) without the full diff.
+- A decision on volume: read events vastly outnumber writes, so an unbounded per-read audit row
+  is a storage and index-design question (the 0090 indexes are the write-side shapes; reads would
+  want their own).
+- Tie-in with the India-compliance roadmap's audit requirements.
+
+Related review comments: code-review-findings-2026-08-25.md, audit module, P3.
+
 ## Product Module Backlog
 
 The PRD phases still leave these major domains to add:
