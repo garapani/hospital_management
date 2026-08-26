@@ -3361,3 +3361,53 @@ the service) specifically to prove the DB constraint is the actual backstop, not
 happens to also prevent the same outcome — `FefoStockDecrementService` already rejects
 insufficient-stock at the application level, so a test through that path alone wouldn't have proven
 the CHECK constraint does anything at all.
+
+## 82. Ward-supply P2/P3 batch: a ward-level batch ledger that mirrors the central store, a
+    signed-delta Adjust, and the recurring raw-lookup cross-module validation (2026-08-26)
+
+Six items, closing out the ward-supply section entirely. Three reusable shapes emerged.
+
+**The ward sub-store now has a batch dimension, modeled exactly like the central store's.**
+`ward_stock_batches` holds one row per (departmentId, itemId, batchNumber) lot with its own
+`quantity`, and `WardStockBalance.availableQuantity` is treated as the sum of those rows — the
+same aggregate-over-batches split `stock_balances`/`stock_batches` already do at the central
+store, just scoped to a department. Three details made this tractable rather than a big feature:
+
+- **`''` (empty string) is the sentinel for stock received without batch provenance**, and it is
+  a plain column default, not a nullable column — a nullable `batchNumber` would silently defeat
+  the UNIQUE (departmentId, itemId, batchNumber) index, because Postgres treats NULLs as distinct,
+  so a second unbatched receipt would create a second row instead of upserting onto the first.
+  The ledger (`ward_stock_transactions.batchNumber`) still surfaces `null` for those rows, so the
+  sentinel never leaks into API responses.
+- **The migration backfills the sentinel row for every pre-existing balance**
+  (`INSERT ... SELECT "availableQuantity" FROM ward_stock_balances`), so the balance == sum(batches)
+  invariant holds from the moment the table exists — a new dimension must never land as a
+  "no data yet" table next to live aggregate rows, or every consumption immediately breaks.
+- **Receiving already-expired stock is rejected at the service** (same guard as the inventory
+  goods-receipt fix, §81) — without it, the FEFO consumption rule below would silently strand an
+  expired lot as un-consumable inventory that still occupies the aggregate balance.
+
+**All decrements share one FEFO path, including the new ledger types.** `consumeStock`,
+`returnStock`, and `wasteStock` are thin wrappers over a private `decrementStock` that locks the
+aggregate balance, refuses to go negative, then calls `decrementBatchesFefo` — earliest expiry
+first, `expiryDate >= CURRENT_DATE` excluding expired lots, the `''` sentinel (NULL expiry) last
+via NULLS LAST, each `UPDATE ... RETURNING` guarded by a `quantity >= portion` predicate under a
+pessimistic lock, one ledger row per lot touched carrying that lot's batchNumber/expiryDate. This
+is the ward-level analogue of `FefoStockDecrementService` (§17/§18), including the
+`[rows, rowCount]` tuple-shape caveat. **`Adjust` is the one exception that proves the "one
+ledger row per lot" rule is a means, not an end**: a stocktake delta has no batch provenance, so
+it records exactly one ledger row with the *signed* delta (positive or negative), while the
+underlying batch rows still move (positive → the `''` lot; negative → FEFO, per-lot rows
+suppressed) to keep the aggregate invariant true. Don't let a ledger's normal shape dictate what
+an unusual movement type must look like — decide the invariant first (balance == sum of batches),
+then let each type record the most honest representation of itself.
+
+**Cross-module reference validation stays raw-query, even for the master-data and clinical
+domains.** ward-supply was already doing a raw `SELECT id FROM inventory_items` for the item
+check; the batch adds the same shape for `departments` (the P2 gap), `patients`, and `admissions`
+(the P3 gap) — no entity imports, no new module-boundary edges, matching `assertAdmissionExists`
+in nursing and every sibling module. When a module needs to validate a foreign id, the answer
+continues to be a scoped raw lookup, not a new dependency edge. Note the DTOs for this module
+were also switched from `@IsString()` to `@IsUUID()` on every uuid field while they were being
+touched — the read DTO already used `@IsUUID`, and leaving write DTOs looser turns a bad id from
+a clean 400 into a raw Postgres 500 (see the platform-group P3 that calls this class of bug out).
