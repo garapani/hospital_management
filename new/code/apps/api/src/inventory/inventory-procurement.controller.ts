@@ -30,6 +30,12 @@ export class InventoryProcurementController {
     return this.inventoryProcurementService.listStockBalances(query);
   }
 
+  @Get('stock-balances/low-stock')
+  @RequirePermission('inventory.read')
+  async listLowStockItems() {
+    return this.inventoryProcurementService.listLowStockItems();
+  }
+
   @Get(':id')
   @RequirePermission('inventory.read')
   async findOne(@Param('id') id: string) {

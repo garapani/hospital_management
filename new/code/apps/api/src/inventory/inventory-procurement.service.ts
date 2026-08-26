@@ -10,6 +10,7 @@ import { InventoryCatalogService } from './inventory-catalog.service.js';
 import { StockBatch } from './entities/stock-batch.entity.js';
 import { StockBalance } from './entities/stock-balance.entity.js';
 import { StockTransaction } from './entities/stock-transaction.entity.js';
+import { InventoryItem } from './entities/inventory-item.entity.js';
 import { paginate, paginateRaw, PaginatedResponseDto, requireParam } from '@hospital/pagination';
 import { SearchPurchaseOrdersDto } from './dto/search-purchase-orders.dto.js';
 import { SearchStockBalancesDto } from './dto/search-stock-balances.dto.js';
@@ -43,6 +44,15 @@ export interface StockBalanceView {
   stockBatchId: string;
   batchNumber: string;
   expiryDate: string | null;
+  availableQuantity: string;
+}
+
+export interface LowStockItemView {
+  itemId: string;
+  code: string;
+  name: string;
+  reorderLevel: string;
+  minimumStock: string;
   availableQuantity: string;
 }
 
@@ -188,6 +198,13 @@ export class InventoryProcurementService {
     const mrp = input.mrp === undefined || input.mrp === null ? null : Number(input.mrp);
     if (mrp !== null && (typeof input.mrp !== 'number' || !Number.isFinite(mrp))) {
       throw new BadRequestException('mrp must be a number');
+    }
+    // Receiving already-expired stock is never a legitimate goods receipt — almost always a
+    // data-entry error — and would otherwise feed FEFO a batch that's dead on arrival (plain
+    // ISO-string comparison, safe since expiryDate is a validated YYYY-MM-DD date; matches
+    // vaccination's administeredDate future-date guard from the same review pass).
+    if (input.expiryDate && input.expiryDate < new Date().toISOString().slice(0, 10)) {
+      throw new BadRequestException(`expiryDate ${input.expiryDate} is in the past`);
     }
 
     return this.tenantConnection.runInTenantSchema(async (manager) => {
@@ -340,6 +357,32 @@ export class InventoryProcurementService {
         qb.where('balance.itemId = :itemId', { itemId: query.itemId });
       }
       return paginateRaw(qb, query);
+    });
+  }
+
+  /**
+   * `reorderLevel`/`minimumStock` were stored on every item but never queried anywhere
+   * (code-review-findings-2026-08-25 inventory P2) — this is the first read path for them.
+   * Not paginated: unlike every other list in this module, the result set is bounded by business
+   * meaning (only items actually low on stock), not by data volume, and `paginateRaw`'s shared
+   * `getCount()` isn't a good fit for a GROUP BY/HAVING aggregate query.
+   */
+  async listLowStockItems(): Promise<LowStockItemView[]> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      return manager
+        .createQueryBuilder(InventoryItem, 'item')
+        .leftJoin(StockBalance, 'balance', 'balance."itemId" = item.id')
+        .where('item."isActive" = true')
+        .select('item.id', 'itemId')
+        .addSelect('item.code', 'code')
+        .addSelect('item.name', 'name')
+        .addSelect('item."reorderLevel"', 'reorderLevel')
+        .addSelect('item."minimumStock"', 'minimumStock')
+        .addSelect('COALESCE(SUM(balance."availableQuantity"), 0)', 'availableQuantity')
+        .groupBy('item.id')
+        .having('COALESCE(SUM(balance."availableQuantity"), 0) <= item."reorderLevel"')
+        .orderBy('(item."reorderLevel" - COALESCE(SUM(balance."availableQuantity"), 0))', 'DESC')
+        .getRawMany<LowStockItemView>();
     });
   }
 }

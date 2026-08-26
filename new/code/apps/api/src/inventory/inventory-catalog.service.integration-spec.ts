@@ -95,6 +95,31 @@ describe('InventoryCatalogService catalog update/deactivate (integration)', () =
     });
   }
 
+  describe('createItem', () => {
+    it('rejects a duplicate code', async () => {
+      const subCategory = await makeSubCategory('duplicate-code');
+      await ctx.inTenant(() =>
+        inventoryCatalogService.createItem({
+          subCategoryId: subCategory.id,
+          name: 'First Item',
+          code: 'DUP-CODE',
+          unitOfMeasure: 'Tablet',
+        }),
+      );
+
+      await expect(
+        ctx.inTenant(() =>
+          inventoryCatalogService.createItem({
+            subCategoryId: subCategory.id,
+            name: 'Second Item',
+            code: 'DUP-CODE',
+            unitOfMeasure: 'Tablet',
+          }),
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
   describe('updateItem', () => {
     it('applies only the provided fields and leaves the rest untouched', async () => {
       const item = await makeItem('update-fields');
@@ -140,6 +165,15 @@ describe('InventoryCatalogService catalog update/deactivate (integration)', () =
       await expect(
         ctx.inTenant(() => inventoryCatalogService.updateItem(item.id, { reorderLevel: -1 })),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects updating to a code already used by another item', async () => {
+      const existing = await makeItem('update-code-conflict-existing');
+      const item = await makeItem('update-code-conflict');
+
+      await expect(
+        ctx.inTenant(() => inventoryCatalogService.updateItem(item.id, { code: existing.code })),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('rejects a negative minimumStock with BadRequestException', async () => {

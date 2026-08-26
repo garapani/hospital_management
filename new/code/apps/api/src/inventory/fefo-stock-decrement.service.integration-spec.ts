@@ -131,4 +131,23 @@ describe('FefoStockDecrementService (integration)', () => {
     expect(byBatch.has(datedBatch.id)).toBe(true);
     expect(byBatch.has(noExpiryBatch.id)).toBe(true);
   });
+
+  // Regression test for code-review-findings-2026-08-25.md's inventory P3: nothing at the DB
+  // layer stopped a bug elsewhere from driving a balance negative. decrementInTransaction's own
+  // insufficient-stock check already prevents this through the normal code path, so this proves
+  // the CHECK constraint (migration 0076) is the actual backstop, independent of application code.
+  it('rejects a raw update that would drive availableQuantity negative', async () => {
+    const item = await makeItem('fefo-negative-check');
+    const batch = await seedBatch(item.id, 'NEGATIVE-CHECK-1', null, 5);
+
+    await expect(
+      ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.query(`UPDATE stock_balances SET "availableQuantity" = -1 WHERE "stockBatchId" = $1`, [
+            batch.id,
+          ]),
+        ),
+      ),
+    ).rejects.toThrow();
+  });
 });

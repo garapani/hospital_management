@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { In } from 'typeorm';
+import { In, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { InventoryItemCategory } from './entities/inventory-item-category.entity.js';
 import { InventoryItemSubCategory } from './entities/inventory-item-sub-category.entity.js';
@@ -184,8 +184,24 @@ export class InventoryCatalogService {
         minimumStock: String(minimumStock),
         salePrice: input.salePrice ?? null,
       };
-      return repository.save(repository.create(itemData));
+      try {
+        return await repository.save(repository.create(itemData));
+      } catch (error) {
+        throw this.mapCodeConflict(error, input.code);
+      }
     });
+  }
+
+  /** Maps a `UQ_inventory_items_code` violation to a 409 (code-review-findings-2026-08-25 inventory
+   *  P2), same shape as the lab_tests code-uniqueness fix. Rethrows anything else unchanged. */
+  private mapCodeConflict(error: unknown, code: string): unknown {
+    if (
+      error instanceof QueryFailedError &&
+      (error as QueryFailedError & { constraint?: string }).constraint === 'UQ_inventory_items_code'
+    ) {
+      return new ConflictException(`Inventory item code ${code} is already in use`);
+    }
+    return error;
   }
 
   async updateItemSalePrice(id: string, salePrice: number): Promise<InventoryItem> {
@@ -235,7 +251,11 @@ export class InventoryCatalogService {
       if (input.salePrice !== undefined) {
         item.salePrice = input.salePrice;
       }
-      return repository.save(item);
+      try {
+        return await repository.save(item);
+      } catch (error) {
+        throw this.mapCodeConflict(error, item.code);
+      }
     });
   }
 
