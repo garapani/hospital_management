@@ -3551,3 +3551,39 @@ Also of note: the backward-compatible default (omitted `defaultTaxPercent` → 0
 existing client and test working unchanged, and the capture spec's tax tests must reset the shared
 tenant's settings back to 0 — the settings row is per-tenant singleton shared across all tests in
 the describe block, so a tax-configured test leaks into later tests without cleanup.
+
+## 87. Accounting P2/P3 batch: structural account guards, exact-money aggregation, and a raw-SQL
+    soft-delete gap (2026-08-26)
+
+Seven items, closing out the accounting section. Four shapes worth recording.
+
+**Account type is structural; the guard is "journaled → frozen".** `updateAccount` now 409s a type
+change when the account has any `journal_lines`, because the type drives report classification
+(trial balance / income statement / balance sheet) — changing it re-classifies *history* the
+moment it's saved. The system accounts (the fixed ids in `ledger-account-codes.ts`) are a second,
+stronger case: they're load-bearing for billing's auto-posted journals, so they reject type
+changes and deactivation outright while still allowing cosmetic name edits. The shape to copy:
+`isSystemAccount()` derives from the id set, and the journaled check is a raw `SELECT 1 ...
+LIMIT 1` — existence-only, cheapest possible.
+
+**Money sums stay numeric until the last moment.** The trial-balance aggregation was
+`COALESCE(SUM(...), 0)::float8` — float8 has 53 bits of mantissa, so large money sums (₹100M+)
+can silently drop paise *before* `roundMoney` ever runs. `::numeric` keeps exact decimal
+arithmetic; node-postgres returns numerics as strings, so the mapping converts with `Number()`
+and rounds in JS. When a report must be exact, cast to numeric in SQL and round in the
+application, not the other way around.
+
+**Raw SQL inherits the soft-delete filter by hand.** TypeORM only appends `deletedAt IS NULL` to
+repository-generated queries; a raw `manager.query` join silently includes soft-deleted rows.
+trialBalance's raw join now filters `j."deletedAt" IS NULL` explicitly — a reminder that any raw
+query over a SoftDeletableEntity table must re-apply the filter itself (the regression test
+soft-deletes a posted journal via raw UPDATE and asserts it drops out of the report).
+
+**The remaining three were pattern-fills**: `ListJournalsQueryDto` extends `PaginationQueryDto`
+(the service already paginated — only the DTO stripped `page`/`limit`, the recurring class of bug
+this file keeps fixing), `postJournal` row-locks via a `lock` flag on the shared `loadJournal`
+helper, and `CreateJournalDto.entryDate` is `@IsDateString()`. The accountCode uniqueness fix
+(0074-shaped, migration 0082) also surfaced that the accounting spec's fixtures reused the
+seeded system accounts' codes (1000/1010/2000/4000/4900) across tests in the shared tenant —
+previously invisible because duplicates were legal; the fixtures were renumbered to distinct
+codes, which is what the new constraint requires.
