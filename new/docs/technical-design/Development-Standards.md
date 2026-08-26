@@ -3131,3 +3131,42 @@ pagination fix can close).
 decorator is method-level only — there's no class-level equivalent that would let this live once on
 the controller — so it's repeated five times, annotated with why at the class level so the repetition
 reads as intentional rather than copy-paste.
+
+## 76. Cross-cutting (clinical group) batch: filter-column indexes, RBAC seed drift, actor-column
+    types (2026-08-26)
+
+Three of four items from the clinical group's cross-cutting section closed this pass — the fourth
+(module-boundary lint tags) needs `eslint.config.mjs`, which Claude cannot edit (see §69/§70's note
+on `guard-config.sh`); left for a human hand-edit.
+
+**Filter-column indexes: verified against each service's actual query, not assumed from the
+entity.** Added migration 0072 covering nine tables across admissions/appointments/clinical-
+encounters/triage/nursing/ot/maternity, one plain `CREATE INDEX IF NOT EXISTS` per column each
+module's own `list()`/`find()` call filters on. Skipped three columns that already have adequate
+coverage from an earlier fix in this same file: `discharge_summaries.admissionId` and
+`maternity_records.admissionId` (both unique-indexed), `vaccination_records.patientId` (leading
+column of its own unique index) — a reminder that a uniqueness fix already closes the "no index"
+half of a later finding on the same column, worth checking before adding a redundant one.
+
+**RBAC seed drift, same create-only caveat as every other RBAC fix.** Removed Nurse's
+`order.manage`/`patients.create`/`patients.update` grants (PRD §6.1 gives Nurse read-only on Order
+and doesn't mention Patient write access at all) from `ROLE_PERMISSION_MAPPINGS`. Same limitation
+noted on every other RBAC seed change in this file: `ON CONFLICT DO NOTHING` means an
+already-provisioned tenant's over-grant isn't retroactively revoked — this is the RBAC module's own
+still-open "seed is create-only" finding, not something a code-only fix here can close. Caught a
+stale test assertion in `seed-rbac-catalog.integration-spec.ts` expecting Nurse in `order.manage`'s
+role list — updated to match the corrected grant.
+
+**Actor-column type fix: `varchar`, matching the exact rationale already documented for audit
+columns.** `triage_entries.triagedBy`, `nursing_tasks.completedBy`,
+`medication_administrations.administeredBy`/`skippedBy` converted from `uuid` to `varchar`
+(migration 0073, same `ALTER COLUMN ... TYPE varchar USING ...::varchar` shape migration 0053 used
+for `nursing_tasks.createdBy`/`invoices.createdBy`/`journal_entries.createdBy`) — this codebase's
+test suite signs tokens with human-readable `sub` values, which a uuid column rejects outright.
+`skippedBy` (added this same review pass, not part of the original finding) was converted too,
+rather than being left as a fresh instance of the exact inconsistency this fix exists to close.
+`nursing_tasks.assignedTo` was deliberately NOT converted — worth the general rule: **not every uuid
+column referencing an account is an "actor" column in this sense** — `assignedTo` records who a
+task is *for*, not who performed a sign-off action, so it doesn't need the same accommodation for
+non-uuid test `sub` values (nothing writes a test-signed value into it the way `resolveActor()`
+does for actor fields).
