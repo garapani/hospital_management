@@ -338,6 +338,106 @@ describe('FractionService (integration)', () => {
     expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
   });
 
+  it('rejects a second active default rule for the same doctor, while allowing department rules', async () => {
+    const doctor = await makeDoctor();
+    const patient = await makePatient();
+    const invoice = await makeInvoice(patient.id);
+    await ctx.inTenant(() =>
+      fractionService.createRule({ doctorId: doctor.id, fractionPercent: 10 }),
+    );
+
+    // A second active default (null-department) rule is ambiguous by definition — rejected.
+    await expect(
+      ctx.inTenant(() => fractionService.createRule({ doctorId: doctor.id, fractionPercent: 20 })),
+    ).rejects.toThrow(ConflictException);
+
+    // Department-specific rules coexist with the default.
+    const departmentRule = await ctx.inTenant(() =>
+      fractionService.createRule({
+        doctorId: doctor.id,
+        departmentId: '00000000-0000-0000-0000-0000000000d1',
+        fractionPercent: 25,
+      }),
+    );
+    expect(departmentRule.fractionPercent).toBe(25);
+
+    // Deactivating the default frees the slot for a new one.
+    const defaultRules = await ctx.inTenant(() =>
+      fractionService.listRules({ doctorId: doctor.id }),
+    );
+    const defaultRule = defaultRules.data.find((r) => r.departmentId === null)!;
+    await ctx.inTenant(() => fractionService.deactivateRule(defaultRule.id));
+    const replacement = await ctx.inTenant(() =>
+      fractionService.createRule({ doctorId: doctor.id, fractionPercent: 30 }),
+    );
+    expect(replacement.fractionPercent).toBe(30);
+
+    // Sanity: the entry path still resolves a share.
+    const entry = await ctx.inTenant(() =>
+      fractionService.recordEntry({
+        invoiceId: invoice.id,
+        doctorId: doctor.id,
+        recordedBy: STAFF_ID,
+      }),
+    );
+    expect(entry.fractionPercent).toBe(30);
+  });
+
+  it('reverses a share entry and rejects double reversal', async () => {
+    const doctor = await makeDoctor();
+    const patient = await makePatient();
+    const invoice = await makeInvoice(patient.id);
+    await ctx.inTenant(() => fractionService.createRule({ doctorId: doctor.id, fractionPercent: 10 }));
+    const entry = await ctx.inTenant(() =>
+      fractionService.recordEntry({ invoiceId: invoice.id, doctorId: doctor.id, recordedBy: STAFF_ID }),
+    );
+
+    const reversed = await ctx.inTenant(() => fractionService.reverseEntry(entry.id, STAFF_ID));
+    expect(reversed.reversedAt).not.toBeNull();
+    expect(reversed.reversedBy).toBe(STAFF_ID);
+
+    await expect(
+      ctx.inTenant(() => fractionService.reverseEntry(entry.id, STAFF_ID)),
+    ).rejects.toThrow(ConflictException);
+    await expect(
+      ctx.inTenant(() => fractionService.reverseEntry('00000000-0000-0000-0000-000000000000')),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('reverses every live entry for an invoice via reverseEntriesForInvoice', async () => {
+    const doctorA = await makeDoctor();
+    const doctorB = await makeDoctor();
+    const patient = await makePatient();
+    const invoice = await makeInvoice(patient.id);
+    await ctx.inTenant(() => fractionService.createRule({ doctorId: doctorA.id, fractionPercent: 10 }));
+    await ctx.inTenant(() => fractionService.createRule({ doctorId: doctorB.id, fractionPercent: 5 }));
+    await ctx.inTenant(() =>
+      fractionService.recordEntry({ invoiceId: invoice.id, doctorId: doctorA.id, recordedBy: STAFF_ID }),
+    );
+    await ctx.inTenant(() =>
+      fractionService.recordEntry({ invoiceId: invoice.id, doctorId: doctorB.id, recordedBy: STAFF_ID }),
+    );
+
+    await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        fractionService.reverseEntriesForInvoice(manager, invoice.id),
+      ),
+    );
+
+    const entries = await ctx.inTenant(() => fractionService.listEntries({ invoiceId: invoice.id }));
+    expect(entries.data).toHaveLength(2);
+    expect(entries.data.every((e) => e.reversedAt !== null)).toBe(true);
+
+    // Idempotent: running it again is a no-op.
+    await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        fractionService.reverseEntriesForInvoice(manager, invoice.id),
+      ),
+    );
+    const again = await ctx.inTenant(() => fractionService.listEntries({ invoiceId: invoice.id }));
+    expect(again.data.every((e) => e.reversedAt !== null)).toBe(true);
+  });
+
   it('lists and fetches entries, filtered by invoice and doctor', async () => {
     const doctorA = await makeDoctor();
     const doctorB = await makeDoctor();

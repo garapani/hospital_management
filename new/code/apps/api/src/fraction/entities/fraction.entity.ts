@@ -58,6 +58,15 @@ export class FractionEntry {
   @Column({ type: 'uuid' })
   recordedBy!: string;
 
+  /** Set when the entry is reversed (invoice returned or cancelled); null while the share is live. */
+  @Column({ type: 'timestamptz', nullable: true })
+  reversedAt!: Date | null;
+
+  /** Actor who reversed the entry; varchar like the audit columns (test tokens sign non-uuid
+   *  sub values — §73). */
+  @Column({ type: 'varchar', nullable: true })
+  reversedBy!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 }

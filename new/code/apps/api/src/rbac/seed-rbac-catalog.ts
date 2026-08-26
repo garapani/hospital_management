@@ -630,8 +630,11 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Super Admin', permissionName: 'fraction.manage' },
   { roleName: 'Hospital Admin', permissionName: 'fraction.read' },
   { roleName: 'Hospital Admin', permissionName: 'fraction.manage' },
-  { roleName: 'Billing/Accounts Staff', permissionName: 'fraction.read' },
-  { roleName: 'Billing/Accounts Staff', permissionName: 'fraction.manage' },
+  // PRD §6.1: Fraction & Incentive is in HR/Payroll Admin's primary scope; Billing/Accounts
+  // Staff's scope is "Billing, Insurance & Claims, Accounting, Verification" — no Fraction
+  // (code-review-findings-2026-08-25 fraction P3).
+  { roleName: 'HR/Payroll Admin', permissionName: 'fraction.read' },
+  { roleName: 'HR/Payroll Admin', permissionName: 'fraction.manage' },
   { roleName: 'Super Admin', permissionName: 'helpdesk.read' },
   { roleName: 'Super Admin', permissionName: 'helpdesk.manage' },
   { roleName: 'Hospital Admin', permissionName: 'helpdesk.read' },

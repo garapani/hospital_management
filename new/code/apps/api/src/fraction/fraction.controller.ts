@@ -54,4 +54,10 @@ export class FractionController {
   async getEntry(@Param('id') id: string) {
     return this.fractionService.getEntry(id);
   }
+
+  @Patch('entries/:id/reverse')
+  @RequirePermission('fraction.manage')
+  async reverseEntry(@Param('id') id: string) {
+    return this.fractionService.reverseEntry(id);
+  }
 }
