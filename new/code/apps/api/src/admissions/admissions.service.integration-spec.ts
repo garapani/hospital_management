@@ -7,6 +7,7 @@ import { TriageService } from '../clinical/triage/triage.service.js';
 import { AdmissionsService } from './admissions.service.js';
 import { Admission } from './entities/admission.entity.js';
 import { BedTransfer } from './entities/bed-transfer.entity.js';
+import { DischargeSummary } from './entities/discharge-summary.entity.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import {
   setupTenantTestContext,
@@ -162,6 +163,26 @@ describe('AdmissionsService (integration)', () => {
 
     const activeAfter = await ctx.inTenant(() => triageService.listActive());
     expect(activeAfter.data.some((entry) => entry.id === triageEntry.id)).toBe(false);
+  });
+
+  it('rejects admitting from a triage entry linked to a different patient', async () => {
+    const patient = await makePatient(ctx, '3330000024');
+    const otherPatient = await makePatient(ctx, '3330000025');
+    const bed = await makeBed(ctx, 'ADT3C');
+    const triageEntry = await ctx.inTenant(() => triageService.create({ chiefComplaint: 'Test' }));
+    await ctx.inTenant(() => triageService.linkPatient(triageEntry.id, otherPatient.id));
+
+    await expect(
+      ctx.inTenant(() =>
+        admissionsService.admit({
+          patientId: patient.id,
+          admissionSource: 'ER',
+          sourceTriageEntryId: triageEntry.id,
+          admittingDoctorId: DOCTOR_ID,
+          bedId: bed.id,
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('rejects admitting from an unlinked (anonymous) triage entry', async () => {
@@ -359,6 +380,43 @@ describe('AdmissionsService (integration)', () => {
     ).rejects.toThrow(ConflictException);
   });
 
+  it('maps a transfer-time bed double-booking race at the DB constraint level to ConflictException', async () => {
+    // Mirrors the admit()-race test above: leaves the destination Bed row 'Available'
+    // while an active Admission for it already exists (inserted directly, bypassing
+    // the normal admit()/transfer() status flip), so transfer()'s synchronous
+    // `toBed.status !== 'Available'` check passes and the race can only be caught by
+    // the UQ_admissions_active_bed constraint on the admission update itself. Must
+    // surface as ConflictException, not a raw QueryFailedError.
+    const patientA = await makePatient(ctx, '3330000020');
+    const patientC = await makePatient(ctx, '3330000021');
+    const bedA = await makeBed(ctx, 'ADTRACE3', 'A');
+    const bedB = await makeBed(ctx, 'ADTRACE3', 'B');
+
+    const admissionA = await ctx.inTenant(() =>
+      admissionsService.admit({ patientId: patientA.id, admissionSource: 'Direct', admittingDoctorId: DOCTOR_ID, bedId: bedA.id }),
+    );
+
+    await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema(async (manager) => {
+        const repository = manager.getRepository(Admission);
+        await repository.save(
+          repository.create({
+            patientId: patientC.id,
+            admissionSource: 'Direct',
+            admittingDoctorId: DOCTOR_ID,
+            wardId: bedB.wardId,
+            bedId: bedB.id,
+            status: 'Admitted',
+          }),
+        );
+      }),
+    );
+
+    await expect(
+      ctx.inTenant(() => admissionsService.transfer(admissionA.id, { toBedId: bedB.id, transferredBy: DOCTOR_ID })),
+    ).rejects.toThrow(ConflictException);
+  });
+
   it('discharges a patient, freeing the bed', async () => {
     const patient = await makePatient(ctx, '3330000011');
     const bed = await makeBed(ctx, 'ADT9');
@@ -435,6 +493,56 @@ describe('AdmissionsService (integration)', () => {
     await expect(
       ctx2.inTenant(() => admissionsService.findOne(admission.id)),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects editing or re-reviewing a discharge summary that has already been reviewed', async () => {
+    const patient = await makePatient(ctx, '3330000023');
+    const bed = await makeBed(ctx, 'ADTRACE5');
+    const admission = await ctx.inTenant(() =>
+      admissionsService.admit({ patientId: patient.id, admissionSource: 'Direct', admittingDoctorId: DOCTOR_ID, bedId: bed.id }),
+    );
+    await ctx.inTenant(() => admissionsService.discharge(admission.id, { dischargedBy: DOCTOR_ID }));
+    const summary = await ctx.inTenant(() =>
+      admissionsService.createDischargeSummary({ admissionId: admission.id, patientId: patient.id, preparedBy: DOCTOR_ID }),
+    );
+    await ctx.inTenant(() => admissionsService.reviewDischargeSummary(summary.id, DOCTOR_ID));
+
+    await expect(
+      ctx.inTenant(() => admissionsService.updateDischargeSummary(summary.id, { primaryDiagnosis: 'Changed after review' })),
+    ).rejects.toThrow(ConflictException);
+    await expect(
+      ctx.inTenant(() => admissionsService.reviewDischargeSummary(summary.id, DOCTOR_ID)),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('UQ_discharge_summaries_admission rejects a second concurrent discharge summary for the same admission', async () => {
+    // Mirrors the UQ_admissions_active_patient race test above: proves the DB
+    // constraint itself — the backstop for createDischargeSummary()'s sequential
+    // select-then-insert "already exists" check — rejects a second concurrent insert.
+    const patient = await makePatient(ctx, '3330000022');
+    const bed = await makeBed(ctx, 'ADTRACE4');
+    const admission = await ctx.inTenant(() =>
+      admissionsService.admit({ patientId: patient.id, admissionSource: 'Direct', admittingDoctorId: DOCTOR_ID, bedId: bed.id }),
+    );
+    await ctx.inTenant(() => admissionsService.discharge(admission.id, { dischargedBy: DOCTOR_ID }));
+
+    const results = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) => {
+        const repository = manager.getRepository(DischargeSummary);
+        const create = () =>
+          repository.save(
+            repository.create({
+              admissionId: admission.id,
+              patientId: patient.id,
+              preparedBy: DOCTOR_ID,
+            }),
+          );
+        return Promise.allSettled([create(), create()]);
+      }),
+    );
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
   });
 
   describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {

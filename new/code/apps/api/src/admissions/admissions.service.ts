@@ -104,6 +104,11 @@ export class AdmissionsService {
             `Triage entry ${input.sourceTriageEntryId} must be linked to a patient before it can be admitted`,
           );
         }
+        if (triageEntry.patientId !== input.patientId) {
+          throw new BadRequestException(
+            `Triage entry ${input.sourceTriageEntryId} is linked to a different patient than the one being admitted`,
+          );
+        }
       }
 
       const patient = await manager.getRepository(Patient).findOne({ where: { id: input.patientId } });
@@ -249,7 +254,18 @@ export class AdmissionsService {
 
       admission.wardId = toBed.wardId;
       admission.bedId = toBed.id;
-      const updated = await admissionRepository.save(admission);
+      let updated: Admission;
+      try {
+        updated = await admissionRepository.save(admission);
+      } catch (error) {
+        if (error instanceof QueryFailedError) {
+          const constraint = (error as QueryFailedError & { constraint?: string }).constraint;
+          if (constraint === 'UQ_admissions_active_bed' || (error as QueryFailedError & { code?: string }).code === '23505') {
+            throw new ConflictException(`Bed ${input.toBedId} is not available (status: Occupied)`);
+          }
+        }
+        throw error;
+      }
 
       const bedTransferRepository = manager.getRepository(BedTransfer);
       await bedTransferRepository.save(
@@ -376,6 +392,9 @@ export class AdmissionsService {
       if (!summary) {
         throw new NotFoundException(`Discharge summary ${id} not found`);
       }
+      if (summary.reviewedAt) {
+        throw new ConflictException(`Discharge summary ${id} has already been reviewed and can no longer be edited`);
+      }
 
       if (input.primaryDiagnosis !== undefined) summary.primaryDiagnosis = input.primaryDiagnosis;
       if (input.secondaryDiagnoses !== undefined) summary.secondaryDiagnoses = input.secondaryDiagnoses;
@@ -404,6 +423,9 @@ export class AdmissionsService {
       const summary = await repository.findOne({ where: { id } });
       if (!summary) {
         throw new NotFoundException(`Discharge summary ${id} not found`);
+      }
+      if (summary.reviewedAt) {
+        throw new ConflictException(`Discharge summary ${id} has already been reviewed`);
       }
       summary.reviewedBy = this.resolveActor(reviewedBy);
       summary.reviewedAt = new Date();

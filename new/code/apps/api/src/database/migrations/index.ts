@@ -62,6 +62,7 @@ import { CreateAssetDepreciationEntriesTable3000000000061 } from './0061-create-
 import { AddAdmissionsActivePatientUnique3000000000062 } from './0062-add-admissions-active-patient-unique.js';
 import { AddFractionEntriesUnique3000000000063 } from './0063-add-fraction-entries-unique.js';
 import { DropRoleBypassesPermissionChecks3000000000064 } from './0064-drop-role-bypasses-permission-checks.js';
+import { AddDischargeSummariesAdmissionUnique3000000000065 } from './0065-add-discharge-summaries-admission-unique.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -138,4 +139,5 @@ export const TENANT_MIGRATIONS = [
   CreateAssetDepreciationEntriesTable3000000000061,
   AddAdmissionsActivePatientUnique3000000000062,
   AddFractionEntriesUnique3000000000063,
+  AddDischargeSummariesAdmissionUnique3000000000065,
 ];
