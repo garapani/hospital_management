@@ -3587,3 +3587,40 @@ helper, and `CreateJournalDto.entryDate` is `@IsDateString()`. The accountCode u
 seeded system accounts' codes (1000/1010/2000/4000/4900) across tests in the shared tenant —
 previously invisible because duplicates were legal; the fixtures were renumbered to distinct
 codes, which is what the new constraint requires.
+
+## 88. Insurance P2/P3 batch: insurer settlement finally moves money, and the coverage-freeze
+    guard (2026-08-26)
+
+Six items, closing out the insurance section (its P1 caps landed earlier). Two shapes dominate.
+
+**markClaimPaid now records a real payment — the module's first money movement, and its first
+cross-domain service dependency.** Previously the claim flipped to Paid and nothing else
+happened: no journal, no payment record, the insurer-settled invoice stayed Unpaid. The fix
+records an `Insurance` payment against the claim's invoice through `InvoicesService.recordPayment`
+(a new `Insurance` payment mode; the payment posts the usual Cash/Patient-AR journal). Three
+decisions worth recording:
+
+- **The payment is recorded FIRST, and the claim flips to Paid only after it succeeds** — a
+  failed settlement leaves the claim Approved, not falsely Paid, and fails loud. `recordPayment`
+  rejects an amount exceeding the invoice's outstanding balance, so a claim approved against an
+  already-paid invoice surfaces as an error for billing staff to resolve, never a silent cap.
+- **The reimbursement journals as cash-in.** This codebase's ledger has no Insurance-Receivable
+  account (only the five seeded system accounts), so the insurer's settlement is treated like a
+  cash payment, exactly as every other payment mode already is. A receivable-then-settlement
+  model is net-new accounting work, out of scope for this fix.
+- **It crosses the insurance → billing boundary** — `InsuranceModule` now imports `BillingModule`
+  and the service injects `InvoicesService`. Insurance was previously untagged in the eslint
+  `boundaries/elements` list (the cross-cutting boundary finding), so the import doesn't trip
+  lint today; tagging insurance (and every other untagged domain) plus the new edge is part of
+  that still-pending cross-cutting item, deliberately not smuggled into this batch.
+
+**The coverage-freeze guard is the accounting pattern applied to a policy.** Coverage terms
+(`sumInsured`, coverage window) are the basis every approval was capped against (the P1 sum
+checks) — so once a policy has any claims, `updatePolicy` 409s changes to them, while
+administrative fields (policyNumber/insuredName/relationship) stay editable. Same shape as the
+accounting "journaled → frozen" rule (§87): a field that history was computed against becomes
+immutable once that history exists. The partial-update fix (`requirePolicyNumber` flag on the
+shared validator) and the policy-number uniqueness index (`UQ_patient_policies_patient_payer_number`,
+0083) fill out the batch; `checkCoverage` gained the payer-active requirement with its own
+`payer-inactive` reason, and `submitClaim` stopped stamping `processedBy`/`processedAt` — those
+belong to adjudication, not submission.
