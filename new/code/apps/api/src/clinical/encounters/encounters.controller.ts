@@ -1,5 +1,6 @@
-import { Controller, Post, Patch, Get, Body, Param, UseGuards, Delete } from '@nestjs/common';
+import { Controller, Post, Patch, Get, Body, Param, Query, UseGuards, Delete, HttpCode, HttpStatus } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
+import { PaginationQueryDto } from '@hospital/pagination';
 import { EncountersService } from './encounters.service.js';
 import { CreateNoteDto, UpdateNoteDto, CreateDiagnosisDto, CreatePrescriptionDto } from './dto/encounter.dto.js';
 
@@ -23,8 +24,8 @@ export class EncountersController {
 
   @Get('notes/patient/:patientId')
   @RequirePermission('encounter.read')
-  async getNotesByPatient(@Param('patientId') patientId: string) {
-    return this.encountersService.getNotesByPatient(patientId);
+  async getNotesByPatient(@Param('patientId') patientId: string, @Query() query: PaginationQueryDto) {
+    return this.encountersService.getNotesByPatient(patientId, query);
   }
 
   // --- Diagnoses ---
@@ -43,8 +44,8 @@ export class EncountersController {
 
   @Get('diagnoses/patient/:patientId')
   @RequirePermission('encounter.read')
-  async getDiagnosesByPatient(@Param('patientId') patientId: string) {
-    return this.encountersService.getDiagnosesByPatient(patientId);
+  async getDiagnosesByPatient(@Param('patientId') patientId: string, @Query() query: PaginationQueryDto) {
+    return this.encountersService.getDiagnosesByPatient(patientId, query);
   }
 
   // --- Prescriptions ---
@@ -52,6 +53,20 @@ export class EncountersController {
   @RequirePermission('encounter.manage')
   async createPrescription(@Body() input: CreatePrescriptionDto) {
     return this.encountersService.createPrescription(input);
+  }
+
+  @Post('prescriptions/:id/discontinue')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('encounter.manage')
+  async discontinuePrescription(@Param('id') id: string) {
+    return this.encountersService.discontinuePrescription(id);
+  }
+
+  @Post('prescriptions/:id/complete')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('encounter.manage')
+  async completePrescription(@Param('id') id: string) {
+    return this.encountersService.completePrescription(id);
   }
 
   @Delete('prescriptions/:id')
@@ -63,7 +78,7 @@ export class EncountersController {
 
   @Get('prescriptions/patient/:patientId')
   @RequirePermission('encounter.read')
-  async getPrescriptionsByPatient(@Param('patientId') patientId: string) {
-    return this.encountersService.getPrescriptionsByPatient(patientId);
+  async getPrescriptionsByPatient(@Param('patientId') patientId: string, @Query() query: PaginationQueryDto) {
+    return this.encountersService.getPrescriptionsByPatient(patientId, query);
   }
 }

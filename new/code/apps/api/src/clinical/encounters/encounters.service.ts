@@ -1,10 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { EntityManager } from 'typeorm';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
+import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 import { ClinicalNote } from './entities/clinical-note.entity.js';
 import { Diagnosis } from './entities/diagnosis.entity.js';
 import { Prescription } from './entities/prescription.entity.js';
+import { Patient } from '../../patients/entities/patient.entity.js';
 
 // keyof SoftDeletableEntity (not the old literal 'createdAt' | 'updatedAt'): these entities now also
 // carry createdBy/updatedBy/deletedAt/deletedBy, all system-populated by AuditColumnsSubscriber,
@@ -37,9 +40,17 @@ export class EncountersService {
     return this.tenantContext.getAccountId() ?? (fallback as string);
   }
 
+  private async assertPatientExists(manager: EntityManager, patientId: string): Promise<void> {
+    const patient = await manager.getRepository(Patient).findOne({ where: { id: patientId } });
+    if (!patient) {
+      throw new NotFoundException(`Patient ${patientId} not found`);
+    }
+  }
+
   // --- Clinical Notes ---
   async createNote(input: CreateNoteInput): Promise<ClinicalNote> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      await this.assertPatientExists(manager, input.patientId);
       const repository = manager.getRepository(ClinicalNote);
       const note = repository.create({ ...input, doctorId: this.resolveActor(input.doctorId) });
       return repository.save(note);
@@ -53,20 +64,32 @@ export class EncountersService {
       if (!note) {
         throw new NotFoundException(`ClinicalNote ${id} not found`);
       }
+      // Once signed, a note is a clinical record of what was documented at sign-off time — locked
+      // the same way a reviewed discharge summary is (AdmissionsService.updateDischargeSummary).
+      // The transition INTO 'Signed' itself is still this same call (status is still 'Draft' at
+      // the point this check runs), so signing isn't blocked — only edits after signing are.
+      if (note.status === 'Signed') {
+        throw new ConflictException(`ClinicalNote ${id} is signed and can no longer be edited`);
+      }
       Object.assign(note, input);
       return repository.save(note);
     });
   }
 
-  async getNotesByPatient(patientId: string): Promise<ClinicalNote[]> {
+  async getNotesByPatient(patientId: string, query: PaginationQueryDto = {}): Promise<PaginatedResponseDto<ClinicalNote>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      return manager.getRepository(ClinicalNote).find({ where: { patientId }, order: { createdAt: 'DESC' } });
+      const qb = manager
+        .createQueryBuilder(ClinicalNote, 'note')
+        .where('note.patientId = :patientId', { patientId })
+        .orderBy('note.createdAt', 'DESC');
+      return paginate(qb, query);
     });
   }
 
   // --- Diagnoses ---
   async createDiagnosis(input: CreateDiagnosisInput): Promise<Diagnosis> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      await this.assertPatientExists(manager, input.patientId);
       const repository = manager.getRepository(Diagnosis);
       const diagnosis = repository.create({ ...input, doctorId: this.resolveActor(input.doctorId) });
       return repository.save(diagnosis);
@@ -85,19 +108,51 @@ export class EncountersService {
     });
   }
 
-  async getDiagnosesByPatient(patientId: string): Promise<Diagnosis[]> {
+  async getDiagnosesByPatient(patientId: string, query: PaginationQueryDto = {}): Promise<PaginatedResponseDto<Diagnosis>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      return manager.getRepository(Diagnosis).find({ where: { patientId }, order: { createdAt: 'DESC' } });
+      const qb = manager
+        .createQueryBuilder(Diagnosis, 'diagnosis')
+        .where('diagnosis.patientId = :patientId', { patientId })
+        .orderBy('diagnosis.createdAt', 'DESC');
+      return paginate(qb, query);
     });
   }
 
   // --- Prescriptions ---
   async createPrescription(input: CreatePrescriptionInput): Promise<Prescription> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      await this.assertPatientExists(manager, input.patientId);
       const repository = manager.getRepository(Prescription);
       const prescription = repository.create({ ...input, doctorId: this.resolveActor(input.doctorId) });
       return repository.save(prescription);
     });
+  }
+
+  private async transitionPrescription(id: string, nextStatus: 'Discontinued' | 'Completed'): Promise<Prescription> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Prescription);
+      const prescription = await repository.findOne({ where: { id } });
+      if (!prescription) {
+        throw new NotFoundException(`Prescription ${id} not found`);
+      }
+      if (prescription.status !== 'Active') {
+        throw new ConflictException(
+          `Prescription ${id} is ${prescription.status}, not Active — cannot mark it ${nextStatus}`,
+        );
+      }
+      prescription.status = nextStatus;
+      return repository.save(prescription);
+    });
+  }
+
+  /** Doctor-initiated: the prescriber is stopping the medication before its planned course ends. */
+  async discontinuePrescription(id: string): Promise<Prescription> {
+    return this.transitionPrescription(id, 'Discontinued');
+  }
+
+  /** The medication ran its full course as prescribed. */
+  async completePrescription(id: string): Promise<Prescription> {
+    return this.transitionPrescription(id, 'Completed');
   }
 
   async deletePrescription(id: string): Promise<void> {
@@ -113,9 +168,13 @@ export class EncountersService {
     });
   }
 
-  async getPrescriptionsByPatient(patientId: string): Promise<Prescription[]> {
+  async getPrescriptionsByPatient(patientId: string, query: PaginationQueryDto = {}): Promise<PaginatedResponseDto<Prescription>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      return manager.getRepository(Prescription).find({ where: { patientId }, order: { createdAt: 'DESC' } });
+      const qb = manager
+        .createQueryBuilder(Prescription, 'prescription')
+        .where('prescription.patientId = :patientId', { patientId })
+        .orderBy('prescription.createdAt', 'DESC');
+      return paginate(qb, query);
     });
   }
 }

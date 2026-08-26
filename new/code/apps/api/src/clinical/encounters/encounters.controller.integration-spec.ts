@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../../app/app.module.js';
+import { Patient } from '../../patients/entities/patient.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -13,7 +14,7 @@ import { signTestToken } from '../../testing/test-jwt.js';
 describe('EncountersController (integration)', () => {
   let app: INestApplication;
   let ctx: TenantTestContext;
-  const patientId = '00000000-0000-0000-0000-000000000001';
+  let patientId: string;
 
   let readOnlyToken: string;
   let manageOnlyToken: string;
@@ -47,6 +48,20 @@ describe('EncountersController (integration)', () => {
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(createApiValidationPipe());
     await app.init();
+
+    const patient = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.getRepository(Patient).save(
+          manager.getRepository(Patient).create({
+            patientNo: `ENC-CTRL-${Date.now()}`,
+            firstName: 'Fixture',
+            lastName: 'Patient',
+            gender: 'Female',
+          }),
+        ),
+      ),
+    );
+    patientId = patient.id;
   });
 
   afterAll(async () => {
