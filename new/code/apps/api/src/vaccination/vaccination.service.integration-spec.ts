@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { VaccinationService } from './vaccination.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
@@ -128,6 +128,59 @@ describe('VaccinationService (integration)', () => {
     await expect(
       ctx.inTenant(() => vaccinationService.getRecord('00000000-0000-0000-0000-000000000000')),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects a duplicate dose for the same patient, case-insensitively on vaccine name', async () => {
+    const patient = await makePatient();
+    await ctx.inTenant(() =>
+      vaccinationService.record({
+        patientId: patient.id,
+        vaccine: 'Varicella',
+        doseNumber: 1,
+        administeredDate: '2025-03-10',
+        administeredBy: STAFF_ID,
+      }),
+    );
+
+    await expect(
+      ctx.inTenant(() =>
+        vaccinationService.record({
+          patientId: patient.id,
+          vaccine: 'varicella', // same dose, different case — still a duplicate
+          doseNumber: 1,
+          administeredDate: '2025-03-11',
+          administeredBy: STAFF_ID,
+        }),
+      ),
+    ).rejects.toThrow(ConflictException);
+
+    // A different dose number for the same vaccine is not a duplicate.
+    const doseTwo = await ctx.inTenant(() =>
+      vaccinationService.record({
+        patientId: patient.id,
+        vaccine: 'Varicella',
+        doseNumber: 2,
+        administeredDate: '2025-06-10',
+        administeredBy: STAFF_ID,
+      }),
+    );
+    expect(doseTwo.doseNumber).toBe(2);
+  });
+
+  it('rejects a future administeredDate', async () => {
+    const patient = await makePatient();
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    await expect(
+      ctx.inTenant(() =>
+        vaccinationService.record({
+          patientId: patient.id,
+          vaccine: 'Polio',
+          administeredDate: tomorrow,
+          administeredBy: STAFF_ID,
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('derives administeredBy from the authenticated principal (section 25)', async () => {

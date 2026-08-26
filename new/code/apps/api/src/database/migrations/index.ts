@@ -67,6 +67,7 @@ import { AddAppointmentsActiveDoctorSlotUnique3000000000066 } from './0066-add-a
 import { AddTriageEntriesAuditColumns3000000000067 } from './0067-add-triage-entries-audit-columns.js';
 import { AddMedicationAdministrationsAuditAndPrescriptionLink3000000000068 } from './0068-add-medication-administrations-audit-and-prescription-link.js';
 import { AddMaternityRecordsAdmissionUnique3000000000069 } from './0069-add-maternity-records-admission-unique.js';
+import { AddVaccinationRecordsDuplicateDoseUnique3000000000070 } from './0070-add-vaccination-records-duplicate-dose-unique.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -148,4 +149,5 @@ export const TENANT_MIGRATIONS = [
   AddTriageEntriesAuditColumns3000000000067,
   AddMedicationAdministrationsAuditAndPrescriptionLink3000000000068,
   AddMaternityRecordsAdmissionUnique3000000000069,
+  AddVaccinationRecordsDuplicateDoseUnique3000000000070,
 ];

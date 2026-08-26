@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginatedResponseDto, PaginationQueryDto, paginate } from '@hospital/pagination';
@@ -50,6 +51,13 @@ export class VaccinationService {
     if (Number.isNaN(new Date(input.administeredDate).getTime())) {
       throw new BadRequestException('administeredDate must be a valid date');
     }
+    // administeredDate is an ISO date string (YYYY-MM-DD, enforced by @IsDateString), so a plain
+    // string comparison against today's date is safe and avoids timezone edge cases a Date
+    // comparison would introduce.
+    const today = new Date().toISOString().slice(0, 10);
+    if (input.administeredDate.trim() > today) {
+      throw new BadRequestException('administeredDate cannot be in the future');
+    }
 
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const patient = await manager.query(`SELECT id FROM patients WHERE id = $1`, [input.patientId]);
@@ -57,17 +65,45 @@ export class VaccinationService {
         throw new NotFoundException(`Patient ${input.patientId} not found`);
       }
 
-      return manager.getRepository(VaccinationRecord).save(
-        manager.getRepository(VaccinationRecord).create({
-          patientId: input.patientId,
-          vaccine: input.vaccine.trim(),
-          doseNumber: input.doseNumber ?? 1,
-          administeredDate: input.administeredDate.trim(),
-          batchNumber: input.batchNumber ?? null,
-          notes: input.notes ?? null,
-          administeredBy: this.resolveActor(input.administeredBy),
-        }),
+      const doseNumber = input.doseNumber ?? 1;
+      const vaccine = input.vaccine.trim();
+      // Pre-check for a clean error message; the unique index below (case-insensitive on
+      // `vaccine` — no catalog exists to normalize free text, see the P3 finding) is the real
+      // race-safety backstop.
+      const existing = await manager.query(
+        `SELECT id FROM vaccination_records WHERE "patientId" = $1 AND LOWER(vaccine) = LOWER($2) AND "doseNumber" = $3`,
+        [input.patientId, vaccine, doseNumber],
       );
+      if (existing.length > 0) {
+        throw new ConflictException(
+          `Patient ${input.patientId} already has dose ${doseNumber} of ${vaccine} recorded`,
+        );
+      }
+
+      try {
+        return await manager.getRepository(VaccinationRecord).save(
+          manager.getRepository(VaccinationRecord).create({
+            patientId: input.patientId,
+            vaccine,
+            doseNumber,
+            administeredDate: input.administeredDate.trim(),
+            batchNumber: input.batchNumber ?? null,
+            notes: input.notes ?? null,
+            administeredBy: this.resolveActor(input.administeredBy),
+          }),
+        );
+      } catch (error) {
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint ===
+            'UQ_vaccination_records_patient_vaccine_dose'
+        ) {
+          throw new ConflictException(
+            `Patient ${input.patientId} already has dose ${doseNumber} of ${vaccine} recorded`,
+          );
+        }
+        throw error;
+      }
     });
   }
 
@@ -80,7 +116,7 @@ export class VaccinationService {
         qb.andWhere('record.patientId = :patientId', { patientId: query.patientId });
       }
       if (query.vaccine) {
-        qb.andWhere('record.vaccine = :vaccine', { vaccine: query.vaccine });
+        qb.andWhere('LOWER(record.vaccine) = LOWER(:vaccine)', { vaccine: query.vaccine });
       }
       qb.orderBy('record.administeredDate', 'DESC').addOrderBy('record.createdAt', 'DESC');
       return paginate(qb, query);
