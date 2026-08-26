@@ -3885,3 +3885,27 @@ reactivation protects the tree's consistency). `deactivateWard` now refuses whil
 three creators got the standard 23505 → 409 backstop, with constraint names verified against the
 live DB (inline-column `UNIQUE` names like `departments_departmentCode_key` differ from
 explicitly-named ones like `UQ_beds_ward_bed_number` — check before hardcoding).
+
+## 98. Platform-branding P2/P3 batch: bounding a pre-auth surface, and keeping an external call
+    out of a locked transaction (2026-08-26)
+
+Two items, closing out the platform-branding section. Two shapes:
+
+**A pre-auth endpoint that must exist gets throttled, not removed.** `GET /branding` is
+unauthenticated by necessity — the login page renders branding before any session exists, and the
+tenant identity can only come from the caller-controlled `x-tenant-id` header. The finding called
+it an enumeration oracle; the fix bounds the probe surface (a per-IP throttle, same shape as the
+other unauthenticated endpoints) and relies on what was already uniform: `getPublicBranding`
+returns an identical all-null shape for unknown tenants and mistyped ids (no 404-vs-200
+existence signal) and exposes only public fields. When an endpoint *must* stay unauthenticated,
+the fix is to (a) make the response uniform across existence, and (b) rate-limit it — not to add
+an auth wall that breaks the flow it exists for.
+
+**External calls don't belong inside a locked transaction.** The logo upload held the branding-row
+advisory lock and an open transaction across the object-store `putObject` — a slow upload
+serialized every other branding write. The upload now happens first (outside any transaction: a
+failed upload leaves the DB untouched), then the lock + transaction update the row, then the old
+object is removed best-effort after commit. The residue analysis is what makes the reorder safe: a
+failure *before* the upload changes nothing; a failure *between* upload and commit leaves at most
+an orphaned object, which the next upload's cleanup removes; nothing can leave the DB row pointing
+at a missing object, because the DB write happens only after the upload succeeded.
