@@ -3092,3 +3092,42 @@ through.
 Reusing `notes` (set at scheduling time) for either would silently clobber the pre-op note. Added
 `cancellationReason` and `postOpNotes` (migration 0071) plus `CancelSurgeryDto`/`CompleteSurgeryDto`
 so a caller can supply them on the respective transition.
+
+## 75. Patient-portal P2/P3 batch: view-type projections, isActive on every read, in-memory
+    pagination for a multi-source merge, no-store everywhere (2026-08-26)
+
+Four items from the patient-portal section, risk-gated (`/code-review high`) per this module's
+direct PHI exposure — findings from that pass are tracked separately, not folded in here.
+
+**Narrow view types, extending the pattern the module already had.** `listResults()` already
+projected onto a hand-built `PatientResultView` instead of returning `LabResult`/`RadiologyRequisition`
+raw; `listAppointments`/`listInvoices`/`listPrescriptions` didn't, leaking `createdBy`/`updatedBy`
+(internal staff account ids) and `Appointment.cancelledRemarks`/`Invoice.notes` (internal staff
+notes) straight to the patient. Added `PatientAppointmentView`/`PatientInvoiceView`/
+`PatientPrescriptionView` as `Pick<>` types with an explicit column-name array passed to
+`createQueryBuilder(...).select([...])` — TypeORM only hydrates the selected columns, so the excluded
+fields are genuinely absent from the response, not just untyped. `Prescription.notes` was
+deliberately kept: unlike the other two, it's written for the patient (medication instructions), not
+staff-internal.
+
+**`isActive` enforcement centralized into one new choke point, `assertPatientActive`.** The patients-
+module pass (§68) fixed `getMe()` specifically; this pass generalized it — `assertPatientActive`
+mirrors `assertPatientExists`-style helpers elsewhere in the codebase and is now the first call
+inside every method's transaction. Necessary because a patient's JWT stays valid until it expires
+(no logout/revocation exists yet, a separate tracked gap) — deactivation has to be enforced on every
+read, not just checked once at login.
+
+**`listResults()`: real pagination isn't possible without a bigger schema change, so this ships
+in-memory pagination instead of faking DB-level support.** Lab and radiology results come from two
+independent queries with no shared sort key at the DB level; paginating either independently would
+make "page 2" undefined (you can't know where page 1 ended without merging both first). Added a
+small `paginateInMemory()` helper (array in, `PaginatedResponseDto` out) and fetch-then-merge-then-
+slice. This bounds the response payload — the actual bug the finding cared about — but doesn't
+reduce the "5 sequential round trips," which traces back to neither result table carrying a direct
+`patientId` (documented in the method's own comment as a schema-level gap, not something a
+pagination fix can close).
+
+**`Cache-Control: no-store` on all five routes, via one `@Header()` per method.** NestJS's `@Header()`
+decorator is method-level only — there's no class-level equivalent that would let this live once on
+the controller — so it's repeated five times, annotated with why at the class level so the repetition
+reads as intentional rather than copy-paste.
