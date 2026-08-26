@@ -192,7 +192,7 @@ the root `CLAUDE.md`.
 - [ ] **P3** — Trial-balance SQL bypasses the soft-delete filter the repository-based reads apply. (`accounting.service.ts:446-451`)
 
 ### insurance
-- [ ] **P1** — Nothing caps total claims against an invoice or a policy's `sumInsured`. (`insurance/insurance-claims.service.ts:302-342,390-414`)
+- [x] **P1** — Nothing caps total claims against an invoice or a policy's `sumInsured`. (`insurance/insurance-claims.service.ts:302-342,390-414`) — **Fixed 2026-08-26:** `createClaim` now sums non-Rejected claims against the invoice (row locked `FOR UPDATE`) and rejects one that would exceed the invoice's `totalAmount`; `approveClaim` now sums Approved/Paid claims against the policy (row pessimistic-locked) and rejects an approval that would exceed `sumInsured`.
 - [ ] **P2** — `updatePolicy` is unusable without resending `policyNumber` (validator requires it even on partial update); no test exists. (`insurance-claims.service.ts:229,455-468`)
 - [ ] **P2** — `submitClaim` stamps `processedBy`/`processedAt` before any adjudication happens. (`insurance-claims.service.ts:384-385`)
 - [ ] **P2** — Claims list is permanently pinned to page 1 (missing pagination base DTO). (`dto/insurance.dto.ts:158-166`)
