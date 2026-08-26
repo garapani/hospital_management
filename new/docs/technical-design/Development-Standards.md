@@ -3023,3 +3023,38 @@ identical in code but very different in the database.
 
 **`listByAppointment` deleted.** No controller route, no other caller, no test coverage — genuinely
 dead code, not a case of "used by future work."
+
+## 73. Nursing P2/P3 batch: skippedBy, MAR audit columns, prescription link, discharged-admission
+    guard (2026-08-26)
+
+Four items from the nursing section of `code-review-findings-2026-08-25.md`. `MedicationAdministration`
+and `NursingTask` share one file/migration, so all four landed together.
+
+**`skippedBy`, a new actor column, not a reuse of `administeredBy`.** A skipped dose recorded no
+actor at all — `administeredBy` stays null for a Skip (correctly: nothing was administered), and
+there was no dedicated column for who made the skip call. Added `skippedBy` (`uuid`, matching the
+existing `administeredBy`/`completedBy` actor-column type on these two entities — the
+uuid-vs-varchar inconsistency those columns have is a separate, already-tracked cross-cutting
+finding, not re-litigated by adding one more uuid column here). `skipAdministration()` now sets it
+via the same `resolveActor()` every other sign-off on this service already goes through.
+
+**`medication_administrations` gets the audit-columns backfill its sibling never lost.** Migration
+0053 (the broad tenant-tables audit-columns pass) covered `nursing_tasks` but not
+`medication_administrations` — both tables are created in the same migration (0037), so this was
+plausibly just missed rather than deliberate. Added migration 0068 with the same `ADD COLUMN IF NOT
+EXISTS` shape, and switched the entity to extend `SoftDeletableEntity` like its sibling.
+
+**MAR-to-prescription link: nullable, raw-lookup-validated, no DB FK — matching the table's existing
+convention, not inventing a new one.** `NursingService.assertAdmissionExists` already documented why
+it uses a raw SQL lookup instead of an entity import for its cross-module admission check (nursing
+has no module-boundary tag yet — a separate, already-tracked finding). Added `prescriptionId`
+(nullable uuid, no FK) plus a new `assertPrescriptionExists`, same raw-lookup shape, validated only
+when the caller supplies one. Nullable is deliberate: not every MAR line traces back to a formal
+`clinical/encounters` `Prescription` (a nurse-initiated PRN intervention, for instance) — this closes
+the "nothing ties a dose to what authorized it" gap for the common case without forcing every
+existing/future caller through a prescription lookup that may not apply.
+
+**Discharged-admission guard lives in the one choke point both creators already share.**
+`createTask` and `createAdministration` both call `assertAdmissionExists` before doing anything
+else — added the `status === 'Discharged'` check there instead of duplicating it in both methods,
+so a future third caller of that helper inherits the guard for free.
