@@ -6,6 +6,7 @@ import { TenantProvisioningService } from './tenant-provisioning.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { Tenant } from '../tenants/entities/tenant.entity.js';
 import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
+import { seedPackagesCatalog } from '../packages/seed-packages-catalog.js';
 
 /**
  * Not a real test — a manual, idempotent dev-environment seed, structured as a guarded Jest spec
@@ -39,6 +40,7 @@ describeIfRequested('seed dev account (manual)', () => {
     await dataSource.initialize();
 
     await seedRbacCatalog(dataSource);
+    await seedPackagesCatalog(dataSource);
 
     const tenantRepository = dataSource.getRepository(Tenant);
     const tenantProvisioning = new TenantProvisioningService(dataSource);

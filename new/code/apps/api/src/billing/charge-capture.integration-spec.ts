@@ -14,7 +14,6 @@ import { StockBalance } from '../inventory/entities/stock-balance.entity.js';
 import { InvoicesService } from '../billing/invoices.service.js';
 import { BillingSettingsService } from './billing-settings.service.js';
 import { InvoiceItem } from './entities/invoice-item.entity.js';
-import { AccountingService } from '../accounting/accounting.service.js';
 import { JournalEntry, JournalLine } from '../accounting/entities/journal-entry.entity.js';
 import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
 import {
@@ -36,7 +35,6 @@ describe('Charge capture (integration) — order-item completion auto-charges th
   let inventoryCatalogService: InventoryCatalogService;
   let pharmacyDispensingService: PharmacyDispensingService;
   let invoicesService: InvoicesService;
-  let accountingService: AccountingService;
   let billingSettingsService: BillingSettingsService;
 
   const DOCTOR_ID = '00000000-0000-0000-0000-000000000001';
@@ -61,7 +59,6 @@ describe('Charge capture (integration) — order-item completion auto-charges th
     inventoryCatalogService = moduleFixture.get(InventoryCatalogService);
     pharmacyDispensingService = moduleFixture.get(PharmacyDispensingService);
     invoicesService = moduleFixture.get(InvoicesService);
-    accountingService = moduleFixture.get(AccountingService);
     billingSettingsService = moduleFixture.get(BillingSettingsService);
   });
 

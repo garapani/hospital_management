@@ -1,6 +1,5 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import { Logger } from '@nestjs/common';
 import { Role } from '../rbac/entities/role.entity.js';
 import { Permission } from '../rbac/entities/permission.entity.js';
 import { RolePermission } from '../rbac/entities/role-permission.entity.js';
@@ -81,8 +80,6 @@ import { StockRequisitionItem } from '../inventory/entities/stock-requisition-it
 import { PharmacyDispensing } from '../pharmacy/entities/pharmacy-dispensing.entity.js';
 import { Notification } from '../notifications/entities/notification.entity.js';
 import { PLATFORM_MIGRATIONS } from './migrations/index.js';
-
-const logger = new Logger('DataSource');
 
 export function createDataSource(): DataSource {
   // Production guard for the DB password, mirroring resolveJwtSecret: silently falling back to

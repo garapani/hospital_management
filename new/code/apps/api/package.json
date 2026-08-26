@@ -106,6 +106,20 @@
           "cwd": "apps/api"
         }
       },
+      "seed-packages": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-packages-catalog-runner.ts",
+          "cwd": "apps/api"
+        }
+      },
+      "seed-ledger-accounts": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-ledger-accounts.ts",
+          "cwd": "apps/api"
+        }
+      },
       "seed-initial-setup": {
         "executor": "nx:run-commands",
         "options": {
@@ -123,7 +137,7 @@
       "seed-all": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/migrate.ts && SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-rbac-catalog-runner.ts && SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-initial-setup-runner.ts",
+          "command": "SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/migrate.ts && SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-rbac-catalog-runner.ts && SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-packages-catalog-runner.ts && SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-initial-setup-runner.ts && SWC_NODE_PROJECT=../../tsconfig.base.json node --import @swc-node/register/esm-register src/database/seed-ledger-accounts.ts",
           "cwd": "apps/api"
         }
       }

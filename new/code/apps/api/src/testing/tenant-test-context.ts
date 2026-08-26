@@ -5,6 +5,7 @@ import { TenantConnectionService } from '../database/tenant-connection.service.j
 import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { seedRbacCatalog } from '../rbac/seed-rbac-catalog.js';
+import { seedPackagesCatalog } from '../packages/seed-packages-catalog.js';
 
 export interface TenantTestContext {
   dataSource: DataSource;
@@ -92,6 +93,12 @@ export async function setupTenantTestContext(
   if (options.seedRbac) {
     await seedRbacCatalog(dataSource);
   }
+
+  // The packages catalog (basic/standard/enterprise) is seeded unconditionally: the tenants
+  // table's packageCode column has `DEFAULT 'basic' REFERENCES packages(code)`, so any spec that
+  // inserts a Tenant row needs the rows present regardless of whether it opted into rbac seeding.
+  // Three upserts — trivial cost for every suite.
+  await seedPackagesCatalog(dataSource);
 
   const tenantContext = new TenantContextService();
   const tenantConnection = new TenantConnectionService(dataSource, tenantContext);

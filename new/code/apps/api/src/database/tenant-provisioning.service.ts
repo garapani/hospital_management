@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { createTenantMigrationDataSource } from './tenant-migration-data-source.js';
+import { seedSystemLedgerAccounts } from '../accounting/seed-ledger-accounts.js';
 import { TENANT_MIGRATIONS } from './migrations/index.js';
 
 const SAFE_TENANT_ID = /^[a-z0-9_]+$/;
@@ -61,6 +62,17 @@ export class TenantProvisioningService {
     await migrationDataSource.initialize();
     try {
       await migrationDataSource.runMigrations({ transaction: 'each' });
+      // The system chart of accounts used to be seeded by migrations 0059/0085/0086; since the
+      // 2026-08-27 squash moved all seed data out of migrations (Development-Standards.md §108),
+      // provisioning seeds it here — same connection, same search_path, so the rows land in this
+      // tenant's schema and every provisioned tenant gets them exactly as before. Already-seeded
+      // schemas are a no-op (upsert keyed on the fixed ids). Skipped when the caller provisions a
+      // schema with an EMPTY migration list (the migrate-tenants-backfill gate simulates a
+      // "behind head" tenant that way) — with no migrations run there are no ledger_accounts yet,
+      // and the runner's whole point is to backfill that schema from the real list afterwards.
+      if (migrations.length > 0) {
+        await seedSystemLedgerAccounts(migrationDataSource);
+      }
     } finally {
       await migrationDataSource.destroy();
     }
