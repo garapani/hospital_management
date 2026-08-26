@@ -170,7 +170,7 @@ export class AdmissionsService {
           admissionId: admission.id,
           fromBedId: null,
           toBedId: bed.id,
-          transferredBy: input.admittingDoctorId,
+          transferredBy: this.resolveActor(input.admittingDoctorId),
           reason: 'Initial admission',
         }),
       );

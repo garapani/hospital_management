@@ -43,6 +43,13 @@ export class Admission extends SoftDeletableEntity {
   @Column({ type: 'varchar', nullable: true })
   dischargeCondition!: string | null;
 
+  /**
+   * A quick free-text note captured at the moment of discharge (`AdmissionsService.discharge()`)
+   * — not the formal, structured, reviewable clinical document. That's the separate
+   * `DischargeSummary` entity (one per admission, created afterward via `createDischargeSummary`),
+   * which this field is never read from or written back to. Two different things that happen to
+   * share a name; don't conflate them.
+   */
   @Column({ type: 'text', nullable: true })
   dischargeSummary!: string | null;
 

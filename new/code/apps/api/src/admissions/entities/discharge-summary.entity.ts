@@ -2,6 +2,12 @@ import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 
+/**
+ * The formal, structured clinical discharge summary — one per admission (`UQ_discharge_summaries_
+ * admission`), with its own review workflow (`reviewedBy`/`reviewedAt`, locked once reviewed).
+ * Distinct from `Admission.dischargeSummary`, a quick free-text note captured inline at discharge
+ * time; this entity is created separately, afterward, and never reads from or writes to that field.
+ */
 @Entity('discharge_summaries')
 export class DischargeSummary extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid')
