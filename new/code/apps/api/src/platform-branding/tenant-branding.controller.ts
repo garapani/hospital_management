@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PlatformBrandingService } from './platform-branding.service.js';
 
@@ -9,6 +10,11 @@ import { PlatformBrandingService } from './platform-branding.service.js';
  * (see `app.module.ts`) so the login page can render branding before any session exists. Read-only
  * and single-tenant by construction — the header only ever names the caller's own tenant, so there
  * is no cross-tenant read surface here to guard against.
+ *
+ * The endpoint is a tenant-enumeration surface by nature (unauthenticated, caller-controlled
+ * header) — `getPublicBranding` already returns a uniform all-null shape for unknown tenants and
+ * only ever exposes public fields, and this route is rate-limited like the other unauthenticated
+ * endpoints to bound probing (code-review-findings-2026-08-25 platform-branding P2).
  *
  * Deliberately NOT under `tenants/*`: `TenantsController` already owns `GET tenants/:hospitalId`,
  * and NestJS resolves routes in controller-registration order — `tenants/branding` would risk
@@ -24,6 +30,7 @@ export class TenantBrandingController {
   ) {}
 
   @Get()
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
   async get() {
     return this.brandingService.getPublicBranding(this.tenantContext.getTenantId());
   }

@@ -162,22 +162,35 @@ export class PlatformBrandingService {
       throw new BadRequestException(`Logo exceeds the ${MAX_LOGO_BYTES / 1024 / 1024}MB limit`);
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const key = `branding/logo.${extension}`;
+
+    // The object-store call runs BEFORE the transaction, not inside it: it's an external network
+    // call, and holding the branding-row advisory lock (and an open transaction) across it would
+    // serialize unrelated branding writes on a slow upload
+    // (code-review-findings-2026-08-25 platform-branding P3). If the upload fails, nothing has
+    // been written to the DB — the row keeps its previous key. A failure AFTER the upload but
+    // inside the transaction leaves an orphaned object at most, which the next upload's cleanup
+    // removes.
+    await this.objectStorage.putObject(hospitalId, key, file.buffer, file.size, {
+      'Content-Type': file.mimetype,
+    });
+
+    let previousKey: string | null = null;
+    const saved = await this.dataSource.transaction(async (manager) => {
       await this.lockBrandingRow(manager, hospitalId);
       const row = await this.getOrCreateBrandingRow(manager, hospitalId);
-      const previousKey = row.logoObjectKey;
-      const key = `branding/logo.${extension}`;
-      await this.objectStorage.putObject(hospitalId, key, file.buffer, file.size, {
-        'Content-Type': file.mimetype,
-      });
-      // A different extension than last time (e.g. .png replaced by .webp) would otherwise leave
-      // the old object orphaned in the bucket — best-effort cleanup, never blocks the upload.
-      if (previousKey && previousKey !== key) {
-        await this.objectStorage.removeObject(hospitalId, previousKey).catch(() => undefined);
-      }
+      previousKey = row.logoObjectKey;
       row.logoObjectKey = key;
       return manager.getRepository(TenantBranding).save(row);
     });
+
+    // A different extension than last time (e.g. .png replaced by .webp) would otherwise leave
+    // the old object orphaned in the bucket — best-effort cleanup after commit, never blocks the
+    // upload, and can't roll back the DB write.
+    if (previousKey && previousKey !== key) {
+      await this.objectStorage.removeObject(hospitalId, previousKey).catch(() => undefined);
+    }
+    return saved;
   }
 
   async removeLogo(hospitalId: string): Promise<TenantBranding> {
