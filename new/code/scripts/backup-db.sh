@@ -3,7 +3,7 @@ set -euo pipefail
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dev.yml}"
 POSTGRES_SERVICE="${POSTGRES_SERVICE:-api-postgres}"
-POSTGRES_USER="${POSTGRES_USER:-identity_access}"
+POSTGRES_USER="${POSTGRES_USER:-hospital_db_user}"
 POSTGRES_DB="${POSTGRES_DB:-hospital_db}"
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"

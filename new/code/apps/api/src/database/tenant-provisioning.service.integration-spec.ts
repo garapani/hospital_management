@@ -53,7 +53,7 @@ describe('TenantProvisioningService (integration)', () => {
     expect(privileges).toEqual(expect.arrayContaining(['DELETE', 'INSERT', 'SELECT', 'UPDATE']));
   });
 
-  it('grants identity_access membership in the tenant role, so SET ROLE succeeds', async () => {
+  it('grants hospital_db_user membership in the tenant role, so SET ROLE succeeds', async () => {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.connect();
     try {

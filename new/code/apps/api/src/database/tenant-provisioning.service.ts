@@ -12,7 +12,7 @@ export class TenantProvisioningService {
 
   /**
    * Creates a tenant's schema and role, grants the role access, runs every TENANT_MIGRATIONS
-   * entry against the new schema, and grants identity_access membership in the role so
+   * entry against the new schema, and grants hospital_db_user membership in the role so
    * TenantConnectionService can SET ROLE into it per request. The single real production path —
    * called from TenantsService.provisionTenant() and the test helper alike.
    *
@@ -29,7 +29,7 @@ export class TenantProvisioningService {
     }
     // Schema name and role name are the same string for a given tenant.
     const name = `tenant_${tenantId}`;
-    const adminRole = process.env['DB_USERNAME'] ?? 'identity_access';
+    const adminRole = process.env['DB_USERNAME'] ?? 'hospital_db_user';
 
     const setupRunner = this.dataSource.createQueryRunner();
     await setupRunner.connect();
@@ -88,7 +88,7 @@ export class TenantProvisioningService {
       await grantRunner.query(
         `GRANT ALL ON ALL SEQUENCES IN SCHEMA "${name}" TO "${name}"`,
       );
-      // Membership, not a login credential: lets identity_access SET ROLE into this tenant.
+      // Membership, not a login credential: lets hospital_db_user SET ROLE into this tenant.
       await grantRunner.query(`GRANT "${name}" TO "${adminRole}"`);
     } finally {
       await grantRunner.release();

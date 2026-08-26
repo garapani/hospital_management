@@ -28,7 +28,7 @@ describe('TenantConnectionService (integration)', () => {
       await ctx.dataSource.query(`GRANT ALL ON ALL TABLES IN SCHEMA "${schema}" TO "${schema}"`);
       await ctx.dataSource.query(`GRANT USAGE ON SCHEMA "${schema}" TO "${schema}"`);
       await ctx.dataSource.query(
-        `GRANT "${schema}" TO "${process.env['DB_USERNAME'] ?? 'identity_access'}"`,
+        `GRANT "${schema}" TO "${process.env['DB_USERNAME'] ?? 'hospital_db_user'}"`,
       );
     }
     await ctx.dataSource.query(`INSERT INTO tenant_test_a.probe (label) VALUES ('a-row')`);

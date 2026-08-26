@@ -3,15 +3,15 @@ services:
     image: postgres:16-alpine
     container_name: api-postgres-dev
     environment:
-      POSTGRES_USER: identity_access
-      POSTGRES_PASSWORD: identity_access_dev_password
+      POSTGRES_USER: hospital_db_user
+      POSTGRES_PASSWORD: hospital_db_password
       POSTGRES_DB: hospital_db
     ports:
       - '5433:5432'
     volumes:
       - ./.data/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U identity_access']
+      test: ['CMD-SHELL', 'pg_isready -U hospital_db_user']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -57,8 +57,8 @@ services:
       CI: 'true'
       DB_HOST: api-postgres
       DB_PORT: 5432
-      DB_USERNAME: identity_access
-      DB_PASSWORD: identity_access_dev_password
+      DB_USERNAME: hospital_db_user
+      DB_PASSWORD: hospital_db_password
       DB_DATABASE: hospital_db
       REDIS_HOST: api-redis
       REDIS_PORT: 6379
@@ -81,8 +81,8 @@ services:
       CI: 'true'
       DB_HOST: api-postgres
       DB_PORT: 5432
-      DB_USERNAME: identity_access
-      DB_PASSWORD: identity_access_dev_password
+      DB_USERNAME: hospital_db_user
+      DB_PASSWORD: hospital_db_password
       DB_DATABASE: hospital_db
     volumes:
       - .:/usr/src/app
@@ -99,8 +99,8 @@ services:
       CI: 'true'
       DB_HOST: api-postgres
       DB_PORT: 5432
-      DB_USERNAME: identity_access
-      DB_PASSWORD: identity_access_dev_password
+      DB_USERNAME: hospital_db_user
+      DB_PASSWORD: hospital_db_password
       DB_DATABASE: hospital_db
     volumes:
       - .:/usr/src/app
@@ -117,8 +117,8 @@ services:
       CI: 'true'
       DB_HOST: api-postgres
       DB_PORT: 5432
-      DB_USERNAME: identity_access
-      DB_PASSWORD: identity_access_dev_password
+      DB_USERNAME: hospital_db_user
+      DB_PASSWORD: hospital_db_password
       DB_DATABASE: hospital_db
     volumes:
       - .:/usr/src/app

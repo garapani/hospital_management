@@ -18,8 +18,8 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: identity_access
-          POSTGRES_PASSWORD: identity_access_dev_password
+          POSTGRES_USER: hospital_db_user
+          POSTGRES_PASSWORD: hospital_db_password
           POSTGRES_DB: hospital_db
         ports:
           - 5432:5432
@@ -62,7 +62,7 @@ jobs:
       # Wait for PostgreSQL to be ready
       - name: Wait for PostgreSQL
         run: |
-          until pg_isready -h localhost -p 5432 -U identity_access; do
+          until pg_isready -h localhost -p 5432 -U hospital_db_user; do
             echo "Waiting for PostgreSQL..."
             sleep 2
           done
@@ -75,8 +75,8 @@ jobs:
         env:
           DB_HOST: localhost
           DB_PORT: 5432
-          DB_USERNAME: identity_access
-          DB_PASSWORD: identity_access_dev_password
+          DB_USERNAME: hospital_db_user
+          DB_PASSWORD: hospital_db_password
           DB_DATABASE: hospital_db
           REDIS_HOST: localhost
           REDIS_PORT: 6379
