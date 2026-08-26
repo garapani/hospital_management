@@ -31,9 +31,32 @@ describe('BillingSettingsService (integration)', () => {
     expect(settings.gstin).toBe('27AAAAA0000A1Z5');
     expect(settings.stateCode).toBe('27');
     expect(settings.hospitalLegalName).toBe('Test Hospital Pvt Ltd');
+    // Backward-compatible: omitted defaultTaxPercent defaults to 0 (exempt).
+    expect(settings.defaultTaxPercent).toBe(0);
 
     const fetched = await ctx.inTenant(() => billingSettingsService.get());
     expect(fetched?.gstin).toBe('27AAAAA0000A1Z5');
+  });
+
+  it('persists a configured defaultTaxPercent', async () => {
+    const settings = await ctx.inTenant(() =>
+      billingSettingsService.update({
+        gstin: '27AAAAA0000A1Z5',
+        stateCode: '27',
+        hospitalLegalName: 'Test Hospital Pvt Ltd',
+        defaultTaxPercent: 18,
+      }),
+    );
+    expect(settings.defaultTaxPercent).toBe(18);
+
+    const fetched = await ctx.inTenant(() => billingSettingsService.get());
+    expect(fetched?.defaultTaxPercent).toBe(18);
+
+    // A later update that omits it falls back to 0.
+    const reset = await ctx.inTenant(() =>
+      billingSettingsService.update({ gstin: '27AAAAA0000A1Z5', stateCode: '27', hospitalLegalName: 'Renamed' }),
+    );
+    expect(reset.defaultTaxPercent).toBe(0);
   });
 
   it('overwrites settings on a second update instead of creating a duplicate row', async () => {

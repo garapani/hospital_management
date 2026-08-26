@@ -12,6 +12,7 @@ import { PharmacyDispensingService } from '../pharmacy/pharmacy-dispensing.servi
 import { StockBatch } from '../inventory/entities/stock-batch.entity.js';
 import { StockBalance } from '../inventory/entities/stock-balance.entity.js';
 import { InvoicesService } from '../billing/invoices.service.js';
+import { BillingSettingsService } from './billing-settings.service.js';
 import { InvoiceItem } from './entities/invoice-item.entity.js';
 import { AccountingService } from '../accounting/accounting.service.js';
 import { JournalEntry, JournalLine } from '../accounting/entities/journal-entry.entity.js';
@@ -36,6 +37,7 @@ describe('Charge capture (integration) — order-item completion auto-charges th
   let pharmacyDispensingService: PharmacyDispensingService;
   let invoicesService: InvoicesService;
   let accountingService: AccountingService;
+  let billingSettingsService: BillingSettingsService;
 
   const DOCTOR_ID = '00000000-0000-0000-0000-000000000001';
   const STAFF_ID = '00000000-0000-0000-0000-000000000002';
@@ -60,6 +62,7 @@ describe('Charge capture (integration) — order-item completion auto-charges th
     pharmacyDispensingService = moduleFixture.get(PharmacyDispensingService);
     invoicesService = moduleFixture.get(InvoicesService);
     accountingService = moduleFixture.get(AccountingService);
+    billingSettingsService = moduleFixture.get(BillingSettingsService);
   });
 
   afterAll(async () => {
@@ -321,6 +324,105 @@ describe('Charge capture (integration) — order-item completion auto-charges th
     expect(journal!.status).toBe('Posted');
     expect(journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE)?.debit).toBe(300);
     expect(journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE)?.credit).toBe(300);
+  });
+
+  it('applies the billing-settings default tax rate to captured lines', async () => {
+    const patient = await makePatient('5560000013');
+    const test = await makePricedLabTest('Taxed CBC', 'TAX-CBC', 300);
+
+    // The captured line's tax comes from billing_settings.defaultTaxPercent (code-review-findings
+    // 2026-08-25 billing P2); 18% here.
+    await inTenant(() =>
+      billingSettingsService.update({
+        gstin: '27AAAAA0000A1Z5',
+        stateCode: '27',
+        hospitalLegalName: 'Tax Hospital Pvt Ltd',
+        defaultTaxPercent: 18,
+      }),
+    );
+
+    await completeLabOrderItem(patient.id, test);
+
+    const invoice = (await inTenant(() => invoicesService.list({ patientId: patient.id }))).data[0];
+    expect(invoice.subtotal).toBe(300);
+    expect(invoice.taxableAmount).toBe(300);
+    expect(invoice.taxAmount).toBe(54); // 300 * 18%
+    expect(invoice.totalAmount).toBe(354); // 300 + 54
+    expect(invoice.status).toBe('Unpaid');
+
+    const items = await invoiceItemsFor(invoice.id);
+    expect(items[0].taxPercent).toBe(18);
+    expect(items[0].cgstAmount).toBe(27); // 54 / 2
+    expect(items[0].sgstAmount).toBe(27);
+    expect(items[0].totalAmount).toBe(354);
+
+    // The journal books the line's full total (tax rolled into revenue — this codebase has no
+    // GST-liability ledger account, matching manual-invoice payment treatment).
+    const journal = await journalForInvoiceItem(items[0].id);
+    expect(journal).not.toBeNull();
+    expect(
+      journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE)?.debit,
+    ).toBe(354);
+    expect(
+      journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE)?.credit,
+    ).toBe(354);
+
+    // Restore the tax-free baseline so later tests in this shared tenant are unaffected.
+    await inTenant(() =>
+      billingSettingsService.update({
+        gstin: '27AAAAA0000A1Z5',
+        stateCode: '27',
+        hospitalLegalName: 'Tax Hospital Pvt Ltd',
+        defaultTaxPercent: 0,
+      }),
+    );
+  });
+
+  it('cancelling a taxed charge-captured invoice reverses the full line total including tax', async () => {
+    const patient = await makePatient('5560000014');
+    const test = await makePricedLabTest('Taxed Cancel CBC', 'TAX-CAN-CBC', 200);
+    await inTenant(() =>
+      billingSettingsService.update({
+        gstin: '27AAAAA0000A1Z5',
+        stateCode: '27',
+        hospitalLegalName: 'Tax Hospital Pvt Ltd',
+        defaultTaxPercent: 18,
+      }),
+    );
+
+    await completeLabOrderItem(patient.id, test);
+    const invoice = (await inTenant(() => invoicesService.list({ patientId: patient.id }))).data[0];
+    expect(invoice.totalAmount).toBe(236); // 200 + 36
+
+    await withActor(() => invoicesService.cancel(invoice.id));
+
+    const reversalJournal = await inTenant(() =>
+      tenantConnection.runInTenantSchema(async (manager) => {
+        const journal = await manager
+          .getRepository(JournalEntry)
+          .findOne({ where: { sourceType: 'InvoiceCancellation', sourceId: invoice.id } });
+        if (!journal) return null;
+        const lines = await manager.getRepository(JournalLine).find({ where: { journalId: journal.id } });
+        return { ...journal, lines };
+      }),
+    );
+    expect(reversalJournal).not.toBeNull();
+    expect(
+      reversalJournal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE)?.debit,
+    ).toBe(236);
+    expect(
+      reversalJournal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE)?.credit,
+    ).toBe(236);
+
+    // Restore the tax-free baseline so later tests in this shared tenant are unaffected.
+    await inTenant(() =>
+      billingSettingsService.update({
+        gstin: '27AAAAA0000A1Z5',
+        stateCode: '27',
+        hospitalLegalName: 'Tax Hospital Pvt Ltd',
+        defaultTaxPercent: 0,
+      }),
+    );
   });
 
   it('a charge captured after a return does not silently re-inflate totalAmount back up', async () => {

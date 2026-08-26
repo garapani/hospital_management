@@ -1,4 +1,4 @@
-import { IsString, Matches } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 
 export class UpdateBillingSettingsDto {
   @IsString()
@@ -13,4 +13,10 @@ export class UpdateBillingSettingsDto {
 
   @IsString()
   hospitalLegalName!: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  defaultTaxPercent?: number;
 }

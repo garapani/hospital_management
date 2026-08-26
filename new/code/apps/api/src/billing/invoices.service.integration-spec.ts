@@ -471,6 +471,37 @@ describe('InvoicesService (integration)', () => {
     expect(refetched.status).toBe('PartiallyPaid');
   });
 
+  it('reverses the GST split proportionally on a return of a taxed invoice', async () => {
+    const patient = await makePatient(ctx, '5550000042');
+    const invoice = await ctx.inTenant(() =>
+      invoicesService.create({
+        patientId: patient.id,
+        createdBy: STAFF_ID,
+        items: [{ description: 'Taxed Procedure', unitPrice: 1000, taxPercent: 18 }],
+      }),
+    );
+    // subtotal 1000, taxable 1000, tax 180, total 1180.
+    expect(invoice.totalAmount).toBe(1180);
+    expect(invoice.taxAmount).toBe(180);
+    await ctx.inTenant(() =>
+      invoicesService.recordPayment(invoice.id, { amount: 1180, paymentMode: 'Cash', receivedBy: STAFF_ID }),
+    );
+
+    // Half return: the tax portion of 590 is 180 * 590 / 1180 = 90; taxable portion 500.
+    await ctx.inTenant(() =>
+      invoicesService.createReturn(invoice.id, { amount: 590, reason: 'Partial', returnedBy: STAFF_ID }),
+    );
+
+    const refetched = await ctx.inTenant(() => invoicesService.findOne(invoice.id));
+    expect(refetched.totalAmount).toBe(590);
+    expect(refetched.paidAmount).toBe(590);
+    expect(refetched.subtotal).toBe(500);
+    expect(refetched.taxableAmount).toBe(500);
+    expect(refetched.taxAmount).toBe(90);
+    // The invoice-level identity total = taxable + tax stays exact after the proportional split.
+    expect(refetched.taxableAmount + refetched.taxAmount).toBe(refetched.totalAmount);
+  });
+
   it('rejects a return amount of zero or less', async () => {
     const patient = await makePatient(ctx, '5550000037');
     const invoice = await ctx.inTenant(() =>

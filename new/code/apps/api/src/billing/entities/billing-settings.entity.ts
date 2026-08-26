@@ -1,5 +1,6 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 import { SoftDeletableEntity } from '../../database/auditable.entity.js';
+import { numericTransformer } from './numeric.transformer.js';
 
 @Entity('billing_settings')
 export class BillingSettings extends SoftDeletableEntity {
@@ -14,4 +15,8 @@ export class BillingSettings extends SoftDeletableEntity {
 
   @Column({ type: 'varchar' })
   hospitalLegalName!: string;
+
+  /** Default GST rate applied to auto-captured (charge-capture) invoice lines; 0 = exempt. */
+  @Column({ type: 'numeric', precision: 5, scale: 2, default: 0, transformer: numericTransformer })
+  defaultTaxPercent!: number;
 }

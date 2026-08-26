@@ -336,6 +336,21 @@ export class InvoicesService {
     const invoice = openInvoice ?? (await this.createCaptureInvoice(manager, patientId, orderItem.completedBy));
 
     const unitPrice = roundMoney(price);
+
+    // Charge capture no longer hardcodes 0% tax: the line carries the tenant's configured
+    // default GST rate from billing_settings (0 = exempt, and the pre-settings behavior) —
+    // code-review-findings-2026-08-25 P2. The tax is rolled into the AR/revenue journal below,
+    // matching how every other money movement in this codebase treats tax (no GST-liability
+    // account exists; see the journal comment).
+    const settingsRows = await manager.query(
+      `SELECT "defaultTaxPercent" FROM billing_settings WHERE id = 'default'`,
+    );
+    const taxPercent = settingsRows.length > 0 ? Number(settingsRows[0].defaultTaxPercent) : 0;
+    const lineTax = roundMoney((unitPrice * taxPercent) / 100);
+    const cgstAmount = roundMoney(lineTax / 2);
+    const sgstAmount = roundMoney(lineTax - cgstAmount);
+    const lineTotal = roundMoney(unitPrice + lineTax);
+
     const invoiceItem = await manager.getRepository(InvoiceItem).save(
       manager.getRepository(InvoiceItem).create({
         invoiceId: invoice.id,
@@ -344,18 +359,19 @@ export class InvoicesService {
         quantity: 1,
         unitPrice,
         discountAmount: 0,
-        taxPercent: 0,
-        cgstAmount: 0,
-        sgstAmount: 0,
-        totalAmount: unitPrice,
+        taxPercent,
+        cgstAmount,
+        sgstAmount,
+        totalAmount: lineTotal,
       }),
     );
 
     invoice.subtotal = roundMoney(invoice.subtotal + unitPrice);
-    // taxPercent is hardcoded 0 for every auto-captured line above, so the line's taxable amount
-    // equals its unitPrice — without this, taxableAmount silently stayed 0 forever on every
+    // Captured lines carry taxPercent from billing_settings (possibly 0), so the line's taxable
+    // amount is its unitPrice — without this, taxableAmount silently stayed 0 forever on every
     // auto-generated invoice (code-review-findings-2026-08-25 P1).
     invoice.taxableAmount = roundMoney(invoice.taxableAmount + unitPrice);
+    invoice.taxAmount = roundMoney(invoice.taxAmount + lineTax);
     invoice.totalAmount = roundMoney(invoice.subtotal - invoice.discountAmount + invoice.taxAmount);
     invoice.status =
       invoice.paidAmount >= invoice.totalAmount
@@ -372,7 +388,10 @@ export class InvoicesService {
     // must never roll back that clinical completion. Known limitation shared with the rest of this
     // method: if this throws, the invoice item still exists, so a later reRunChargeCapture retry
     // short-circuits on "already-charged" and never retries the revenue posting — recovery is
-    // manual, matching the pre-existing "no re-run endpoint for a failed capture" caveat.
+    // manual, matching the pre-existing "no re-run endpoint for a failed capture" caveat. The
+    // journal amount is the line's full total (unitPrice + tax): this codebase has no GST-liability
+    // ledger account, so tax is rolled into revenue exactly as manual-invoice payments already do
+    // (a separate GST-liability model is net-new accounting work, not this fix).
     try {
       await this.accountingService.postAutoJournal(manager, {
         sourceType: 'InvoiceItem',
@@ -381,8 +400,8 @@ export class InvoicesService {
         narration: `Charge capture: ${description}`,
         actor: orderItem.completedBy,
         lines: [
-          { accountId: LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE, debit: unitPrice },
-          { accountId: LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE, credit: unitPrice },
+          { accountId: LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE, debit: lineTotal },
+          { accountId: LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE, credit: lineTotal },
         ],
       });
     } catch (error) {
@@ -480,12 +499,13 @@ export class InvoicesService {
       // Reverses exactly the revenue captureChargeForOrderItem posted for this invoice, no more:
       // paidAmount === 0 is already guaranteed above, so no return/payment has touched this
       // invoice, and every auto-captured line's totalAmount is exactly what was journaled for it
-      // (unitPrice, 0 tax). Manually-created lines (sourceOrderItemId null) never posted a journal
-      // in the first place, so they're excluded — reversing them would fabricate a debit/credit
-      // pair with no original entry. Without this, cancelling a charge-captured invoice left
-      // Patient AR and Patient Service Revenue permanently overstated (code-review-findings-2026-
-      // 08-25 P1). Fails loud, like recordPayment/createReturn — a cancellation is an explicit
-      // user-initiated financial action, not a best-effort clinical-completion side effect.
+      // (unitPrice + the settings default tax, since the capture journal books the line total).
+      // Manually-created lines (sourceOrderItemId null) never posted a journal in the first
+      // place, so they're excluded — reversing them would fabricate a debit/credit pair with no
+      // original entry. Without this, cancelling a charge-captured invoice left Patient AR and
+      // Patient Service Revenue permanently overstated (code-review-findings-2026-08-25 P1).
+      // Fails loud, like recordPayment/createReturn — a cancellation is an explicit user-initiated
+      // financial action, not a best-effort clinical-completion side effect.
       const capturedRows = await manager.query(
         `SELECT COALESCE(SUM("totalAmount"), 0) AS total FROM invoice_items
          WHERE "invoiceId" = $1 AND "sourceOrderItemId" IS NOT NULL`,
@@ -622,13 +642,22 @@ export class InvoicesService {
         }),
       );
 
-      // subtotal (and taxableAmount, since captured lines carry 0 tax) must move with
-      // totalAmount here: captureChargeForOrderItem recomputes totalAmount from subtotal on the
-      // next completion, so if a return only touched totalAmount, that recompute would silently
-      // re-inflate it back up by the amount just returned (code-review-findings-2026-08-25 P1).
-      // A full per-line GST-split reversal (cgst/sgst) is a separate, larger gap — not fixed here.
-      invoice.subtotal = roundMoney(invoice.subtotal - input.amount);
-      invoice.taxableAmount = roundMoney(invoice.taxableAmount - input.amount);
+      // subtotal/taxableAmount/taxAmount must move with totalAmount here: captureChargeForOrderItem
+      // recomputes totalAmount from subtotal/tax on the next completion, so if a return only
+      // touched totalAmount, that recompute would silently re-inflate it back up by the amount
+      // just returned (code-review-findings-2026-08-25 P1). The GST split is reversed
+      // proportionally — a return is amount-based (no line allocation), so the returned amount's
+      // tax portion is the invoice's tax-to-total ratio; taxable and tax shrink in lockstep so
+      // total = taxable + tax stays exact (code-review-findings-2026-08-25 P2). Per-line
+      // cgst/sgst on invoice_items can't be reversed without a line-based return model — the
+      // invoice-level split is what keeps tax reporting honest.
+      const totalBefore = invoice.totalAmount;
+      const taxShare =
+        totalBefore > 0 ? roundMoney((invoice.taxAmount * input.amount) / totalBefore) : 0;
+      const taxableShare = roundMoney(input.amount - taxShare);
+      invoice.subtotal = roundMoney(invoice.subtotal - taxableShare);
+      invoice.taxableAmount = roundMoney(invoice.taxableAmount - taxableShare);
+      invoice.taxAmount = roundMoney(invoice.taxAmount - taxShare);
       invoice.totalAmount = roundMoney(invoice.totalAmount - input.amount);
       invoice.paidAmount = roundMoney(invoice.paidAmount - input.amount);
       invoice.status = invoice.paidAmount >= invoice.totalAmount ? 'Paid' : 'PartiallyPaid';

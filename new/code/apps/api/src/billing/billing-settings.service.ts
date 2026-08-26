@@ -8,6 +8,8 @@ export interface UpdateBillingSettingsInput {
   gstin: string;
   stateCode: string;
   hospitalLegalName: string;
+  /** Default GST rate for auto-captured lines; omitted/0 = exempt (backward-compatible). */
+  defaultTaxPercent?: number;
 }
 
 @Injectable()
@@ -29,6 +31,7 @@ export class BillingSettingsService {
           gstin: input.gstin,
           stateCode: input.stateCode,
           hospitalLegalName: input.hospitalLegalName,
+          defaultTaxPercent: input.defaultTaxPercent ?? 0,
         }),
       );
     });
