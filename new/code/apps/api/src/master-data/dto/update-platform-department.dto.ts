@@ -1,6 +1,6 @@
 import { IsBoolean, IsOptional, IsString } from 'class-validator';
 
-export class UpdateDepartmentCatalogDto {
+export class UpdatePlatformDepartmentDto {
   @IsOptional()
   @IsString()
   departmentName?: string;

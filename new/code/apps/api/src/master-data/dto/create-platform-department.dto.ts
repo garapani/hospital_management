@@ -1,6 +1,6 @@
 import { IsBoolean, IsString, ValidateIf } from 'class-validator';
 
-export class CreateDepartmentCatalogDto {
+export class CreatePlatformDepartmentDto {
   @IsString()
   departmentCode!: string;
 

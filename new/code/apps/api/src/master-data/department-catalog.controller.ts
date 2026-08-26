@@ -11,8 +11,8 @@ import {
 } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { DepartmentCatalogService } from './department-catalog.service.js';
-import { CreateDepartmentCatalogDto } from './dto/create-department-catalog.dto.js';
-import { UpdateDepartmentCatalogDto } from './dto/update-department-catalog.dto.js';
+import { CreatePlatformDepartmentDto } from './dto/create-platform-department.dto.js';
+import { UpdatePlatformDepartmentDto } from './dto/update-platform-department.dto.js';
 
 // Platform-only, same as the role catalog: the Global Catalog screen (departments tab) lives in
 // the platform console. rbac.manage is mapped to the Super Admin role only (seed-rbac-catalog.ts),
@@ -33,13 +33,13 @@ export class DepartmentCatalogController {
   @Post('catalogs/departments')
   @RequirePermission(REQUIRED_PERMISSION)
   @HttpCode(HttpStatus.CREATED)
-  async createDepartmentCatalog(@Body() body: CreateDepartmentCatalogDto) {
+  async createDepartmentCatalog(@Body() body: CreatePlatformDepartmentDto) {
     return this.departmentCatalogService.createDepartmentCatalog(body);
   }
 
   @Patch('catalogs/departments/:id')
   @RequirePermission(REQUIRED_PERMISSION)
-  async updateDepartmentCatalog(@Param('id') id: string, @Body() body: UpdateDepartmentCatalogDto) {
+  async updateDepartmentCatalog(@Param('id') id: string, @Body() body: UpdatePlatformDepartmentDto) {
     return this.departmentCatalogService.updateDepartmentCatalog(id, body);
   }
 

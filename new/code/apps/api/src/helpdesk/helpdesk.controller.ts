@@ -1,11 +1,9 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { HelpdeskService } from './helpdesk.service.js';
-import {
-  AssignTicketDto,
-  CreateTicketDto,
-  ListTicketsQueryDto,
-} from './dto/helpdesk.dto.js';
+import { AssignTicketDto } from './dto/assign-ticket.dto.js';
+import { CreateTicketDto } from './dto/create-ticket.dto.js';
+import { ListTicketsQueryDto } from './dto/list-tickets.dto.js';
 
 @Controller('helpdesk')
 @UseGuards(PermissionGuard)

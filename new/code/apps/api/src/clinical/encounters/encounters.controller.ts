@@ -2,7 +2,10 @@ import { Controller, Post, Patch, Get, Body, Param, Query, UseGuards, Delete, Ht
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { PaginationQueryDto } from '@hospital/pagination';
 import { EncountersService } from './encounters.service.js';
-import { CreateNoteDto, UpdateNoteDto, CreateDiagnosisDto, CreatePrescriptionDto } from './dto/encounter.dto.js';
+import { CreateDiagnosisDto } from './dto/create-diagnosis.dto.js';
+import { CreateNoteDto } from './dto/create-note.dto.js';
+import { CreatePrescriptionDto } from './dto/create-prescription.dto.js';
+import { UpdateNoteDto } from './dto/update-note.dto.js';
 
 @Controller('encounters')
 @UseGuards(PermissionGuard)

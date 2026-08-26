@@ -1,12 +1,10 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { FractionService } from './fraction.service.js';
-import {
-  CreateEntryDto,
-  CreateRuleDto,
-  ListEntriesQueryDto,
-  ListRulesQueryDto,
-} from './dto/fraction.dto.js';
+import { CreateEntryDto } from './dto/create-entry.dto.js';
+import { CreateRuleDto } from './dto/create-rule.dto.js';
+import { ListEntriesQueryDto } from './dto/list-entries.dto.js';
+import { ListRulesQueryDto } from './dto/list-rules.dto.js';
 
 @Controller('fraction')
 @UseGuards(PermissionGuard)

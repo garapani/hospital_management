@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { PayrollService } from './payroll.service.js';
-import { ListPayslipsQueryDto, MarkPaidDto, RunPayrollDto } from './dto/payroll.dto.js';
+import { ListPayslipsQueryDto } from './dto/list-payslips.dto.js';
+import { MarkPaidDto } from './dto/mark-paid.dto.js';
+import { RunPayrollDto } from './dto/run-payroll.dto.js';
 
 @Controller('payroll')
 @UseGuards(PermissionGuard)

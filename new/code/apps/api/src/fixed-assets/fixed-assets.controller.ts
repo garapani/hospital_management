@@ -1,14 +1,12 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { FixedAssetsService } from './fixed-assets.service.js';
-import {
-  CreateFixedAssetCategoryDto,
-  CreateFixedAssetDto,
-  ListDepreciationEntriesQueryDto,
-  ListFixedAssetsQueryDto,
-  RunDepreciationDto,
-  UpdateFixedAssetDto,
-} from './dto/fixed-asset.dto.js';
+import { CreateFixedAssetCategoryDto } from './dto/create-fixed-asset-category.dto.js';
+import { CreateFixedAssetDto } from './dto/create-fixed-asset.dto.js';
+import { ListDepreciationEntriesQueryDto } from './dto/list-depreciation-entries.dto.js';
+import { ListFixedAssetsQueryDto } from './dto/list-fixed-assets.dto.js';
+import { RunDepreciationDto } from './dto/run-depreciation.dto.js';
+import { UpdateFixedAssetDto } from './dto/update-fixed-asset.dto.js';
 
 @Controller('fixed-assets')
 @UseGuards(PermissionGuard)

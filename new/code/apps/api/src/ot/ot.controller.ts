@@ -1,7 +1,10 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { OtService } from './ot.service.js';
-import { CancelSurgeryDto, CompleteSurgeryDto, CreateSurgeryDto, ListSurgeriesQueryDto } from './dto/ot.dto.js';
+import { CancelSurgeryDto } from './dto/cancel-surgery.dto.js';
+import { CompleteSurgeryDto } from './dto/complete-surgery.dto.js';
+import { CreateSurgeryDto } from './dto/create-surgery.dto.js';
+import { ListSurgeriesQueryDto } from './dto/list-surgeries.dto.js';
 
 @Controller('ot')
 @UseGuards(PermissionGuard)

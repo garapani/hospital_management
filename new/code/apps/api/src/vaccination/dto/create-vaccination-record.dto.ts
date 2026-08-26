@@ -1,5 +1,4 @@
-import { IsDateString, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
-import { PaginationQueryDto } from '@hospital/pagination';
+import { IsDateString, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateVaccinationRecordDto {
   @IsString()
@@ -28,14 +27,4 @@ export class CreateVaccinationRecordDto {
   @IsOptional()
   @IsString()
   administeredBy?: string;
-}
-
-export class ListVaccinationRecordsQueryDto extends PaginationQueryDto {
-  @IsOptional()
-  @IsUUID()
-  patientId?: string;
-
-  @IsOptional()
-  @IsString()
-  vaccine?: string;
 }

@@ -1,12 +1,10 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { MaternityService } from './maternity.service.js';
-import {
-  CreateMaternityRecordDto,
-  ListMaternityRecordsQueryDto,
-  RecordDeliveryDto,
-  UpdateMaternityRecordDto,
-} from './dto/maternity.dto.js';
+import { CreateMaternityRecordDto } from './dto/create-maternity-record.dto.js';
+import { ListMaternityRecordsQueryDto } from './dto/list-maternity-records.dto.js';
+import { RecordDeliveryDto } from './dto/record-delivery.dto.js';
+import { UpdateMaternityRecordDto } from './dto/update-maternity-record.dto.js';
 
 @Controller('maternity')
 @UseGuards(PermissionGuard)

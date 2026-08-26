@@ -1,13 +1,11 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { NursingService } from './nursing.service.js';
-import {
-  CreateAdministrationDto,
-  CreateTaskDto,
-  ListAdministrationsQueryDto,
-  ListTasksQueryDto,
-  SkipAdministrationDto,
-} from './dto/nursing.dto.js';
+import { CreateAdministrationDto } from './dto/create-administration.dto.js';
+import { CreateTaskDto } from './dto/create-task.dto.js';
+import { ListAdministrationsQueryDto } from './dto/list-administrations.dto.js';
+import { ListTasksQueryDto } from './dto/list-tasks.dto.js';
+import { SkipAdministrationDto } from './dto/skip-administration.dto.js';
 
 @Controller('nursing')
 @UseGuards(PermissionGuard)

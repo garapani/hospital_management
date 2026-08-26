@@ -1,12 +1,10 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { SsuService } from './ssu.service.js';
-import {
-  ApproveCaseDto,
-  CreateCaseDto,
-  ListCasesQueryDto,
-  RejectCaseDto,
-} from './dto/ssu.dto.js';
+import { ApproveCaseDto } from './dto/approve-case.dto.js';
+import { CreateCaseDto } from './dto/create-case.dto.js';
+import { ListCasesQueryDto } from './dto/list-cases.dto.js';
+import { RejectCaseDto } from './dto/reject-case.dto.js';
 
 @Controller('ssu')
 @UseGuards(PermissionGuard)

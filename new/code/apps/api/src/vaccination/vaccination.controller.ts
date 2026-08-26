@@ -1,10 +1,8 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { VaccinationService } from './vaccination.service.js';
-import {
-  CreateVaccinationRecordDto,
-  ListVaccinationRecordsQueryDto,
-} from './dto/vaccination.dto.js';
+import { CreateVaccinationRecordDto } from './dto/create-vaccination-record.dto.js';
+import { ListVaccinationRecordsQueryDto } from './dto/list-vaccination-records.dto.js';
 
 @Controller('vaccination')
 @UseGuards(PermissionGuard)

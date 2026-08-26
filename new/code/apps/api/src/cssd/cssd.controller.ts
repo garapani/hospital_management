@@ -1,14 +1,12 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { CssdService } from './cssd.service.js';
-import {
-  CompleteCycleDto,
-  CreateInstrumentDto,
-  FailCycleDto,
-  ListCyclesQueryDto,
-  StartCycleDto,
-  UpdateInstrumentDto,
-} from './dto/cssd.dto.js';
+import { CompleteCycleDto } from './dto/complete-cycle.dto.js';
+import { CreateInstrumentDto } from './dto/create-instrument.dto.js';
+import { FailCycleDto } from './dto/fail-cycle.dto.js';
+import { ListCyclesQueryDto } from './dto/list-cycles.dto.js';
+import { StartCycleDto } from './dto/start-cycle.dto.js';
+import { UpdateInstrumentDto } from './dto/update-instrument.dto.js';
 
 @Controller('cssd')
 @UseGuards(PermissionGuard)
