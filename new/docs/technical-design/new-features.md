@@ -183,6 +183,25 @@ idea the case exists. Applying it means touching the invoice money math and the 
 Related review comments: code-review-findings-2026-08-25.md, ssu module, P2
 (`ssu.service.ts:72`).
 
+### 20. Full India GST model: IGST, place of supply, HSN/SAC-driven tax
+
+Invoicing is CGST/SGST-only today: every taxed line splits 50/50 into cgst/sgst
+(`invoices.service.ts:156-157`), `billing_settings` carries a single `stateCode`, and the
+recently-added `defaultTaxPercent` applies one flat rate to auto-captured lines. Inter-state
+supply cannot be invoiced correctly (the finding's own "live Phase-1 gap"):
+
+- Place-of-supply rules: a line whose supply crosses state lines must attract IGST, not
+  CGST/SGST — needs the patient/customer state vs. the hospital's `stateCode`, and per-line
+  tax-type selection or derivation.
+- HSN/SAC-driven tax: lines already carry a free-text `hsnSacCode`; a catalog of HSN/SAC → GST
+  rate would let tax derive from the code instead of a single default.
+- GST reporting: tax collected needs to be reported per return period (GSTR-1/3B) — which in turn
+  wants the GST-liability ledger account that this codebase deliberately lacks today (capture and
+  payment journals roll tax into revenue; see Dev Standards §86).
+
+Related review comments: code-review-findings-2026-08-25.md, billing module, P3
+(`invoices.service.ts:156-157`).
+
 ## Product Module Backlog
 
 The PRD phases still leave these major domains to add:

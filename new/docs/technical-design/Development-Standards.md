@@ -3517,3 +3517,37 @@ journal post already takes. Subscriber wiring is proven e2e by a spec booting th
 arbitrarily. And the RBAC fix simply applies PRD §6.1: Fraction & Incentive moved from
 Billing/Accounts Staff (whose scope is Billing/Insurance/Accounting/Verification) to HR/Payroll
 Admin (whose primary scope names Fraction & Incentive explicitly).
+
+## 86. Billing P2/P3 batch: proportional GST reversal on returns, and a settings-driven default
+    tax for charge capture (2026-08-26)
+
+Two P2 fixes landed; the IGST/HSN model was deferred to `new-features.md` #20. Both money-shape
+decisions are worth recording.
+
+**Returns now reverse the GST split proportionally, and the proportion is the tax-to-total
+ratio.** A return is amount-based (`CreateReturnInput` carries only amount/reason), so it cannot
+allocate itself to specific invoice lines. The invoice-level split is reversed by the returned
+amount's share of the invoice's tax: `taxShare = round(tax * amount / total)`, with
+`taxableShare = amount - taxShare`, and `subtotal`/`taxableAmount`/`taxAmount` all shrink
+accordingly. The arithmetic is exact rather than approximate because every quantity is already
+2-decimal money: `total = taxable + tax` is preserved to the paisa after the split, and the P1
+invariant (a later charge-capture recompute of `totalAmount = subtotal - discount + tax` can't
+re-inflate past the return) still holds with tax included. Two things deliberately NOT done, both
+documented in the finding: per-line `cgst`/`sgst` reversal (needs a line-based return model) and
+any change to the return journal (still amount-based, matching the no-GST-liability model below).
+
+**Charge capture reads its tax from a configured default, and the journal books the full line
+total.** `billing_settings.defaultTaxPercent` (migration 0081, 0-100, default 0) is the seam —
+the same settings row that already carries GSTIN/state code. Captured lines now carry
+`taxPercent`/`cgst`/`sgst`/`totalAmount` computed from it, and the invoice's `taxAmount` moves
+with the line. The journal amount is the line's full total (unitPrice + tax) because this
+codebase has **no GST-liability ledger account** — tax is rolled into revenue exactly as
+`recordPayment` already does for manual-invoice payments (debit Cash/AR, credit AR/revenue, no tax
+split anywhere). Introducing a real GST liability account is net-new accounting-model work (a
+seeded ledger account, split journals on capture *and* payment *and* return), explicitly out of
+scope for a finding whose ask was "the line carries 0% tax".
+
+Also of note: the backward-compatible default (omitted `defaultTaxPercent` → 0) keeps every
+existing client and test working unchanged, and the capture spec's tax tests must reset the shared
+tenant's settings back to 0 — the settings row is per-tenant singleton shared across all tests in
+the describe block, so a tax-configured test leaks into later tests without cleanup.
