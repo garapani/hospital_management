@@ -167,10 +167,10 @@ the root `CLAUDE.md`.
 ## Financial & Billing
 
 ### billing
-- [ ] **P1** — A charge captured after a return silently reverses that return — `createReturn` reduces `totalAmount` without touching `subtotal`; the next capture recomputes `totalAmount` from scratch, re-inflating it. (`billing/invoices.service.ts:347-348,584-586`)
-- [ ] **P1** — `taxableAmount` is never updated by charge capture — every auto-generated invoice reports ₹0 taxable value. (`invoices.service.ts:347-348,406`)
-- [ ] **P1** — Cancelling an invoice doesn't reverse its revenue/AR journal — no contra entry posted. (`invoices.service.ts:450-469`)
-- [ ] **P1** — `DepositsService.refund` takes no row lock, unlike `recordPayment` — concurrent refunds can pay out more cash than the deposit held. (`billing/deposits.service.ts:106`)
+- [x] **P1** — A charge captured after a return silently reverses that return — `createReturn` reduces `totalAmount` without touching `subtotal`; the next capture recomputes `totalAmount` from scratch, re-inflating it. (`billing/invoices.service.ts:347-348,584-586`) — **Fixed 2026-08-25:** `createReturn` now also reduces `subtotal`/`taxableAmount` by the return amount, keeping them in lockstep with `totalAmount` so a later capture's recompute can't erase the return. Full per-line GST-split reversal (cgst/sgst) remains a separate, larger gap (tracked as its own P2).
+- [x] **P1** — `taxableAmount` is never updated by charge capture — every auto-generated invoice reports ₹0 taxable value. (`invoices.service.ts:347-348,406`) — **Fixed 2026-08-25:** `captureChargeForOrderItem` now adds `unitPrice` to `taxableAmount` alongside `subtotal` (captured lines carry 0 tax, so the two move together).
+- [x] **P1** — Cancelling an invoice doesn't reverse its revenue/AR journal — no contra entry posted. (`invoices.service.ts:450-469`) — **Fixed 2026-08-25:** `cancel()` now sums the `invoice_items` with a non-null `sourceOrderItemId` (exactly what charge-capture journaled, and — since `cancel()` already requires `paidAmount === 0` — undisturbed by any return) and posts a reversal journal for that amount; manually-created lines, which never posted a journal, are correctly excluded.
+- [x] **P1** — `DepositsService.refund` takes no row lock, unlike `recordPayment` — concurrent refunds can pay out more cash than the deposit held. (`billing/deposits.service.ts:106`) — **Fixed 2026-08-25:** added `pessimistic_write` lock on the deposit lookup, matching `recordPayment`'s invoice lookup.
 - [ ] **P2** — A repeated same-amount refund decrements cash twice but books one journal (auto-journal treats the re-post as a safe no-op). (`deposits.service.ts:113-134`)
 - [ ] **P2** — Charge capture recomputes status from a stale in-memory `paidAmount` with no row lock on the invoice. (`invoices.service.ts:274,325-355`)
 - [ ] **P2** — `taxPercent`/`discountAmount` are unbounded and unsigned. (`dto/create-invoice.dto.ts:25-31`)
