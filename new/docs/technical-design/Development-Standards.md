@@ -2954,3 +2954,35 @@ not this one's.
 `PaginationQueryDto`, converting `find()` calls to `createQueryBuilder` + `paginate(qb, query)` —
 identical shape to the nursing P1 pagination fix and `PatientsService.findAll`. Controllers accept
 `page`/`limit` as `@Query()`.
+
+## 71. Clinical/triage P2/P3 batch: linkPatient guards, update() patientId removal,
+    the audit-columns gap migration 0053 missed (2026-08-26)
+
+Four items from the clinical/triage section of `code-review-findings-2026-08-25.md`.
+
+**`linkPatient` gained the three checks its name implied it already had.** No existence check, no
+re-link guard, no closed-entry guard — a bad `patientId` (typo, wrong patient) would silently
+propagate into `AdmissionsService.admit`, which trusts `TriageEntry.patientId` once set. Now 404s on
+a `patientId` that doesn't resolve to a real patient, and 409s both on an already-linked entry (no
+silent overwrite to a different patient) and on a closed entry (Discharged/Admitted/Deceased).
+
+**`update()` can no longer touch `patientId` at all — architecturally, not just by convention.**
+Removed `patientId` from `UpdateTriageEntryInput` (`Partial<Omit<CreateTriageEntryInput,
+'patientId'>>`) and from `UpdateTriageEntryDto`, the same move as the appointments P1 fix's removal
+of `status` from its update DTO: `linkPatient()` is now the *only* code path that can set this
+field, full stop, not just the one nobody happens to call incorrectly today. `update()` also now
+409s on any edit to an already-closed entry — the guard reads `entry.status` *before* applying the
+incoming patch, so the transition *into* a closed status (e.g. `status: 'Discharged'` on an entry
+that's currently `'Triaged'`) still goes through this same call unaffected; only a second edit after
+closing hits the lock. Same "check current state before Object.assign, not after" shape as the
+clinical-note sign-off lock (§70) and the discharge-summary `reviewedAt` lock.
+
+**`triage_entries` was the one table migration 0053 missed.** `TriageEntry` never extended
+`AuditableEntity`/`SoftDeletableEntity` — it duplicated its own `createdAt`/`updatedAt` columns and
+had no `createdBy`/`updatedBy`/`deletedAt`/`deletedBy` at all. Migration 0053 (the broad
+audit-columns backfill across tenant tables) verified each table's original CREATE TABLE migration
+rather than assuming from the entity class, but `triage_entries` simply wasn't in its table list.
+Added migration 0067 with the same `ADD COLUMN IF NOT EXISTS` shape as 0053, and switched
+`TriageEntry` to extend `SoftDeletableEntity` like every sibling clinical entity — dropping its
+duplicated `@CreateDateColumn`/`@UpdateDateColumn` in favor of the inherited ones (same column
+types, so no data-shape change for those two).
