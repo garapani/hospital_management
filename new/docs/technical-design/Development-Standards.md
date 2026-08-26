@@ -4084,3 +4084,19 @@ read a pool TypeORM never exposes there, so it was dead code *and* a permanent t
 code also holds a resource, deletion is the fix, not instrumentation. The missing secondary
 indexes on newer tenant tables were closed by the modules' own batches where they existed (0087,
 0088, 0090) and migration 0092 for the remainder (`employees`, `patient_referrals`).
+
+## 107. Platform cross-cutting P3 batch: closing the string-typed-uuid sweep, and acknowledging
+    the throttler fix (2026-08-26)
+
+Both platform cross-cutting items closed. The throttler item was already fixed by the auth P1
+(the finding itself said it was "the single highest-impact fix in this set" — it landed with the
+auth batch, §94); this batch closes the sweep.
+
+**The string-typed-uuid sweep is the finding this repo keeps re-discovering per module.** Every
+module batch has been fixing its own instance (tenants, marketing, employee, helpdesk,
+master-data); this item names the pattern explicitly: a `uuid`-typed column validated as a plain
+string turns a bad id from a clean 400 into a raw Postgres 22P02/500 on the FK. The durable rule,
+now applied everywhere in the sweep: **write-path uuid fields use `@IsUUID`, matching the read
+path** — the read DTOs have been correct all along, which is why the asymmetry was discoverable.
+A grep for `@IsString()` on uuid-column fields is a cheap lint for the whole codebase; each module
+batch keeps closing its instance, and this sweep closes the named set.
