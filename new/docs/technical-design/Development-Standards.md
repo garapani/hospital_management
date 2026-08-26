@@ -3691,3 +3691,35 @@ per-employee `findOne` in the run loop is replaced by one batch `find` into a `S
 The spec fixtures also had to learn the module's new reality: the run payslips *every* live
 employee in the shared tenant, so tests must scope assertions to the employee they inserted, and
 the markPaid journal test needs a resolvable actor.
+
+## 91. Fixed-assets P2/P3 batch: a back-fill that books real money, and the accrual finally posts
+    to the ledger (2026-08-26)
+
+Five items, closing out the fixed-assets section. Three shapes worth recording.
+
+**Back-filling a period must compare against the latest period BEFORE it, not the latest
+overall.** The old prior-entry lookup took `order: { periodYear DESC, periodMonth DESC }` with no
+period predicate — so a back-fill of March compared March's (smaller) accumulated figure against
+June's (larger) one and booked `max(0, 15000 − 18000)` = ₹0, silently. The fix adds the
+strictly-before predicate `(periodYear < :year OR (periodYear = :year AND periodMonth < :month))`
+to the query. The lesson: any "previous value" lookup for a *retroactive* write must bound the
+search to the domain being back-filled; an unconstrained "latest" silently produces zero-delta
+no-ops exactly when the caller is trying to correct history.
+
+**The accrual posts to the ledger — with a ₹0 skip.** Each non-zero charge books Depreciation
+Expense / Accumulated Depreciation via `postAutoJournal` on the caller's manager (idempotent on
+the `Depreciation` source key, fail-loud). The two ledger accounts are seeded per tenant by
+migration 0086 and added to `LEDGER_ACCOUNT_IDS`, matching the payroll pattern (§90) — the ledger
+account set is growing by seeding, not by runtime creation. The notable detail: a ₹0 charge (a
+fully-depreciated asset's trailing period, or the old back-fill bug) deliberately skips the
+journal — `postAutoJournal` rejects zero-amount lines, and a no-op row isn't a financial event.
+When a batch produces entries that are sometimes zero, the journal must be conditional on
+non-zero, not assumed.
+
+**The valuation-freeze guard is the same shape again** (third use after accounting §87 and
+insurance §88): once depreciation entries exist, `updateAsset` 409s changes to
+cost/date/useful-life/salvage — the inputs history was computed from — while administrative
+fields stay editable. `salvageValue > purchaseCost` is rejected on create and re-checked
+post-update (a negative depreciable base otherwise), and `resolveActor` gained the standard
+fallback parameter. This closes the Financial & Billing group's money modules except the two
+remaining cross-cutting items.
