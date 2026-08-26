@@ -1,23 +1,33 @@
-import { IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import type { WardStockTransactionType } from '../entities/ward-stock.entity.js';
 
 export class ReceiveStockDto {
-  @IsString()
+  @IsUUID()
   departmentId!: string;
 
-  @IsString()
+  @IsUUID()
   itemId!: string;
 
   @IsNumber()
   quantity!: number;
 
+  /** Batch lot this receipt refers to; omitted/empty = unbatchable stock ('' sentinel in the DB). */
   @IsOptional()
   @IsString()
+  batchNumber?: string;
+
+  /** ISO date; must not be in the past (already-expired stock is never a legitimate receipt). */
+  @IsOptional()
+  @IsDateString()
+  expiryDate?: string;
+
+  @IsOptional()
+  @IsUUID()
   patientId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   admissionId?: string;
 
   @IsOptional()
@@ -31,21 +41,21 @@ export class ReceiveStockDto {
 }
 
 export class ConsumeStockDto {
-  @IsString()
+  @IsUUID()
   departmentId!: string;
 
-  @IsString()
+  @IsUUID()
   itemId!: string;
 
   @IsNumber()
   quantity!: number;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   patientId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   admissionId?: string;
 
   @IsOptional()
@@ -58,7 +68,68 @@ export class ConsumeStockDto {
   performedBy?: string;
 }
 
-export class ListBalancesQueryDto {
+export class ReturnStockDto {
+  @IsUUID()
+  departmentId!: string;
+
+  @IsUUID()
+  itemId!: string;
+
+  @IsNumber()
+  quantity!: number;
+
+  @IsOptional()
+  @IsString()
+  remarks?: string;
+
+  /** Deprecated — ignored when a tenant context with an accountId is active (see §25). */
+  @IsOptional()
+  @IsString()
+  performedBy?: string;
+}
+
+export class WasteStockDto {
+  @IsUUID()
+  departmentId!: string;
+
+  @IsUUID()
+  itemId!: string;
+
+  @IsNumber()
+  quantity!: number;
+
+  @IsOptional()
+  @IsString()
+  remarks?: string;
+
+  /** Deprecated — ignored when a tenant context with an accountId is active (see §25). */
+  @IsOptional()
+  @IsString()
+  performedBy?: string;
+}
+
+export class AdjustStockDto {
+  @IsUUID()
+  departmentId!: string;
+
+  @IsUUID()
+  itemId!: string;
+
+  /** Signed stocktake delta — positive adds stock, negative removes it; never zero. */
+  @IsNumber()
+  delta!: number;
+
+  @IsOptional()
+  @IsString()
+  remarks?: string;
+
+  /** Deprecated — ignored when a tenant context with an accountId is active (see §25). */
+  @IsOptional()
+  @IsString()
+  performedBy?: string;
+}
+
+export class ListBalancesQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   departmentId?: string;
@@ -74,6 +145,6 @@ export class ListTransactionsQueryDto extends PaginationQueryDto {
   itemId?: string;
 
   @IsOptional()
-  @IsIn(['Receive', 'Consume'])
+  @IsIn(['Receive', 'Consume', 'Return', 'Adjust', 'Wastage'])
   transactionType?: WardStockTransactionType;
 }

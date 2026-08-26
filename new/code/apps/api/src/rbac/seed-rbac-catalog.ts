@@ -581,6 +581,10 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'ward-supply.manage' },
   { roleName: 'Nurse', permissionName: 'ward-supply.read' },
   { roleName: 'Nurse', permissionName: 'ward-supply.manage' },
+  // PRD §6.1: Ward Supply is in Inventory/Store Manager's primary scope, alongside Inventory and
+  // Fixed Asset (code-review-findings-2026-08-25 ward-supply P3).
+  { roleName: 'Inventory/Store Manager', permissionName: 'ward-supply.read' },
+  { roleName: 'Inventory/Store Manager', permissionName: 'ward-supply.manage' },
   { roleName: 'Super Admin', permissionName: 'nursing.read' },
   { roleName: 'Super Admin', permissionName: 'nursing.manage' },
   { roleName: 'Hospital Admin', permissionName: 'nursing.read' },

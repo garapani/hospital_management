@@ -74,6 +74,7 @@ import { ConvertClinicalGroupActorColumnsToVarchar3000000000073 } from './0073-c
 import { AddLabTestsCodeUnique3000000000074 } from './0074-add-lab-tests-code-unique.js';
 import { AddPharmacyDispensingsReversalColumns3000000000075 } from './0075-add-pharmacy-dispensings-reversal-columns.js';
 import { AddInventoryItemsCodeUniqueAndStockBalanceCheck3000000000076 } from './0076-add-inventory-items-code-unique-and-stock-balance-check.js';
+import { AddWardStockBatchDimension3000000000077 } from './0077-add-ward-stock-batch-dimension.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -162,4 +163,5 @@ export const TENANT_MIGRATIONS = [
   AddLabTestsCodeUnique3000000000074,
   AddPharmacyDispensingsReversalColumns3000000000075,
   AddInventoryItemsCodeUniqueAndStockBalanceCheck3000000000076,
+  AddWardStockBatchDimension3000000000077,
 ];
