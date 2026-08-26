@@ -3770,3 +3770,28 @@ concurrent same-amount refunds now provably decrement the balance exactly once (
 P2 journal pre-check serialize them; the second sees the first's DepositRefund journal and
 no-ops). The module-boundary-lint half of this section is the same `eslint.config.mjs` work as
 the clinical-group boundary item — tracked there, not duplicated.
+
+## 94. Auth P2/P3 batch: the lockout decision uses the authoritative counter, and password
+    fields get their bounds (2026-08-26)
+
+Three items landed; token revocation was deferred to `new-features.md` #22. The lockout fix is
+the shape worth recording.
+
+**The lock decision must use the counter's authoritative post-increment value.** `login()` used
+to compute `account.failedLoginAttempts + 1` from the account row it loaded at the START of the
+request — stale under concurrent failures — and locked only when that stale value crossed 5. The
+accounts batch made `recordFailedLogin` a row-locked read-modify-write (the single writer); this
+batch makes it *return* the new count and makes `login()` decide from that return value. The
+rule: when a threshold decision depends on a counter that other requests also mutate, the decision
+must be made from the mutation's own result, not from a snapshot taken before the mutation. A
+counter that "can't quite reach" its threshold under load is a lockout that never fires.
+
+**Password fields got explicit bounds at the DTO layer.** `@MaxLength(72)` on login/change
+password — bcrypt's byte limit — so an over-long password 400s at the pipe instead of silently
+truncating on verify (a 73-byte password verifies as its truncated 72-byte prefix, which is a
+footgun); `ProvisionTenantDto.adminPassword` gets `@MinLength(8)`/`@MaxLength(72)`, closing the
+"provision a tenant with a 1-character Hospital Admin password" half that the accounts batch's
+service-side fix didn't reach. **Token revocation stays deferred**: stateless rotation already
+prevents refresh-token reuse, but a stolen token remains valid until expiry without a revocation
+store — the natural home is the Redis/blacklist integration (`new-features.md` #11), captured as
+#22 rather than hacked into a schema the platform's Redis plan already supersedes.

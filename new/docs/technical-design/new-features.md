@@ -219,6 +219,24 @@ period at the new rate with no proration — `subscribe()` updates `pricePerCycl
 Related review comments: code-review-findings-2026-08-25.md, platform-billing module, P3
 (`subscription-billing.service.ts:91-98`).
 
+### 22. Logout and refresh-token revocation
+
+There is no logout endpoint and no way to revoke a refresh token: refresh uses stateless JWT
+rotation (each refresh issues a new token, so an *old* token can't be replayed after use), but a
+token that was stolen outright stays cryptographically valid until its 7-day expiry
+(code-review-findings-2026-08-25 auth P3). Add:
+
+- A revocation store — the natural home is the Redis integration (`new-features.md` #11): a
+  blacklist keyed by token id (jti) with the token's remaining TTL, checked on every
+  refresh/access validation, or a server-side session/allowlist the token points into.
+- `POST /auth/logout` (authenticated) that revokes the presented refresh token, and revocation on
+  password change / account deactivation / lockout.
+- A decision on whether access tokens stay short-lived-stateless (revoked only on refresh) or
+  become checkable per request.
+
+Related review comments: code-review-findings-2026-08-25.md, auth module, P3
+(`auth/auth.service.ts`).
+
 ## Product Module Backlog
 
 The PRD phases still leave these major domains to add:
