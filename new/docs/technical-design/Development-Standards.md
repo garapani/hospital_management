@@ -3320,3 +3320,44 @@ sibling fix already closed part of a finding before assuming the whole thing is 
 **The dead code (P3)** was `listByOrderItem`, deleted — same shape as the lab/radiology dead-code
 fixes earlier in this file (`findAll` already covers the same filter and is what the controller
 actually wires up).
+
+## 81. Inventory P2/P3 batch: goods-receipt hardening, a GROUP BY/HAVING report deliberately left
+    unpaginated, and a code-uniqueness fix reused verbatim from lab (2026-08-26)
+
+Five items, closing out the inventory section entirely (the P1 FEFO fix landed earlier,
+2026-08-25, and is what this batch's `expiryDate` validation directly protects).
+
+**Goods-receipt validation and test coverage** went together: `RecordGoodsReceiptDto.expiryDate`
+was `@IsString()` only, so a garbage value would 500 at the `date`-column insert instead of 400ing
+through `ValidationPipe` — switched to `@IsDateString()`. On top of that, `recordGoodsReceipt` now
+rejects an `expiryDate` already in the past: receiving stock that's expired on arrival is never a
+legitimate business operation, almost always a data-entry error, and would otherwise sit in
+`stock_batches` as dead-on-arrival inventory (permanently invisible to FEFO after the pharmacy P1
+fix). Same shape as vaccination's `administeredDate` future-date guard from this same review pass —
+**a plausibility check on top of a format check**, not a replacement for one. The method had exactly
+one existing test (actor derivation), despite three real invariants riding on it — over-receipt,
+the atomic stock-balance upsert, and the PO status rollup — so all three got covered in the same
+pass as the validation fix, since they share the one code path being touched anyway.
+
+**The low-stock report** is the interesting shape: a `GROUP BY item.id` / `HAVING SUM(available) <=
+reorderLevel` query over `inventory_items` LEFT JOINed to `stock_balances`, so an item with zero
+stock batches still surfaces (COALESCE'd to 0) rather than being silently absent from a query that
+never runs its `HAVING` clause. **This one query does not go through `paginateRaw()`**, unlike every
+other list in this module — deliberately: `paginateRaw()`'s `getCount()` runs on the same query
+builder the data query uses, and a `GROUP BY`/`HAVING` aggregate is exactly the shape TypeORM's count
+machinery isn't built for (it wasn't invented for this batch — every existing `paginateRaw()` caller
+in this codebase is a flat join, no aggregation). Whether a list needs pagination is a data-volume
+question, not a reflex: this result set is bounded by business meaning (only items actually below
+their reorder point), not by how much data exists, so an unpaginated array is the honest contract,
+not a shortcut. A full reorder *alert* (a notification firing when a level is crossed) is a separate,
+larger feature this finding didn't require — this only had to close the "stored but never queried"
+half.
+
+**The two constraint additions** — `UQ_inventory_items_code` and `CHK_stock_balances_available_quantity_non_negative`
+— reuse patterns this file has already established: the code-uniqueness fix is the
+`UQ_lab_tests_code` shape (migration 0074) applied to a second table, and the CHECK constraint got
+a regression test that goes around the application layer entirely (`manager.query()` UPDATE, not
+the service) specifically to prove the DB constraint is the actual backstop, not just app-code that
+happens to also prevent the same outcome — `FefoStockDecrementService` already rejects
+insufficient-stock at the application level, so a test through that path alone wouldn't have proven
+the CHECK constraint does anything at all.
