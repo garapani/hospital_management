@@ -2875,3 +2875,47 @@ closed with a unique constraint because the "duplicate" it's guarding against is
 its `@Body()`, which `ValidationPipe` can't validate (no class, no decorators) — any shape reached
 the service. Added `CheckDuplicatesDto` and used it on both the controller and the service method
 signature.
+
+## 69. Appointments P2/P3 batch: doctor-slot unique constraint, cancel idempotency, and a
+    protected-config edit Claude cannot make (2026-08-26)
+
+Five items from the appointments section of `code-review-findings-2026-08-25.md`; one deferred as
+a feature request, one left with a known lint gap.
+
+**Doctor double-booking closed with the same unique-index pattern as admissions.** `create()`/
+`update()`'s conflict checks were select-then-insert only. Added `UQ_appointments_active_doctor_slot`
+(migration 0066): a partial unique index on `(doctorId, appointmentDate, appointmentTime) WHERE
+status = 'Scheduled' AND "doctorId" IS NOT NULL` — the `doctorId IS NOT NULL` guard matters because
+appointments may legitimately omit a doctor (department-only bookings), and Postgres treats NULLs
+as distinct in a unique index regardless, so the predicate is about intent clarity, not correctness.
+Both `create()` and `update()` now catch a `23505` on that constraint and map it to a 409, same
+shape as the admissions `UQ_admissions_active_bed`/`UQ_admissions_active_patient` handlers.
+
+**`cancel()` is now idempotent, and its body is a real DTO.** Cancelling an already-cancelled
+appointment silently re-saved it instead of rejecting; added a status guard (409), matching
+`update()`'s existing cancelled-appointment guard. Replaced the controller's inline
+`{ cancelledRemarks: string }` body type — invisible to `ValidationPipe`, since it has no class or
+decorators — with `CancelAppointmentDto`.
+
+**Untested business rules: added direct `create()`-path coverage.** The slot-conflict and
+department-capacity rules were only exercised via the `update()`/reschedule path (added alongside
+the appointments P1 fix); `create()`, where both rules originate, had no direct test. Added one test
+per rule against `create()`, plus a `cancel()`-idempotency test.
+
+**Doctor-availability's hardcoded 16-slot constant: deferred, not faked.** A real fix means modeling
+actual doctor working hours/shifts — nothing like that exists anywhere in this codebase today
+(`doctorId` is a bare UUID with no profile/schedule entity behind it). That's a net-new feature, not
+a P2-batch-sized patch, so it was captured as `new-features.md` #18 (Platform Features Still Needed)
+instead of stubbed.
+
+**`patientId` existence check: correct fix, blocked config edit.** `create()`/`update()` now 404 on
+a `patientId` that doesn't resolve to a real patient — but this needs a `domain:appointments` →
+`domain:patients` policy in `eslint.config.mjs`'s module-boundary rules (mirroring the existing
+admissions/billing/orders → patients edges), and this repo's `guard-config.sh` hook unconditionally
+blocks Claude's `Edit`/`Write`/`MultiEdit` on that file — its "use explicit instruction" message
+isn't a real override path; nothing in the prompt satisfies it. The code fix is correct and tested;
+`nx lint` (not part of CI) will flag the new cross-domain import until a human adds that one policy
+block by hand. Worth knowing for any future cross-domain import this pass adds: **if the target
+domain isn't already a sanctioned dependency, budget for asking the user to make that one-line
+`eslint.config.mjs` edit themselves** rather than assuming an approved plan/AskUserQuestion answer
+will satisfy the hook.

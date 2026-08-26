@@ -145,6 +145,25 @@ Billing has GST-oriented behavior, but the broader adapter roadmap is still open
 - PM-JAY integration trigger and scope.
 - ESI/PF integration trigger and scope.
 
+### 18. Real doctor availability/scheduling model
+
+`AppointmentsService.getDoctorSchedule()` assumes a fixed 16-slot day ("8-hour workday with
+30-minute slots") — there's no doctor working-hours/shift model anywhere in the codebase; `doctorId`
+is just a raw UUID with no profile or schedule entity behind it. The appointment-conflict checks in
+`create()`/`update()` inherit the same blind spot: they only check for an exact double-booked slot,
+never whether a doctor is even scheduled to work that day/time. Add:
+
+- A doctor availability/schedule entity: working days, shift hours, per-doctor or per-department
+  slot duration.
+- Exception handling: leave, one-off unavailability, holiday overrides.
+- `getDoctorSchedule()` computing real bookable slots from that model instead of the hardcoded
+  constant.
+- `create()`/`update()` conflict checks validating the requested slot falls within the doctor's
+  actual availability, not just checking for an exact double-booking.
+
+Related review comments: code-review-findings-2026-08-25.md, appointments module, P2
+(`appointments.service.ts:165-187`).
+
 ## Product Module Backlog
 
 The PRD phases still leave these major domains to add:
