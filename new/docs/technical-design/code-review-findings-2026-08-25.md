@@ -74,9 +74,9 @@ the root `CLAUDE.md`.
 - [x] **P3** — Nothing prevents multiple maternity records per admission. (`maternity/maternity.service.ts:67-88`) — **Fixed 2026-08-26:** unlike the patients duplicate-check, a second maternity record per admission is never legitimate, so this got a real unique constraint (`UQ_maternity_records_admission`, migration 0069) plus an in-transaction pre-check, mirroring the discharge-summary pattern; `createRecord` maps the constraint violation to a 409.
 
 ### vaccination
-- [ ] **P2** — No duplicate-dose protection — no check, no unique index. (`vaccination/vaccination.service.ts:40-72`)
-- [ ] **P3** — Vaccine name is free text matched by exact equality, no catalog. (`vaccination.service.ts:82-84`)
-- [ ] **P3** — A future `administeredDate` is accepted. (`vaccination.service.ts:50-52`)
+- [x] **P2** — No duplicate-dose protection — no check, no unique index. (`vaccination/vaccination.service.ts:40-72`) — **Fixed 2026-08-26:** added `UQ_vaccination_records_patient_vaccine_dose` (migration 0070, a functional unique index on `(patientId, LOWER(vaccine), doseNumber)` — case-insensitive since there's no catalog to normalize free text) plus an in-transaction pre-check, mapped to 409.
+- [x] **P3** — Vaccine name is free text matched by exact equality, no catalog. (`vaccination.service.ts:82-84`) — **Partially fixed 2026-08-26:** the practical "exact equality" problem is closed — the duplicate-dose check above and `listRecords`' `vaccine` filter are both now case-insensitive, so "MMR" and "mmr" are treated as the same vaccine everywhere. A real structured catalog (entity, CRUD, referential integrity) is a separate, larger feature not attempted in this pass — left open.
+- [x] **P3** — A future `administeredDate` is accepted. (`vaccination.service.ts:50-52`) — **Fixed 2026-08-26:** `record()` now rejects an `administeredDate` after today (plain ISO-string comparison, safe since the field is a validated `YYYY-MM-DD` date).
 
 ### ot
 - [ ] **P2** — No OT-room double-booking check at all — no conflict query, no unique index, no duration model. (`ot/ot.service.ts:43-93`)
