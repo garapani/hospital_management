@@ -64,18 +64,21 @@ describe('SubscriptionBillingService (integration)', () => {
     expect(sub.pricePerCycle).toBe(4999);
     expect(sub.status).toBe('active');
     expect(sub.currentPeriodStart.getTime()).toBeLessThanOrEqual(Date.now());
-    expect(sub.currentPeriodEnd.getTime() - sub.currentPeriodStart.getTime()).toBe(
-      30 * 24 * 60 * 60 * 1000,
-    );
+    // P2: periods are calendar-sized now, not the old fixed 30-day constant — a monthly period
+    // is one calendar month (length varies with the month), so assert cycle length, not ms.
+    const monthsBetween = (start: Date, end: Date): number =>
+      (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+    expect(monthsBetween(sub.currentPeriodStart, sub.currentPeriodEnd)).toBe(1);
   });
 
   it('prices an annual subscription from the catalog and updates terms on re-subscribe', async () => {
     await provision(`${PREFIX}ent`, 'enterprise');
     const annual = await service.subscribe(`${PREFIX}ent`, 'annual');
     expect(annual.pricePerCycle).toBe(216000);
-    expect(annual.currentPeriodEnd.getTime() - annual.currentPeriodStart.getTime()).toBe(
-      365 * 24 * 60 * 60 * 1000,
-    );
+    // Calendar-sized: an annual period is twelve calendar months, not 365 fixed days.
+    const monthsBetween = (start: Date, end: Date): number =>
+      (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+    expect(monthsBetween(annual.currentPeriodStart, annual.currentPeriodEnd)).toBe(12);
 
     const monthly = await service.subscribe(`${PREFIX}ent`, 'monthly');
     expect(monthly.pricePerCycle).toBe(19999);
@@ -84,9 +87,7 @@ describe('SubscriptionBillingService (integration)', () => {
     expect(monthly.id).toBe(annual.id);
     // 2.22 regression: a billingCycle switch must start a fresh period sized to the NEW cycle,
     // not keep the old (annual-length) period while pricePerCycle jumps to the monthly rate.
-    expect(monthly.currentPeriodEnd.getTime() - monthly.currentPeriodStart.getTime()).toBe(
-      30 * 24 * 60 * 60 * 1000,
-    );
+    expect(monthsBetween(monthly.currentPeriodStart, monthly.currentPeriodEnd)).toBe(1);
   });
 
   it('re-subscribing with the SAME billingCycle keeps the current period (not a reset)', async () => {
@@ -176,6 +177,38 @@ describe('SubscriptionBillingService (integration)', () => {
     await expect(service.issueInvoice(`${PREFIX}inv`)).rejects.toThrow(ConflictException);
   });
 
+  it('stamps the vendor invoice with a number and the platform GST split', async () => {
+    await provision(`${PREFIX}invnum`, 'basic');
+    await service.subscribe(`${PREFIX}invnum`, 'monthly');
+
+    const invoice = await service.issueInvoice(`${PREFIX}invnum`);
+    // P2: the vendor's own invoices previously had no invoice number, tax, or GST fields.
+    expect(invoice.invoiceNumber).toMatch(/^SI-[0-9a-f]{8}-\d{4}-\d{2}-\d{2}$/);
+    expect(invoice.taxPercent).toBe(18);
+    expect(invoice.taxAmount).toBe(Math.round((invoice.amount * 18) / 100 * 100) / 100);
+
+    // The number is derived from (subscriptionId, periodStart) — unique per period.
+    await expect(service.issueInvoice(`${PREFIX}invnum`)).rejects.toThrow(ConflictException);
+  });
+
+  it('refuses to re-issue an already-paid period even after the period is reset', async () => {
+    // P3: the "one invoice per period" index used to cover only OPEN invoices — after the period
+    // was paid and the subscription's currentPeriodStart moved on, nothing stopped a later path
+    // from billing the same period again. Prove the widened index: reset the subscription's
+    // current period back onto a PAID invoice's period and issue — must 409.
+    await provision(`${PREFIX}reissue`, 'basic');
+    await service.subscribe(`${PREFIX}reissue`, 'monthly');
+    const invoice = await service.issueInvoice(`${PREFIX}reissue`);
+    await service.markInvoicePaid(invoice.id);
+
+    await ctx.dataSource.query(
+      `UPDATE subscriptions SET "currentPeriodStart" = $1, "currentPeriodEnd" = $2 WHERE "tenantId" = $3`,
+      [invoice.periodStart, invoice.periodEnd, `${PREFIX}reissue`],
+    );
+
+    await expect(service.issueInvoice(`${PREFIX}reissue`)).rejects.toThrow(ConflictException);
+  });
+
   it('rejects issuing an invoice with no active subscription', async () => {
     await provision(`${PREFIX}nosub`, 'basic');
     await expect(service.issueInvoice(`${PREFIX}nosub`)).rejects.toThrow(NotFoundException);
@@ -229,11 +262,10 @@ describe('SubscriptionBillingService (integration)', () => {
     expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(ConflictException);
   });
 
-  it('marking paid advances the period by the invoice\'s own length, not a billing cycle changed afterward', async () => {
+  it('marking paid advances the period by the invoice\'s own cycle, not a billing cycle changed afterward', async () => {
     await provision(`${PREFIX}cycle_switch`, 'basic');
     await service.subscribe(`${PREFIX}cycle_switch`, 'monthly');
     const invoice = await service.issueInvoice(`${PREFIX}cycle_switch`);
-    const monthlyPeriodMs = invoice.periodEnd.getTime() - invoice.periodStart.getTime();
 
     // Cycle changed to annual before the monthly invoice above is paid.
     await service.subscribe(`${PREFIX}cycle_switch`, 'annual');
@@ -241,11 +273,14 @@ describe('SubscriptionBillingService (integration)', () => {
     const paid = await service.markInvoicePaid(invoice.id);
     const sub = await service.getSubscription(`${PREFIX}cycle_switch`);
 
-    // The granted period matches what was actually invoiced/paid (monthly), not the
-    // subscription's current (annual) cycle.
-    expect(sub!.currentPeriodEnd.getTime() - sub!.currentPeriodStart.getTime()).toBe(
-      monthlyPeriodMs,
-    );
+    // The granted period matches what was actually invoiced/paid (one calendar month), not the
+    // subscription's current (annual) cycle. Calendar months, not ms: month-end periods make
+    // ms-lengths differ across months (the old fixed-millisecond arithmetic was the drift P2
+    // fixed), so the assertion is on cycle length, not elapsed ms.
+    const monthsBetween = (start: Date, end: Date): number =>
+      (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+    expect(monthsBetween(invoice.periodStart, invoice.periodEnd)).toBe(1);
+    expect(monthsBetween(sub!.currentPeriodStart, sub!.currentPeriodEnd)).toBe(1);
     expect(sub!.currentPeriodStart).toEqual(paid.periodEnd);
   });
 

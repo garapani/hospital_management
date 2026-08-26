@@ -11,12 +11,39 @@ import { PACKAGE_CATALOG } from '../packages/package-catalog.js';
 import { TenantsService } from '../tenants/tenants.service.js';
 import { withAdvisoryLock } from '../database/advisory-lock.util.js';
 
-const CYCLE_MS: Record<BillingCycle, number> = {
-  monthly: 30 * 24 * 60 * 60 * 1000,
-  annual: 365 * 24 * 60 * 60 * 1000,
-};
-
 const VALID_BILLING_CYCLES = new Set<BillingCycle>(['monthly', 'annual']);
+
+/** Platform GST rate applied to the vendor's own subscription invoices (CGST+SGST at the
+ *  standard rate; the platform owner sets this — see Dev Standards §89). */
+const PLATFORM_GST_PERCENT = 18;
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Calendar-month arithmetic, not fixed-millisecond: "monthly"/"annual" must track real calendar
+ * months/years (a monthly period from Jan 31 ends Feb 28, not Feb 1) — the old 30/365-day
+ * constants drifted against the calendar (code-review-findings-2026-08-25 platform-billing P2).
+ * The day-of-month is clamped to the target month's last day when the source day doesn't exist.
+ */
+function addMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  const day = result.getDate();
+  result.setDate(1);
+  result.setMonth(result.getMonth() + months);
+  const lastDay = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  result.setDate(Math.min(day, lastDay));
+  return result;
+}
+
+/** Whole calendar months between two dates (0 when the end is before the start). */
+function monthsBetween(start: Date, end: Date): number {
+  return Math.max(
+    0,
+    (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()),
+  );
+}
 
 @Injectable()
 export class SubscriptionBillingService {
@@ -91,7 +118,7 @@ export class SubscriptionBillingService {
       const target = existing ?? manager.getRepository(Subscription).create({ tenantId });
       if (!existing || existing.billingCycle !== billingCycle) {
         target.currentPeriodStart = new Date(now);
-        target.currentPeriodEnd = new Date(now + CYCLE_MS[billingCycle]);
+        target.currentPeriodEnd = addMonths(target.currentPeriodStart, billingCycle === 'annual' ? 12 : 1);
       }
       target.packageCode = packageCode;
       target.billingCycle = billingCycle;
@@ -117,9 +144,12 @@ export class SubscriptionBillingService {
     });
   }
 
-  /** Issues an invoice for the subscription's current period. One open invoice per period —
-   *  guarded by the per-tenant lock above plus a unique partial index as a DB-level backstop;
-   *  re-issuing the same period is a 409. */
+  /**
+   * Issues an invoice for the subscription's current period. One invoice per period — guarded by
+   * the per-tenant lock above plus a unique index on (subscriptionId, periodStart) covering ALL
+   * statuses (the old index was open-only, so a re-subscribed tenant could double-bill an
+   * already-paid period; code-review-findings-2026-08-25 P3); re-issuing the same period is a 409.
+   */
   async issueInvoice(tenantId: string): Promise<SubscriptionInvoice> {
     await this.tenantsService.assertValidHospitalTenant(tenantId, ['active', 'suspended'], 'be billed');
     return this.dataSource.transaction(async (manager) => {
@@ -135,14 +165,22 @@ export class SubscriptionBillingService {
         where: {
           subscriptionId: subscription.id,
           periodStart: subscription.currentPeriodStart,
-          status: 'open',
         },
       });
       if (existing) {
         throw new ConflictException(
-          `An open invoice already exists for this period (${existing.amount} ₹)`,
+          `An invoice already exists for this period (${existing.amount} ₹, ${existing.status})`,
         );
       }
+
+      // The vendor's own invoice carries a number plus the platform GST split — previously the
+      // platform billed itself with no invoice number, tax, or GST fields
+      // (code-review-findings-2026-08-25 P2). The number is derived deterministically from
+      // (subscriptionId, periodStart), which the period unique index makes globally unique.
+      const invoiceNumber = `SI-${subscription.id.slice(0, 8)}-${subscription.currentPeriodStart
+        .toISOString()
+        .slice(0, 10)}`;
+      const taxAmount = roundMoney((subscription.pricePerCycle * PLATFORM_GST_PERCENT) / 100);
 
       return manager.getRepository(SubscriptionInvoice).save(
         manager.getRepository(SubscriptionInvoice).create({
@@ -151,6 +189,9 @@ export class SubscriptionBillingService {
           periodStart: subscription.currentPeriodStart,
           periodEnd: subscription.currentPeriodEnd,
           amount: subscription.pricePerCycle,
+          invoiceNumber,
+          taxPercent: PLATFORM_GST_PERCENT,
+          taxAmount,
           status: 'open',
           paidAt: null,
         }),
@@ -200,15 +241,15 @@ export class SubscriptionBillingService {
         where: { id: invoice.subscriptionId },
       });
       if (subscription && subscription.status === 'active') {
-        // Advance by the invoice's OWN period length, not the subscription's current
-        // billingCycle — subscribe() can change the cycle in place between an invoice being
-        // issued and paid, and the period granted must match what was actually invoiced/paid,
-        // not whatever cycle the subscription happens to carry now.
-        const periodLengthMs = invoice.periodEnd.getTime() - invoice.periodStart.getTime();
+        // Advance by the invoice's OWN cycle length in calendar months, not the subscription's
+        // current billingCycle — subscribe() can change the cycle in place between an invoice
+        // being issued and paid, and the period granted must match what was actually
+        // invoiced/paid, not whatever cycle the subscription happens to carry now. Calendar math
+        // keeps renewal on real months/years instead of drifting (code-review-findings-2026-08-25
+        // platform-billing P2).
+        const periodMonths = monthsBetween(invoice.periodStart, invoice.periodEnd);
         subscription.currentPeriodStart = new Date(invoice.periodEnd.getTime());
-        subscription.currentPeriodEnd = new Date(
-          invoice.periodEnd.getTime() + periodLengthMs,
-        );
+        subscription.currentPeriodEnd = addMonths(invoice.periodEnd, periodMonths);
         await manager.getRepository(Subscription).save(subscription);
       }
       return invoice;

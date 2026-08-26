@@ -81,6 +81,7 @@ import { AddFractionReversalAndDefaultRuleUnique3000000000080 } from './0080-add
 import { AddBillingSettingsDefaultTaxPercent3000000000081 } from './0081-add-billing-settings-default-tax-percent.js';
 import { AddLedgerAccountsCodeUnique3000000000082 } from './0082-add-ledger-accounts-code-unique.js';
 import { AddPatientPoliciesUniqueNumber3000000000083 } from './0083-add-patient-policies-unique-number.js';
+import { AddSubscriptionInvoiceNumberTaxAndFullPeriodUnique1000000000084 } from './0084-add-subscription-invoice-number-tax-and-full-period-unique.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -99,6 +100,7 @@ export const PLATFORM_MIGRATIONS = [
   AddTenantPurged1000000000056,
   AddBrandingTextFields1000000000060,
   DropRoleBypassesPermissionChecks3000000000064,
+  AddSubscriptionInvoiceNumberTaxAndFullPeriodUnique1000000000084,
 ];
 
 // Tenant-scoped migrations: create per-tenant-schema tables. Run once per tenant by
