@@ -33,7 +33,7 @@ export interface EnterReportInput {
   reportEnteredBy?: string;
 }
 
-const NON_TERMINAL_STATUSES = ['Pending', 'Scanned', 'ReportEntered'];
+export const NON_TERMINAL_STATUSES = ['Pending', 'Scanned', 'ReportEntered'];
 
 @Injectable()
 export class RadiologyWorkflowService {

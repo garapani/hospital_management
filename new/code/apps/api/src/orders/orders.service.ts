@@ -125,7 +125,10 @@ export class OrdersService {
   async completeItem(orderId: string, itemId: string, input: CompleteOrderItemInput): Promise<OrderItem> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(OrderItem);
-      const item = await repository.findOne({ where: { id: itemId, orderId } });
+      const item = await repository.findOne({
+        where: { id: itemId, orderId },
+        lock: { mode: 'pessimistic_write' },
+      });
       if (!item) {
         throw new NotFoundException(`Order item ${itemId} not found in order ${orderId}`);
       }
@@ -171,7 +174,10 @@ export class OrdersService {
   async cancelItem(orderId: string, itemId: string, input: CancelOrderItemInput): Promise<OrderItem> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(OrderItem);
-      const item = await repository.findOne({ where: { id: itemId, orderId } });
+      const item = await repository.findOne({
+        where: { id: itemId, orderId },
+        lock: { mode: 'pessimistic_write' },
+      });
       if (!item) {
         throw new NotFoundException(`Order item ${itemId} not found in order ${orderId}`);
       }

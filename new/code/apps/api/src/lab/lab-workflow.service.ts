@@ -31,7 +31,7 @@ export interface EnterResultInput {
   enteredBy?: string;
 }
 
-const NON_TERMINAL_STATUSES = ['Pending', 'SampleCollected', 'ResultsEntered'];
+export const NON_TERMINAL_STATUSES = ['Pending', 'SampleCollected', 'ResultsEntered'];
 
 @Injectable()
 export class LabWorkflowService {
