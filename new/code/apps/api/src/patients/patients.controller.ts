@@ -5,6 +5,7 @@ import { CreatePatientDto } from './dto/create-patient.dto.js';
 import { UpdatePatientDto } from './dto/update-patient.dto.js';
 import { SearchPatientsDto } from './dto/search-patients.dto.js';
 import { CreatePortalInviteDto } from './dto/create-portal-invite.dto.js';
+import { CheckDuplicatesDto } from './dto/check-duplicates.dto.js';
 
 @Controller('patients')
 @UseGuards(PermissionGuard)
@@ -19,7 +20,7 @@ export class PatientsController {
 
   @Post('check-duplicates')
   @RequirePermission('patients.read')
-  async checkDuplicates(@Body() dto: { phoneNumber?: string; firstName?: string; lastName?: string; dateOfBirth?: string }) {
+  async checkDuplicates(@Body() dto: CheckDuplicatesDto) {
     return this.patientsService.checkDuplicates(dto);
   }
 

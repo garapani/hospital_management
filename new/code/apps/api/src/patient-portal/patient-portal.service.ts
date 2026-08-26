@@ -57,7 +57,7 @@ export class PatientPortalService {
   async getMe(): Promise<Pick<Patient, 'id' | 'patientNo' | 'firstName' | 'lastName' | 'email' | 'phoneNumber'>> {
     const patientId = this.requirePatientId();
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      const patient = await manager.getRepository(Patient).findOne({ where: { id: patientId } });
+      const patient = await manager.getRepository(Patient).findOne({ where: { id: patientId, isActive: true } });
       if (!patient) {
         throw new NotFoundException('Patient record not found');
       }

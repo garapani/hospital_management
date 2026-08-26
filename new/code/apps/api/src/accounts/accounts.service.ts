@@ -210,6 +210,23 @@ export class AccountsService {
     return { ...account, initialPassword: generatedPassword };
   }
 
+  /**
+   * Called when a Patient record is deactivated: revokes any linked portal login so a
+   * deactivated patient can't keep authenticating. A no-op when no portal account was ever
+   * created for this patient (portal access is opt-in via createPatientAccount).
+   */
+  async deactivatePatientAccount(patientId: string): Promise<void> {
+    await this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const account = await repository.findOne({ where: { patientId, accountType: 'patient' } });
+      if (!account || !account.isActive) {
+        return;
+      }
+      account.isActive = false;
+      await repository.save(account);
+    });
+  }
+
   async findByUsernameWithRoles(username: string): Promise<AccountWithRoles | null> {
     const account = await this.tenantConnection.runInTenantSchema((manager) =>
       manager.getRepository(Account).findOne({ where: { username } }),

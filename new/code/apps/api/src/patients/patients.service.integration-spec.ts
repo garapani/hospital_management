@@ -11,11 +11,13 @@ import {
 describe('PatientsService (integration)', () => {
   let ctx: TenantTestContext;
   let service: PatientsService;
+  let accountsService: AccountsService;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'patients_svc' });
     const generatorService = new PatientNumberGeneratorService(ctx.tenantConnection);
-    service = new PatientsService(ctx.tenantConnection, generatorService, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
+    accountsService = new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext);
+    service = new PatientsService(ctx.tenantConnection, generatorService, accountsService);
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
@@ -69,6 +71,34 @@ describe('PatientsService (integration)', () => {
     });
   });
 
+  it('replaces addresses and kins on update instead of silently ignoring them', async () => {
+    await ctx.inTenant(async () => {
+      const created = await service.create({
+        firstName: 'Nina',
+        lastName: 'Patel',
+        gender: 'Female',
+        addresses: [{ city: 'Pune', country: 'India' }],
+        kins: [{ kinName: 'Old Kin', relationship: 'Sibling', phoneNumber: '9000000000' }],
+      });
+
+      const updated = await service.update(created.id, {
+        addresses: [{ city: 'Mumbai', country: 'India' }],
+        kins: [{ kinName: 'New Kin', relationship: 'Spouse', phoneNumber: '9111111111' }],
+      });
+
+      expect(updated.addresses).toHaveLength(1);
+      expect(updated.addresses[0].city).toBe('Mumbai');
+      expect(updated.kins).toHaveLength(1);
+      expect(updated.kins[0].kinName).toBe('New Kin');
+
+      const refetched = await service.findOne(created.id);
+      expect(refetched.addresses).toHaveLength(1);
+      expect(refetched.addresses[0].city).toBe('Mumbai');
+      expect(refetched.kins).toHaveLength(1);
+      expect(refetched.kins[0].kinName).toBe('New Kin');
+    });
+  });
+
   it('finds patient by id and handles not found and deactivation', async () => {
     await ctx.inTenant(async () => {
       const created = await service.create({
@@ -84,6 +114,25 @@ describe('PatientsService (integration)', () => {
       await service.deactivate(created.id);
 
       await expect(service.findOne(created.id)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  it('deactivating a patient also deactivates their linked portal account', async () => {
+    await ctx.inTenant(async () => {
+      const patient = await service.create({
+        firstName: 'Portal',
+        lastName: 'ToDeactivate',
+        gender: 'Female',
+      });
+      const account = await service.createPortalInvite(patient.id, {
+        username: `portal.deactivate.${Date.now()}`,
+      });
+      expect(account.isActive).toBe(true);
+
+      await service.deactivate(patient.id);
+
+      const accountAfter = await accountsService.getAccountWithRoles(account.id);
+      expect(accountAfter?.account.isActive).toBe(false);
     });
   });
 

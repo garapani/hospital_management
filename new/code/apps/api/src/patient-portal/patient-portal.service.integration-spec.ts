@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { PdfService } from '@hospital/pdf';
 import { ObjectStorageService } from '@hospital/object-storage';
 import { PatientPortalService } from './patient-portal.service.js';
@@ -282,5 +283,14 @@ describe('PatientPortalService (integration)', () => {
     const me = await inPatientContext(patient.id, () => portalService.getMe());
     expect(me.id).toBe(patient.id);
     expect(me.firstName).toBe('Self');
+  });
+
+  it('getMe rejects a deactivated patient even with an otherwise-valid patient context', async () => {
+    const patient = await makePatient('Deactivated');
+    await withStaffActor(() => patientsService.deactivate(patient.id));
+
+    await expect(inPatientContext(patient.id, () => portalService.getMe())).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });
