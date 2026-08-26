@@ -4041,3 +4041,17 @@ permissions are stripped even for the unresolvable case, and a legit tenant with
 package is unaffected. The spec's test literally asserted the fail-open behavior ("fails open for
 a tenant with no registry row") — a test that names the bug it asserts is a gift; rewrite it to
 the new contract and keep the name honest.
+
+## 105. Employee P2/P3 batch: pagination DTO, UUID writes, and unique email/phone (2026-08-26)
+
+Three items, closing out the employee section — all pattern-fills:
+
+**The list DTO extends `PaginationQueryDto`** — the recurring "service paginates fine, the DTO
+strips page/limit, the list is pinned to page 1" bug (this file's most-repeated class; see §83,
+§87, §89). **`departmentId` is `@IsUUID` on writes** matching the read DTO (string-typed uuid
+columns 500 on the FK — the platform cross-cutting P3's exact shape). **Email/phone uniqueness**
+uses partial unique indexes (`WHERE email IS NOT NULL` / `WHERE phone IS NOT NULL`) — the
+nullable-column twist on the codebase's standard uniqueness fix: a plain UNIQUE constraint would
+let only one NULL row exist, so nullable-but-when-present-unique columns need the partial form.
+`createEmployee` and `updateEmployee` both map the violation to a 409, and `@IsEmail` gives the
+format check at the pipe.

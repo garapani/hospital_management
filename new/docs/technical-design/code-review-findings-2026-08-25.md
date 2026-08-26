@@ -301,9 +301,9 @@ the root `CLAUDE.md`.
 - [x] **P3** — Permission filtering fails open on a missing tenant/package row — grants the full permission set instead of the purchased tier. (`packages.service.ts:69-71`) — **Fixed 2026-08-26:** an unresolvable package (missing tenant row / unknown code) now gates against the BASIC catalog tier instead of returning everything — the tenant gets the minimum tier, never the full set; Enterprise-only permissions are stripped even for the unresolvable case. The spec's "fails open" test was rewritten to assert the new fail-toward-basic behavior.
 
 ### employee
-- [ ] **P2** — Employee list is permanently capped at 20 rows (missing pagination base DTO). (`employee/dto/employee.dto.ts:82`)
-- [ ] **P3** — `departmentId` validated as a string on write but UUID on read — write path 500s on a bad FK. (`employee/dto/employee.dto.ts:11-13,54-55,83-85`)
-- [ ] **P3** — No email format check and no unique constraint on email or phone. (`employee/dto/employee.dto.ts:23-25`)
+- [x] **P2** — Employee list is permanently capped at 20 rows (missing pagination base DTO). (`employee/dto/employee.dto.ts:82`) — **Fixed 2026-08-26:** `ListEmployeesQueryDto` now extends `PaginationQueryDto` (the service already paginated correctly — only the DTO was stripping `page`/`limit`).
+- [x] **P3** — `departmentId` validated as a string on write but UUID on read — write path 500s on a bad FK. (`employee/dto/employee.dto.ts:11-13,54-55,83-85`) — **Fixed 2026-08-26:** `departmentId` on both write DTOs switched to `@IsUUID`, matching the read DTO.
+- [x] **P3** — No email format check and no unique constraint on email or phone. (`employee/dto/employee.dto.ts:23-25`) — **Fixed 2026-08-26:** email fields now carry `@IsEmail`; migration 0091 adds partial unique indexes on non-null `email` and `phone` (nullable columns need `WHERE ... IS NOT NULL`), and both `createEmployee` and `updateEmployee` map a violation to a 409. Regression test covers duplicate email/phone on create and a duplicate-email update.
 
 ### database
 - [ ] **P2** — The DB password has no production guard, unlike the JWT secret. (`database/data-source.ts:93`, `auth/jwt-secret.ts:8-10`)
