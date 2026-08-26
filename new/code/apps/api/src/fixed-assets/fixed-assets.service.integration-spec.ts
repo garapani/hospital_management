@@ -390,4 +390,28 @@ describe('FixedAssetsService (integration)', () => {
       ctx.inTenant(() => fixedAssetsService.updateAsset(asset.id, { salvageValue: 30000 })),
     ).rejects.toThrow(BadRequestException);
   });
+
+  it('serializes concurrent accrual runs — the second run skips duplicates instead of aborting', async () => {
+    // Same shape as the payroll concurrent-run test: the run-level advisory lock serializes
+    // the runs, so the second finds the first's entries and skips — no thrown 500 from the
+    // (assetId, periodMonth, periodYear) unique constraint.
+    const category = await makeCategory('accrual-concurrent');
+    const asset = await makeAsset(category.id, { purchaseCost: 60000, usefulLifeYears: 5, purchaseDate: '2024-01-01' });
+
+    const [first, second] = await Promise.allSettled([
+      withActor(() => fixedAssetsService.runDepreciationAccrual(7, 2026)),
+      withActor(() => fixedAssetsService.runDepreciationAccrual(7, 2026)),
+    ]);
+    expect(first.status).toBe('fulfilled');
+    expect(second.status).toBe('fulfilled');
+
+    const createdByFirst = first.status === 'fulfilled' ? first.value.filter((e) => e.assetId === asset.id) : [];
+    const createdBySecond = second.status === 'fulfilled' ? second.value.filter((e) => e.assetId === asset.id) : [];
+    expect(createdByFirst.length + createdBySecond.length).toBe(1);
+
+    const listing = await ctx.inTenant(() =>
+      fixedAssetsService.listDepreciationEntries({ assetId: asset.id, month: 7, year: 2026 }),
+    );
+    expect(listing.meta.total).toBe(1);
+  });
 });

@@ -268,6 +268,28 @@ describe('DepositsService (integration)', () => {
       );
       expect(reloaded.balance).toBe(4000);
     });
+
+    it('serializes concurrent same-amount refunds — the balance is decremented exactly once', async () => {
+      // P1 row lock + P2 journal pre-check: two truly concurrent refunds of the same amount
+      // serialize on the deposit row, the second sees the first's DepositRefund journal and
+      // no-ops — the balance is never decremented twice and only one journal exists.
+      const patient = await makePatient(ctx, '6660000025');
+      const deposit = await ctx.inTenant(() =>
+        depositsService.create({ patientId: patient.id, amount: 5000, receivedBy: STAFF_ID }),
+      );
+
+      const [first, second] = await Promise.allSettled([
+        ctx.inTenant(() => depositsService.refund(deposit.id, { amount: 2000, refundedBy: STAFF_ID })),
+        ctx.inTenant(() => depositsService.refund(deposit.id, { amount: 2000, refundedBy: STAFF_ID })),
+      ]);
+      expect(first.status).toBe('fulfilled');
+      expect(second.status).toBe('fulfilled');
+
+      const reloaded = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) => manager.getRepository(Deposit).findOneOrFail({ where: { id: deposit.id } })),
+      );
+      expect(reloaded.balance).toBe(3000); // decremented once, not twice
+    });
   });
 
   describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {

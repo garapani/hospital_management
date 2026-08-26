@@ -12,6 +12,7 @@ import { FixedAssetCategory } from './entities/fixed-asset-category.entity.js';
 import { AssetDepreciationEntry } from './entities/asset-depreciation-entry.entity.js';
 import { AccountingService } from '../accounting/accounting.service.js';
 import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
+import { withAdvisoryLock } from '../database/advisory-lock.util.js';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
 
 export interface CreateFixedAssetCategoryInput {
@@ -267,6 +268,11 @@ export class FixedAssetsService {
     const periodEnd = new Date(year, month, 1);
 
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      // Serializes concurrent accrual runs for the same period — the second run waits, then its
+      // duplicate pre-check sees the first run's committed entries and skips them, instead of
+      // the loser aborting the WHOLE run on the (assetId, periodMonth, periodYear) unique
+      // violation (same shape as the payroll run lock, Dev Standards §90).
+      await withAdvisoryLock(manager, `depreciation:${month}:${year}`);
       const assets: FixedAsset[] = await manager.query(
         `SELECT * FROM fixed_assets WHERE "isActive" = true AND condition != 'Retired' AND "usefulLifeYears" IS NOT NULL`,
       );
