@@ -547,6 +547,10 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'pharmacy.read' },
   { roleName: 'Pharmacist', permissionName: 'pharmacy.read' },
   { roleName: 'Doctor', permissionName: 'pharmacy.read' },
+  // PRD §6.1: Pharmacist's secondary scope is "Inventory, Order" (read) alongside primary
+  // Pharmacy rights (code-review-findings-2026-08-25 pharmacy P2).
+  { roleName: 'Pharmacist', permissionName: 'inventory.read' },
+  { roleName: 'Pharmacist', permissionName: 'order.read' },
   { roleName: 'Super Admin', permissionName: 'pharmacy.dispensing.create' },
   { roleName: 'Hospital Admin', permissionName: 'pharmacy.dispensing.create' },
   { roleName: 'Pharmacist', permissionName: 'pharmacy.dispensing.create' },

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Not, QueryFailedError } from 'typeorm';
+import { In, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
@@ -8,6 +8,8 @@ import { InventoryCatalogService } from '../inventory/inventory-catalog.service.
 import { PharmacyDispensing } from './entities/pharmacy-dispensing.entity.js';
 import { PharmacyDispensingNumberGeneratorService } from './pharmacy-dispensing-number-generator.service.js';
 import { FefoStockDecrementService } from '../inventory/fefo-stock-decrement.service.js';
+import { StockBalance } from '../inventory/entities/stock-balance.entity.js';
+import { StockTransaction } from '../inventory/entities/stock-transaction.entity.js';
 import { ListPharmacyDispensingDto } from './dto/list-pharmacy-dispensing.dto.js';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
@@ -20,6 +22,12 @@ export interface CreateDispensingInput {
 export interface DispenseDrugInput {
   /** Deprecated — ignored when a tenant context with an accountId is active. */
   dispensedBy?: string;
+}
+
+export interface ReverseDispensingInput {
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  reversedBy?: string;
+  reversalReason?: string;
 }
 
 @Injectable()
@@ -73,13 +81,16 @@ export class PharmacyDispensingService {
         throw new BadRequestException(`Order item ${input.orderItemId} is cancelled and cannot be dispensed`);
       }
 
+      // A Reversed dispensing does not block a new one: reverseDispensing() means the drug was
+      // returned to stock, and the order item can be dispensed again against the same order item
+      // (code-review-findings-2026-08-25 pharmacy P2 — no reversal path once stock is dispensed).
       const dispensingRepository = manager.getRepository(PharmacyDispensing);
       const existing = await dispensingRepository.findOne({
-        where: { orderItemId: input.orderItemId, status: Not('Cancelled') },
+        where: { orderItemId: input.orderItemId, status: In(['Pending', 'Dispensed']) },
       });
       if (existing) {
         throw new ConflictException(
-          `Order item ${input.orderItemId} already has a non-cancelled dispensing (${existing.id})`,
+          `Order item ${input.orderItemId} already has an active dispensing (${existing.id})`,
         );
       }
 
@@ -99,7 +110,7 @@ export class PharmacyDispensingService {
           (error as QueryFailedError & { constraint?: string }).constraint ===
             'UQ_pharmacy_dispensings_active_order_item'
         ) {
-          throw new ConflictException(`Order item ${input.orderItemId} already has a non-cancelled dispensing`);
+          throw new ConflictException(`Order item ${input.orderItemId} already has an active dispensing`);
         }
         throw error;
       }
@@ -114,12 +125,6 @@ export class PharmacyDispensingService {
       }
       return dispensing;
     });
-  }
-
-  async listByOrderItem(orderItemId: string): Promise<PharmacyDispensing[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(PharmacyDispensing).find({ where: { orderItemId }, order: { createdAt: 'DESC' } }),
-    );
   }
 
   async findAll(query: ListPharmacyDispensingDto): Promise<PaginatedResponseDto<PharmacyDispensing>> {
@@ -213,6 +218,77 @@ export class PharmacyDispensingService {
       });
 
       return savedDispensing;
+    });
+  }
+
+  /**
+   * Credits stock back for a Dispensed record and marks it Reversed (e.g. a wrong-drug or
+   * wrong-quantity dispense). Scoped to stock only: the linked order item stays Completed and no
+   * billing charge is reversed here — a resulting invoice correction is a separate, staff-initiated
+   * `InvoicesService.createReturn` call, same as every other reversal in this codebase (fraction,
+   * insurance). Once reversed, `createDispensing`'s duplicate-guard allows a new dispensing to be
+   * created against the same order item (see the guard above) — re-dispensing then completes an
+   * already-Completed order item, which `completeItemInTransaction` no-ops on, so billing is never
+   * double-charged. (code-review-findings-2026-08-25 pharmacy P2.)
+   */
+  async reverseDispensing(id: string, input: ReverseDispensingInput = {}): Promise<PharmacyDispensing> {
+    const reversedBy = this.resolveActor(input.reversedBy);
+    if (!reversedBy?.trim()) {
+      throw new BadRequestException('reversedBy is required');
+    }
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const dispensingRepository = manager.getRepository(PharmacyDispensing);
+      const dispensing = await dispensingRepository.findOne({
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!dispensing) {
+        throw new NotFoundException(`Pharmacy dispensing ${id} not found`);
+      }
+      if (dispensing.status !== 'Dispensed') {
+        throw new ConflictException(
+          `Dispensing ${id} must be Dispensed to reverse (current status: ${dispensing.status})`,
+        );
+      }
+
+      const originalTransactions = await manager.getRepository(StockTransaction).find({
+        where: { referenceId: dispensing.id, transactionType: 'PharmacyDispense' },
+      });
+
+      const balanceRepository = manager.getRepository(StockBalance);
+      const transactionRepository = manager.getRepository(StockTransaction);
+      for (const original of originalTransactions) {
+        const balance = await balanceRepository.findOne({
+          where: { stockBatchId: original.stockBatchId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!balance) {
+          throw new Error(
+            `Invariant violation: stock balance for batch ${original.stockBatchId} no longer exists ` +
+              `while reversing dispensing ${id}`,
+          );
+        }
+        balance.availableQuantity = String(Number(balance.availableQuantity) + Number(original.quantity));
+        await balanceRepository.save(balance);
+
+        await transactionRepository.save(
+          transactionRepository.create({
+            itemId: original.itemId,
+            stockBatchId: original.stockBatchId,
+            transactionType: 'PharmacyDispenseReversal',
+            referenceId: dispensing.id,
+            quantity: original.quantity,
+            recordedBy: reversedBy,
+          }),
+        );
+      }
+
+      dispensing.status = 'Reversed';
+      dispensing.reversedBy = reversedBy;
+      dispensing.reversedAt = new Date();
+      dispensing.reversalReason = input.reversalReason ?? null;
+      return dispensingRepository.save(dispensing);
     });
   }
 }

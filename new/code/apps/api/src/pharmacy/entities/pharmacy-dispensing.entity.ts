@@ -16,8 +16,11 @@ export class PharmacyDispensing extends SoftDeletableEntity {
   @Column({ type: 'varchar', unique: true }) dispensingNumber!: string;
   @Column({ type: 'numeric' }) quantity!: string;
   @Column({ type: 'varchar', default: 'Pending' }) status!: string;
-  // 'Pending' | 'Dispensed' | 'Cancelled'
+  // 'Pending' | 'Dispensed' | 'Cancelled' | 'Reversed'
   @Column({ type: 'uuid', nullable: true }) dispensedBy!: string | null;
   @Column({ type: 'timestamptz', nullable: true }) dispensedAt!: Date | null;
   @Column({ type: 'text', nullable: true }) cancelReason!: string | null;
+  @Column({ type: 'uuid', nullable: true }) reversedBy!: string | null;
+  @Column({ type: 'timestamptz', nullable: true }) reversedAt!: Date | null;
+  @Column({ type: 'text', nullable: true }) reversalReason!: string | null;
 }

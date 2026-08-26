@@ -267,7 +267,9 @@ describe('seedRbacCatalog (integration)', () => {
 
   // PRD §6.1: Nurse gets full access to Nursing/Clinical-EMR/Admission/Ward Supply but only
   // read-only on Order — order.manage stays with Doctor/Hospital Admin/Super Admin only.
-  it('maps order.manage to Doctor, Hospital Admin, Super Admin (not Nurse — PRD §6.1 read-only) and order.read additionally to Receptionist and Nurse', async () => {
+  // Pharmacist's own secondary scope is "Inventory, Order" (read) alongside primary Pharmacy
+  // rights — added to close the pharmacy P2 in code-review-findings-2026-08-25.md.
+  it('maps order.manage to Doctor, Hospital Admin, Super Admin (not Nurse — PRD §6.1 read-only) and order.read additionally to Receptionist, Nurse and Pharmacist', async () => {
     await seedRbacCatalog(ctx.dataSource);
 
     const managePermission = await ctx.dataSource.getRepository(Permission).findOneOrFail({
@@ -290,9 +292,24 @@ describe('seedRbacCatalog (integration)', () => {
       'Doctor',
       'Hospital Admin',
       'Nurse',
+      'Pharmacist',
       'Receptionist / Front Desk',
       'Super Admin',
     ]);
+  });
+
+  // Regression test for code-review-findings-2026-08-25.md's pharmacy P2: Pharmacist was missing
+  // both halves of its PRD §6.1 "Inventory, Order" secondary read scope.
+  it('grants Pharmacist inventory.read', async () => {
+    await seedRbacCatalog(ctx.dataSource);
+
+    const permission = await ctx.dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'inventory.read' },
+    });
+    const mapping = await ctx.dataSource.getRepository(RolePermission).findOne({
+      where: { permissionId: permission.id, roleId: (await ctx.dataSource.getRepository(Role).findOneOrFail({ where: { name: 'Pharmacist' } })).id },
+    });
+    expect(mapping).not.toBeNull();
   });
 
   it('maps billing.manage to Receptionist / Front Desk, Billing/Accounts Staff, Hospital Admin, Super Admin', async () => {

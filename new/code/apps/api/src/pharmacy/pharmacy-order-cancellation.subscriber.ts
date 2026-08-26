@@ -8,8 +8,8 @@ import { PharmacyDispensing } from './entities/pharmacy-dispensing.entity.js';
  * `LabOrderCancellationSubscriber` for the full rationale — same pattern, same
  * code-review-findings-2026-08-25 orders P2. Only `Pending` is non-terminal here (matching
  * `PharmacyDispensingService.cancel`'s own guard) — once a dispensing reaches `Dispensed`, stock has
- * already been decremented and reversing it is a separate, larger "no reversal path" gap (tracked
- * separately in this same findings file), not something a cancelled order item should trigger.
+ * already been decremented; reversing it is `PharmacyDispensingService.reverseDispensing()`, a
+ * deliberate staff action, not something a cancelled order item should trigger automatically.
  */
 @Injectable()
 export class PharmacyOrderCancellationSubscriber

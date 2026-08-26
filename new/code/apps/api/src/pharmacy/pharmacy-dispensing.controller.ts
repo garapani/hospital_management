@@ -4,6 +4,7 @@ import { PharmacyDispensingService } from './pharmacy-dispensing.service.js';
 import { CreatePharmacyDispensingDto } from './dto/create-pharmacy-dispensing.dto.js';
 import { DispenseDrugDto } from './dto/dispense-drug.dto.js';
 import { CancelPharmacyDispensingDto } from './dto/cancel-pharmacy-dispensing.dto.js';
+import { ReversePharmacyDispensingDto } from './dto/reverse-pharmacy-dispensing.dto.js';
 import { ListPharmacyDispensingDto } from './dto/list-pharmacy-dispensing.dto.js';
 
 @Controller('pharmacy/dispensings')
@@ -39,5 +40,11 @@ export class PharmacyDispensingController {
   @RequirePermission('pharmacy.dispensing.create')
   async cancel(@Param('id') id: string, @Body() dto: CancelPharmacyDispensingDto) {
     return this.pharmacyDispensingService.cancel(id, dto.cancelReason);
+  }
+
+  @Patch(':id/reverse')
+  @RequirePermission('pharmacy.dispensing.dispense')
+  async reverse(@Param('id') id: string, @Body() dto: ReversePharmacyDispensingDto) {
+    return this.pharmacyDispensingService.reverseDispensing(id, { reversalReason: dto.reversalReason });
   }
 }

@@ -285,6 +285,117 @@ describe('PharmacyDispensingService (integration)', () => {
     });
   });
 
+  describe('reverseDispensing', () => {
+    it('credits stock back across every batch the original dispense touched, and marks Reversed', async () => {
+      const item = await makeDrugItem('reverse-fefo');
+      const nearBatch = await seedBatch(item.id, 'BATCH-REV-NEAR', daysFromNow(30), 5);
+      const farBatch = await seedBatch(item.id, 'BATCH-REV-FAR', daysFromNow(400), 5);
+      const orderItem = await makeOrderItem('4470000020');
+      const dispensing = await ctx.inTenant(() =>
+        dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 7 }),
+      );
+      await ctx.inTenant(() => dispensingService.dispenseDrug(dispensing.id, { dispensedBy: PHARMACIST_ID }));
+
+      const reversed = await ctx.inTenant(() =>
+        dispensingService.reverseDispensing(dispensing.id, {
+          reversedBy: PHARMACIST_ID,
+          reversalReason: 'Wrong drug dispensed',
+        }),
+      );
+      expect(reversed.status).toBe('Reversed');
+      expect(reversed.reversedBy).toBe(PHARMACIST_ID);
+      expect(reversed.reversalReason).toBe('Wrong drug dispensed');
+      expect(reversed.reversedAt).toBeInstanceOf(Date);
+
+      const balances = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(StockBalance).find({ where: { itemId: item.id } }),
+        ),
+      );
+      expect(Number(balances.find((b) => b.stockBatchId === nearBatch.id)?.availableQuantity)).toBe(5);
+      expect(Number(balances.find((b) => b.stockBatchId === farBatch.id)?.availableQuantity)).toBe(5);
+
+      const reversalTransactions = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(StockTransaction).find({
+            where: { referenceId: dispensing.id, transactionType: 'PharmacyDispenseReversal' },
+          }),
+        ),
+      );
+      expect(reversalTransactions).toHaveLength(2);
+      expect(reversalTransactions.reduce((sum, t) => sum + Number(t.quantity), 0)).toBe(7);
+
+      // Scope decision: reversal is stock-only — the order item stays Completed, it is not
+      // reopened (code-review-findings-2026-08-25 pharmacy P2 discussion).
+      const order = await ctx.inTenant(() => ordersService.findOne(orderItem.orderId));
+      expect(order.items.find((i) => i.id === orderItem.id)?.status).toBe('Completed');
+    });
+
+    it('allows a new dispensing to be created against the same order item after reversal', async () => {
+      const item = await makeDrugItem('reverse-redispense');
+      await seedBatch(item.id, 'BATCH-REDISPENSE', daysFromNow(30), 5);
+      const orderItem = await makeOrderItem('4470000021');
+      const dispensing = await ctx.inTenant(() =>
+        dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 2 }),
+      );
+      await ctx.inTenant(() => dispensingService.dispenseDrug(dispensing.id, { dispensedBy: PHARMACIST_ID }));
+      await ctx.inTenant(() => dispensingService.reverseDispensing(dispensing.id, { reversedBy: PHARMACIST_ID }));
+
+      const redispensing = await ctx.inTenant(() =>
+        dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 2 }),
+      );
+      expect(redispensing.status).toBe('Pending');
+      expect(redispensing.id).not.toBe(dispensing.id);
+
+      // Re-completing an already-Completed order item is a no-op (OrdersService.
+      // completeItemInTransaction), so billing's charge-capture subscriber isn't re-triggered.
+      const redispensed = await ctx.inTenant(() =>
+        dispensingService.dispenseDrug(redispensing.id, { dispensedBy: PHARMACIST_ID }),
+      );
+      expect(redispensed.status).toBe('Dispensed');
+    });
+
+    it('rejects reversing a Pending dispensing', async () => {
+      const item = await makeDrugItem('reverse-pending-guard');
+      const orderItem = await makeOrderItem('4470000022');
+      const dispensing = await ctx.inTenant(() =>
+        dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 1 }),
+      );
+
+      await expect(
+        ctx.inTenant(() => dispensingService.reverseDispensing(dispensing.id, { reversedBy: PHARMACIST_ID })),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('rejects reversing an already-Reversed dispensing', async () => {
+      const item = await makeDrugItem('reverse-twice-guard');
+      await seedBatch(item.id, 'BATCH-REVERSE-TWICE', daysFromNow(30), 5);
+      const orderItem = await makeOrderItem('4470000023');
+      const dispensing = await ctx.inTenant(() =>
+        dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 1 }),
+      );
+      await ctx.inTenant(() => dispensingService.dispenseDrug(dispensing.id, { dispensedBy: PHARMACIST_ID }));
+      await ctx.inTenant(() => dispensingService.reverseDispensing(dispensing.id, { reversedBy: PHARMACIST_ID }));
+
+      await expect(
+        ctx.inTenant(() => dispensingService.reverseDispensing(dispensing.id, { reversedBy: PHARMACIST_ID })),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('rejects reversing a Cancelled dispensing', async () => {
+      const item = await makeDrugItem('reverse-cancelled-guard');
+      const orderItem = await makeOrderItem('4470000024');
+      const dispensing = await ctx.inTenant(() =>
+        dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 1 }),
+      );
+      await ctx.inTenant(() => dispensingService.cancel(dispensing.id));
+
+      await expect(
+        ctx.inTenant(() => dispensingService.reverseDispensing(dispensing.id, { reversedBy: PHARMACIST_ID })),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
   describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
@@ -335,6 +446,27 @@ describe('PharmacyDispensingService (integration)', () => {
       const completedOrder = await ctx.inTenant(() => ordersService.findOne(orderItem.orderId));
       const completedItem = completedOrder.items.find((i) => i.id === orderItem.id);
       expect(completedItem?.completedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+
+    it('reverseDispensing records the authenticated account as reversedBy, not the caller-supplied value', async () => {
+      const { dispensing } = await makePendingDispensing();
+      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      await withActor(() => dispensingService.dispenseDrug(dispensing.id, {}));
+
+      const reversed = await withActor(() =>
+        dispensingService.reverseDispensing(dispensing.id, { reversedBy: spoofed }),
+      );
+      expect(reversed.reversedBy).toBe(AUTHENTICATED_ACCOUNT);
+
+      const reversalTransactions = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(StockTransaction).find({
+            where: { referenceId: dispensing.id, transactionType: 'PharmacyDispenseReversal' },
+          }),
+        ),
+      );
+      expect(reversalTransactions).toHaveLength(1);
+      expect(reversalTransactions[0].recordedBy).toBe(AUTHENTICATED_ACCOUNT);
     });
   });
 });
