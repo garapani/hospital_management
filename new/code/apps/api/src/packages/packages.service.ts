@@ -36,7 +36,19 @@ export class PackagesService {
   }
 
   async getPackage(code: string): Promise<Package | null> {
-    return this.dataSource.getRepository(Package).findOne({ where: { code } });
+    const row = await this.dataSource.getRepository(Package).findOne({ where: { code } });
+    if (!row) {
+      return null;
+    }
+    // The code catalog is the single source of truth for a package's module list — the DB row's
+    // `modules` were a second source that only changed when a migration landed, so a catalog edit
+    // never reached actual gating (code-review-findings-2026-08-25 packages P2). Override with
+    // the catalog's modules when the code exists there; the DB copy is vestigial.
+    const catalogEntry = PACKAGE_CATALOG.find((p) => p.code === code);
+    if (catalogEntry) {
+      return { ...row, modules: catalogEntry.modules };
+    }
+    return row;
   }
 
   async getTenantPackageCode(hospitalId: string): Promise<string | null> {
@@ -51,9 +63,11 @@ export class PackagesService {
 
   /**
    * Intersects a role-derived permission list with the tenant's package modules. Never filters
-   * the platform tenant (Super Admin is cross-tenant ops, not a hospital), and fails open on an
-   * unknown package code — codes are validated at provision/change time, so an unknown row means
-   * a legacy/edge case where hiding access would be worse than showing it.
+   * the platform tenant (Super Admin is cross-tenant ops, not a hospital). An unresolvable
+   * package (missing tenant row, unknown package code — a legacy/edge case) fails toward the
+   * BASIC tier rather than open: granting the full permission set to a tenant whose package can't
+   * be resolved is worse than under-granting the minimum tier (code-review-findings-2026-08-25
+   * packages P3).
    *
    * `knownPackageCode` lets a caller that already fetched the tenant row (e.g. `AuthService`,
    * which also needs the row for its tenant-status gate) pass the package code straight through
@@ -72,7 +86,8 @@ export class PackagesService {
       knownPackageCode === undefined ? await this.getTenantPackageCode(hospitalId) : knownPackageCode;
     const pkg = packageCode ? await this.getPackage(packageCode) : null;
     if (!pkg) {
-      return permissions;
+      const basic = PACKAGE_CATALOG.find((p) => p.code === 'basic');
+      return permissions.filter((permission) => permissionAllowed(permission, basic?.modules ?? []));
     }
     return permissions.filter((permission) => {
       const allowed = permissionAllowed(permission, pkg.modules);

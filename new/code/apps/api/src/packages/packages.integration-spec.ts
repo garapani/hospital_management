@@ -22,6 +22,7 @@ import { signTestToken } from '../testing/test-jwt.js';
 import { resolveJwtSecret } from '../auth/jwt-secret.js';
 import { PLATFORM_TENANT_ID } from '../tenants/platform-tenant.js';
 import { AuthService } from '../auth/auth.service.js';
+import { PACKAGE_CATALOG, permissionAllowed } from './package-catalog.js';
 
 describe('SaaS packages (integration)', () => {
   let app: INestApplication;
@@ -176,9 +177,17 @@ describe('SaaS packages (integration)', () => {
       expect(filtered).toEqual(allPermissionNames);
     });
 
-    it('fails open for a tenant with no registry row (test contexts, unknown codes)', async () => {
+    it('fails toward the BASIC tier for a tenant with no registry row (test contexts, unknown codes)', async () => {
+      // P3: previously the unresolvable-package case returned the FULL permission set (fail
+      // open). It now gates against the BASIC catalog tier — the minimum a tenant could have.
       const filtered = await packagesService.filterPermissions('no_such_registry_row', allPermissionNames);
-      expect(filtered).toEqual(allPermissionNames);
+      const basicCatalog = PACKAGE_CATALOG.find((p) => p.code === 'basic')!;
+      expect(filtered).toEqual(
+        allPermissionNames.filter((name) => permissionAllowed(name, basicCatalog.modules)),
+      );
+      // Enterprise-only permissions are stripped even for the unresolvable tenant.
+      expect(filtered).not.toContain('insurance.read');
+      expect(filtered).not.toContain('accounting.read');
     });
 
     it('hides permissions that belong to no package module', async () => {
