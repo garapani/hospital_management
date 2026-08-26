@@ -297,8 +297,8 @@ the root `CLAUDE.md`.
 - [ ] **P3** — Read access to PHI is never audited (only insert/update/remove are tracked). — **Deferred 2026-08-26:** read-auditing is a real compliance feature — a read-tracking mechanism across every PHI read endpoint (there's no read-event infra today; the audit subscriber only fires on insert/update/remove) — not a batch fix. Captured as `new-features.md` #24, tied to the India-compliance roadmap.
 
 ### packages
-- [ ] **P2** — Two sources of truth for a package's module list (DB row vs. in-code catalog) — code changes don't change actual gating until a migration lands. (`packages/packages.service.ts:72`, `packages/package-catalog.ts:49-121`)
-- [ ] **P3** — Permission filtering fails open on a missing tenant/package row — grants the full permission set instead of the purchased tier. (`packages.service.ts:69-71`)
+- [x] **P2** — Two sources of truth for a package's module list (DB row vs. in-code catalog) — code changes don't change actual gating until a migration lands. (`packages/packages.service.ts:72`, `packages/package-catalog.ts:49-121`) — **Fixed 2026-08-26:** `getPackage` now overrides the DB row's `modules` with the code catalog's when the code exists there — the catalog is the single source of truth, so a module-list change takes effect at the next login/refresh with no migration. The DB copy is vestigial.
+- [x] **P3** — Permission filtering fails open on a missing tenant/package row — grants the full permission set instead of the purchased tier. (`packages.service.ts:69-71`) — **Fixed 2026-08-26:** an unresolvable package (missing tenant row / unknown code) now gates against the BASIC catalog tier instead of returning everything — the tenant gets the minimum tier, never the full set; Enterprise-only permissions are stripped even for the unresolvable case. The spec's "fails open" test was rewritten to assert the new fail-toward-basic behavior.
 
 ### employee
 - [ ] **P2** — Employee list is permanently capped at 20 rows (missing pagination base DTO). (`employee/dto/employee.dto.ts:82`)

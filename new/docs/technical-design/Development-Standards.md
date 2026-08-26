@@ -4018,3 +4018,26 @@ insert/update/remove, and there's no read-event infra anywhere. That's net-new p
 `new-features.md` #24 and tied to the India-compliance roadmap rather than half-built into this
 batch. The `audit.read` permission half of the section was already closed by the rbac batch
 (§95) — the trail no longer rides on `reporting.read`.
+
+## 104. Packages P2/P3 batch: one source of truth for package modules, and gating that fails
+    toward the minimum tier (2026-08-26)
+
+Two items, closing out the packages section. Two shapes:
+
+**The code catalog is now the single source of truth for a package's module list.** The DB row
+stored `modules` and the catalog defined them too — a catalog edit changed nothing about actual
+gating until a migration updated the DB rows. `getPackage` now overrides the DB row's `modules`
+with the catalog's when the code exists there, so gating (which runs at every login/refresh via
+`filterPermissions`) reflects catalog changes immediately. The general rule: when two stores
+carry the same fact, make one authoritative at READ time rather than trying to keep both in sync
+— an override in the resolver beats a migration-driven backfill every time.
+
+**Unresolvable packages gate toward the BASIC tier, not open.** `filterPermissions` previously
+returned the full permission set when a tenant's package row couldn't be resolved (no registry
+row, unknown code) — the comment justified it as a legacy/edge case, but "give a tenant
+everything" is a terrible failure mode for exactly the misconfiguration you'd want contained. It
+now gates against the BASIC catalog tier (the minimum any tenant could have): Enterprise-only
+permissions are stripped even for the unresolvable case, and a legit tenant with a healthy
+package is unaffected. The spec's test literally asserted the fail-open behavior ("fails open for
+a tenant with no registry row") — a test that names the bug it asserts is a gift; rewrite it to
+the new contract and keep the name honest.
