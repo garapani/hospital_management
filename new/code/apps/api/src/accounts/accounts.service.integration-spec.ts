@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Role } from '../rbac/entities/role.entity.js';
 import { AccountRole } from './entities/account-role.entity.js';
 import {
@@ -144,8 +145,11 @@ describe('AccountsService (integration)', () => {
 
     const deactivated = await ctx.inTenant(() => ctx.accountsService.deactivateAccount(created.id));
     expect(deactivated.isActive).toBe(false);
-    const deactivatedAgain = await ctx.inTenant(() => ctx.accountsService.deactivateAccount(created.id));
-    expect(deactivatedAgain.isActive).toBe(false);
+    // P3: deactivating an already-deactivated account is rejected (catalog convention) —
+    // previously it silently no-op'd.
+    await expect(
+      ctx.inTenant(() => ctx.accountsService.deactivateAccount(created.id)),
+    ).rejects.toThrow(ConflictException);
 
     const reactivated = await ctx.inTenant(() => ctx.accountsService.reactivateAccount(created.id));
     expect(reactivated.isActive).toBe(true);
@@ -175,6 +179,60 @@ describe('AccountsService (integration)', () => {
     await expect(
       ctx.inTenant(() => ctx.accountsService.adminUnlockAccount('00000000-0000-0000-0000-000000000000')),
     ).rejects.toThrow('not found');
+  });
+
+  it('rejects an admin-supplied password shorter than 8 characters (create and reset)', async () => {
+    // P2: admin-supplied passwords previously bypassed the 8-character minimum (only non-empty
+    // was effectively checked) — a tenant could be provisioned with a 1-character password.
+    await expect(
+      ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: 'short.pw',
+          email: 'short@example.com',
+          displayName: 'Short PW',
+          password: 'x',
+          roleName: 'Nurse',
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    const created = await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
+        username: 'short.reset',
+        email: 'short-reset@example.com',
+        displayName: 'Short Reset',
+        password: 'long-enough-password',
+        roleName: 'Nurse',
+      }),
+    );
+    await expect(
+      ctx.inTenant(() => ctx.accountsService.resetPassword(created.id, 'tiny')),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a duplicate staff username with ConflictException', async () => {
+    // P3: duplicate staff usernames previously surfaced as a raw 500 — the patient-account path
+    // already mapped 23505 to a 409; staff now does too.
+    await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
+        username: 'dup.user',
+        email: 'dup@example.com',
+        displayName: 'Dup User',
+        password: 'a-long-password',
+        roleName: 'Nurse',
+      }),
+    );
+    await expect(
+      ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: 'dup.user',
+          email: 'dup2@example.com',
+          displayName: 'Dup User 2',
+          password: 'a-long-password',
+          roleName: 'Nurse',
+        }),
+      ),
+    ).rejects.toThrow(ConflictException);
   });
 
   it('assigns a role, rejects an unknown role name, and rejects a duplicate active assignment', async () => {

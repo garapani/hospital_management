@@ -133,6 +133,12 @@ export class AccountsService {
 
     const generatedPassword = input.password ? undefined : generateInitialPassword();
     const password = input.password ?? generatedPassword;
+    // An admin-supplied password is subject to the same 8-character minimum as every other
+    // password path — otherwise a tenant could be provisioned with a 1-character Hospital Admin
+    // password (code-review-findings-2026-08-25 accounts P2).
+    if (input.password !== undefined && (typeof input.password !== 'string' || input.password.length < 8)) {
+      throw new BadRequestException('Password must be at least 8 characters');
+    }
     // A generated initial password always forces a change on first login — the client cannot
     // suppress that with a forged needsPasswordUpdate field. An admin-supplied password honors
     // the explicit flag (seed/bootstrap pass false).
@@ -142,16 +148,27 @@ export class AccountsService {
     const passwordHash = await bcrypt.hash(password as string, BCRYPT_SALT_ROUNDS);
 
     const account = await this.tenantConnection.runInTenantSchema(async (manager) => {
-      const saved = await manager.getRepository(Account).save(
-        manager.getRepository(Account).create({
-          accountType: 'staff',
-          username: input.username,
-          email: input.email,
-          displayName: input.displayName,
-          passwordHash,
-          needsPasswordUpdate,
-        }),
-      );
+      const repository = manager.getRepository(Account);
+      let saved: Account;
+      try {
+        saved = await repository.save(
+          repository.create({
+            accountType: 'staff',
+            username: input.username,
+            email: input.email,
+            displayName: input.displayName,
+            passwordHash,
+            needsPasswordUpdate,
+          }),
+        );
+      } catch (error) {
+        // A duplicate staff username must 409, not 500 — same shape as the patient-account path
+        // below (code-review-findings-2026-08-25 accounts P3).
+        if ((error as { code?: string }).code === '23505') {
+          throw new ConflictException(`Username "${input.username}" is already in use`);
+        }
+        throw error;
+      }
       await manager.getRepository(AccountRole).save(
         manager.getRepository(AccountRole).create({
           accountId: saved.id,
@@ -343,7 +360,13 @@ export class AccountsService {
   async recordFailedLogin(accountId: string): Promise<void> {
     await this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(Account);
-      const account = await repository.findOne({ where: { id: accountId } });
+      // Row-locked: the failed-login counter is a read-modify-write — under concurrent
+      // brute-force attempts, unlocked increments could undercount and never trip the lockout
+      // threshold (code-review-findings-2026-08-25 accounts P2).
+      const account = await repository.findOne({
+        where: { id: accountId },
+        lock: { mode: 'pessimistic_write' },
+      });
       if (!account) {
         return;
       }
@@ -355,7 +378,10 @@ export class AccountsService {
   async lockAccount(accountId: string, lockedUntil: Date): Promise<void> {
     await this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(Account);
-      const account = await repository.findOne({ where: { id: accountId } });
+      const account = await repository.findOne({
+        where: { id: accountId },
+        lock: { mode: 'pessimistic_write' },
+      });
       if (!account) {
         return;
       }
@@ -423,6 +449,11 @@ export class AccountsService {
       if (!account) {
         throw new NotFoundException(`Account ${accountId} not found`);
       }
+      // Already-deactivated accounts are rejected, matching the catalog-service convention
+      // (code-review-findings-2026-08-25 accounts P3).
+      if (!account.isActive) {
+        throw new ConflictException(`Account ${accountId} is already deactivated`);
+      }
       account.isActive = false;
       return repository.save(account);
     });
@@ -464,6 +495,11 @@ export class AccountsService {
     accountId: string,
     password?: string,
   ): Promise<{ initialPassword?: string }> {
+    // An admin-supplied temporary password honors the same 8-character minimum as every other
+    // password path (code-review-findings-2026-08-25 accounts P2).
+    if (password !== undefined && (typeof password !== 'string' || password.length < 8)) {
+      throw new BadRequestException('Password must be at least 8 characters');
+    }
     const generatedPassword = password ? undefined : generateInitialPassword();
     const newPassword = password ?? generatedPassword;
     const passwordHash = await bcrypt.hash(newPassword as string, BCRYPT_SALT_ROUNDS);
