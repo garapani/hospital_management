@@ -181,8 +181,8 @@ the root `CLAUDE.md`.
 - [ ] **P3** — India GST model is CGST/SGST-only — no IGST/place-of-supply/HSN; inter-state supply can't be invoiced correctly (live Phase-1 gap). (`invoices.service.ts:156-157`)
 
 ### accounting
-- [ ] **P1** — `postAutoJournal` opens a second pooled connection while the caller's own transaction is still open — risks a full pool deadlock under concurrent payments. (`accounting/accounting.service.ts:311`, `database/sequence-number-generator.service.ts:22`)
-- [ ] **P1** — Manual journals never validate `accountId` exists; the trial balance silently drops orphaned lines instead of erroring. (`accounting.service.ts:397-427,456-470`)
+- [x] **P1** — `postAutoJournal` opens a second pooled connection while the caller's own transaction is still open — risks a full pool deadlock under concurrent payments. (`accounting/accounting.service.ts:311`, `database/sequence-number-generator.service.ts:22`) — **Fixed 2026-08-25:** `postAutoJournal` now generates its journal number against the caller's own manager (a new `generateJournalNumberInTransaction` helper querying `journal_sequences` directly), the same pattern `InvoicesService.generateInvoiceNumber` already uses, instead of going through `JournalNumberGeneratorService` (which opens its own connection/transaction). `createJournal`'s own generator call stays as-is since it already runs before opening a transaction, matching the safe convention.
+- [x] **P1** — Manual journals never validate `accountId` exists; the trial balance silently drops orphaned lines instead of erroring. (`accounting.service.ts:397-427,456-470`) — **Fixed 2026-08-25:** the missing/inactive-account check from `postAutoJournal` is now shared (`assertAccountsUsable`) and applied to `createJournal` too.
 - [ ] **P2** — An account's type can be changed and the system accounts are freely editable after journals are posted. (`accounting.service.ts:140-144,161-174`)
 - [ ] **P2** — Report aggregation casts money to `float8` before rounding. (`accounting.service.ts:443-445`)
 - [ ] **P2** — Journals list is permanently pinned to page 1 (missing pagination base DTO). (`dto/accounting.dto.ts:75-87`)
