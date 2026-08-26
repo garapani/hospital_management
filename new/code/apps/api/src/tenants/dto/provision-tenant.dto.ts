@@ -1,4 +1,4 @@
-import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class ProvisionTenantDto {
   @IsString()
@@ -25,9 +25,13 @@ export class ProvisionTenantDto {
   // @IsNotEmpty (not just @IsString): createBootstrapAdmin's `provided.password ?? generated`
   // (tenants.service.ts) only falls back on null/undefined, not "" — an empty string here would
   // silently create the bootstrap admin with an empty password instead of a generated one.
+  // @MinLength(8) closes the auth P2: a tenant must never be provisioned with a 1-character
+  // Hospital Admin password (the service enforces it too; the DTO rejects it at the pipe).
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @MinLength(8)
+  @MaxLength(72)
   adminPassword?: string;
 
   /** Deprecated — ignored when a tenant context with an accountId is active. */

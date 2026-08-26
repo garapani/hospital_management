@@ -357,12 +357,17 @@ export class AccountsService {
     });
   }
 
-  async recordFailedLogin(accountId: string): Promise<void> {
+  /**
+   * Records a failed login and returns the account's NEW attempt count — the lock-decision in
+   * AuthService must use this authoritative post-increment value, not a stale in-memory copy
+   * (code-review-findings-2026-08-25 auth P2). Row-locked: the counter is a read-modify-write,
+   * and under concurrent brute-force attempts unlocked increments could undercount and never
+   * trip the lockout threshold.
+   */
+  async recordFailedLogin(accountId: string): Promise<number> {
+    let count = 0;
     await this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(Account);
-      // Row-locked: the failed-login counter is a read-modify-write — under concurrent
-      // brute-force attempts, unlocked increments could undercount and never trip the lockout
-      // threshold (code-review-findings-2026-08-25 accounts P2).
       const account = await repository.findOne({
         where: { id: accountId },
         lock: { mode: 'pessimistic_write' },
@@ -371,8 +376,10 @@ export class AccountsService {
         return;
       }
       account.failedLoginAttempts += 1;
-      await repository.save(account);
+      const saved = await repository.save(account);
+      count = saved.failedLoginAttempts;
     });
+    return count;
   }
 
   async lockAccount(accountId: string, lockedUntil: Date): Promise<void> {

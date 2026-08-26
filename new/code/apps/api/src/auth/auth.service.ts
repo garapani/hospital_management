@@ -109,9 +109,13 @@ export class AuthService {
       account.passwordHash !== null && (await bcrypt.compare(input.password, account.passwordHash));
 
     if (!passwordMatches) {
-      await this.accountsService.recordFailedLogin(account.id);
-      const updatedAttempts = account.failedLoginAttempts + 1;
-      if (updatedAttempts >= MAX_FAILED_ATTEMPTS) {
+      // The lock decision uses recordFailedLogin's returned count — the authoritative
+      // post-increment value from its row-locked read-modify-write. The in-memory `account`
+      // copy here can be stale under concurrent failures, and computing the threshold from it
+      // could let the counter pass 5 without ever locking (code-review-findings-2026-08-25
+      // auth P2).
+      const attempts = await this.accountsService.recordFailedLogin(account.id);
+      if (attempts >= MAX_FAILED_ATTEMPTS) {
         await this.accountsService.lockAccount(account.id, new Date(Date.now() + LOCKOUT_DURATION_MS));
       }
       return { invalidCredentials: true };
