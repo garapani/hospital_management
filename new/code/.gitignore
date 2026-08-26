@@ -58,5 +58,6 @@ test-output
 # generated OpenAPI output
 swagger.json
 
-# docker-compose.dev.yml bind-mounted postgres data
+# docker-compose.dev.yml bind-mounted local data (postgres, redis, minio, node_modules)
 /.data/
+/data/
