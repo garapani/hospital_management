@@ -3795,3 +3795,36 @@ service-side fix didn't reach. **Token revocation stays deferred**: stateless ro
 prevents refresh-token reuse, but a stolen token remains valid until expiry without a revocation
 store — the natural home is the Redis/blacklist integration (`new-features.md` #11), captured as
 #22 rather than hacked into a schema the platform's Redis plan already supersedes.
+
+## 95. RBAC P2/P3 batch: guard metadata reads both levels, the audit trail gets its own
+    permission, and the seed stops being create-only (2026-08-26)
+
+Six items, closing out the rbac section (its P1s landed earlier). Three shapes worth recording.
+
+**The permission guard reads handler metadata, then class metadata.** `Reflector.getAllAndOverride`
+over `[handler, class]` makes handler-level requirements win and class-level requirements honored
+as the fallback — the old handler-only read silently ignored a class-level `@RequirePermission`,
+a latent trap that would have shipped as a no-op the day someone used it. Two test-design notes:
+the lib spec's mock Reflector had to grow `getAllAndOverride` (mocking only the method the code
+*used to* call is how this regression slipped through — mock the current contract), and
+`getClass()` must return `undefined`, not `{}`, in mocks — an empty object is truthy and turns
+"no metadata" into "a required permission".
+
+**The audit trail got its own permission.** `audit.read` (catalog + seed + controller) replaces
+the `reporting.read` reuse — a reporting grant no longer implies audit access, and revoking
+reporting no longer silently kills the trail. This is the "split a read permission off a shared
+one" shape the billing batch already used (`billing.read`, §80); when one permission gates two
+distinct concerns, split it and re-grant both to the roles that legitimately hold both
+(Super Admin / Hospital Admin / Auditor/Compliance here).
+
+**The seed stopped being create-only for the catalog rows.** Roles and permissions now seed with
+`ON CONFLICT (name) DO UPDATE` on the mutable metadata columns, so a code change to a seeded
+role/permission propagates on re-run — the old `DO NOTHING` meant edits in code silently never
+reached existing databases. Two deliberate limits: mappings stay *additive* (new mappings insert;
+removing a seeded mapping remains a manual step, because an orUpdate can't delete and a
+reconcile-delete would clobber custom assignments), and conflict targets are the natural-key
+columns (name), not the surrogate id. Also folded in: the unmapped-prefix warning (a stripped
+permission whose prefix is in no module key and isn't always-on now logs once per prefix), the
+hospital role-picker's `isCrossTenant = false` filter, and the `roles_name_key` 23505 → 409 catch
+for concurrent role creation — the constraint name verified against the live DB (an inline
+`UNIQUE` on a column auto-names as `<table>_<column>_key`, not TypeORM's `UQ_*` scheme).
