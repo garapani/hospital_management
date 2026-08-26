@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { IsNull } from 'typeorm';
+import { IsNull, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -20,8 +20,8 @@ export interface RecordEntryInput {
   invoiceId: string;
   doctorId: string;
   ruleId?: string;
-  baseAmount?: number;
-  /** Deprecated — ignored when a tenant context with an accountId is active (see §25). */
+  /** Deprecated — the share's base is always the invoice's own totalAmount, resolved
+   *  server-side, never accepted from the caller (see recordEntry). */
   recordedBy?: string;
 }
 
@@ -115,14 +115,30 @@ export class FractionService {
   // ---------- Entries ----------
 
   async recordEntry(input: RecordEntryInput): Promise<FractionEntry> {
-    const baseAmount = input.baseAmount;
-    if (typeof baseAmount !== 'number' || !Number.isFinite(baseAmount) || baseAmount <= 0) {
-      throw new BadRequestException('baseAmount must be a positive number');
-    }
     return this.tenantConnection.runInTenantSchema(async (manager) => {
-      const invoice = await manager.query(`SELECT id FROM invoices WHERE id = $1`, [input.invoiceId]);
-      if (invoice.length === 0) {
+      // baseAmount is never accepted from the caller: it was previously client-supplied and
+      // never reconciled against the invoice, letting any fraction.manage holder mint an
+      // arbitrary payout (code-review-findings-2026-08-25 P1). It's always the invoice's own
+      // totalAmount, resolved server-side here, the same way InvoicesService.captureChargeForOrderItem
+      // resolves price server-side rather than trusting the caller.
+      const invoiceRows = await manager.query(`SELECT "totalAmount" FROM invoices WHERE id = $1`, [
+        input.invoiceId,
+      ]);
+      if (invoiceRows.length === 0) {
         throw new NotFoundException(`Invoice ${input.invoiceId} not found`);
+      }
+      const baseAmount = Number(invoiceRows[0].totalAmount);
+
+      // Idempotency: at most one fraction entry per (invoice, doctor) — a double-submitted or
+      // retried request must not pay the same doctor twice for the same invoice
+      // (code-review-findings-2026-08-25 P1). Backed by UQ_fraction_entries_invoice_doctor.
+      const existingEntry = await manager.getRepository(FractionEntry).findOne({
+        where: { invoiceId: input.invoiceId, doctorId: input.doctorId },
+      });
+      if (existingEntry) {
+        throw new ConflictException(
+          `A fraction entry already exists for doctor ${input.doctorId} on invoice ${input.invoiceId}`,
+        );
       }
 
       let fractionPercent: number;
@@ -152,16 +168,29 @@ export class FractionService {
 
       const shareAmount = roundMoney((baseAmount * fractionPercent) / 100);
 
-      return manager.getRepository(FractionEntry).save(
-        manager.getRepository(FractionEntry).create({
-          invoiceId: input.invoiceId,
-          doctorId: input.doctorId,
-          fractionPercent,
-          baseAmount,
-          shareAmount,
-          recordedBy: this.resolveActor(input.recordedBy),
-        }),
-      );
+      try {
+        return await manager.getRepository(FractionEntry).save(
+          manager.getRepository(FractionEntry).create({
+            invoiceId: input.invoiceId,
+            doctorId: input.doctorId,
+            fractionPercent,
+            baseAmount,
+            shareAmount,
+            recordedBy: this.resolveActor(input.recordedBy),
+          }),
+        );
+      } catch (error) {
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint ===
+            'UQ_fraction_entries_invoice_doctor'
+        ) {
+          throw new ConflictException(
+            `A fraction entry already exists for doctor ${input.doctorId} on invoice ${input.invoiceId}`,
+          );
+        }
+        throw error;
+      }
     });
   }
 

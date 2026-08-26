@@ -24,10 +24,6 @@ export class CreateEntryDto {
   @IsString()
   ruleId?: string;
 
-  @IsOptional()
-  @IsNumber()
-  baseAmount?: number;
-
   /** Deprecated — ignored when a tenant context with an accountId is active (see §25). */
   @IsOptional()
   @IsString()

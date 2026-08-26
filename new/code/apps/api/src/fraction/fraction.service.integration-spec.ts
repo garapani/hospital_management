@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { FractionService } from './fraction.service.js';
+import { FractionEntry } from './entities/fraction.entity.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { InvoicesService } from '../billing/invoices.service.js';
@@ -69,12 +70,12 @@ describe('FractionService (integration)', () => {
     );
   }
 
-  async function makeInvoice(patientId: string) {
+  async function makeInvoice(patientId: string, unitPrice = 1500) {
     return ctx.inTenant(() =>
       invoicesService.create({
         patientId,
         createdBy: STAFF_ID,
-        items: [{ description: 'Consultation', unitPrice: 1500 }],
+        items: [{ description: 'Consultation', unitPrice }],
       }),
     );
   }
@@ -123,7 +124,7 @@ describe('FractionService (integration)', () => {
   it('records an entry with exact share math via the default null-department rule', async () => {
     const doctor = await makeDoctor();
     const patient = await makePatient();
-    const invoice = await makeInvoice(patient.id);
+    const invoice = await makeInvoice(patient.id, 10000);
     await ctx.inTenant(() =>
       fractionService.createRule({ doctorId: doctor.id, fractionPercent: 15 }),
     );
@@ -132,11 +133,11 @@ describe('FractionService (integration)', () => {
       fractionService.recordEntry({
         invoiceId: invoice.id,
         doctorId: doctor.id,
-        baseAmount: 10000,
         recordedBy: STAFF_ID,
       }),
     );
     expect(entry.fractionPercent).toBe(15);
+    // baseAmount is the invoice's own totalAmount, resolved server-side — never client input.
     expect(entry.baseAmount).toBe(10000);
     expect(entry.shareAmount).toBe(1500); // 10000 * 15% = 1500 exactly
     // Actor derivation (section 25): the authenticated principal wins over any caller value.
@@ -146,7 +147,7 @@ describe('FractionService (integration)', () => {
   it('rounds share amounts to 2 decimals', async () => {
     const doctor = await makeDoctor();
     const patient = await makePatient();
-    const invoice = await makeInvoice(patient.id);
+    const invoice = await makeInvoice(patient.id, 3333.33);
     await ctx.inTenant(() =>
       fractionService.createRule({ doctorId: doctor.id, fractionPercent: 15 }),
     );
@@ -155,7 +156,6 @@ describe('FractionService (integration)', () => {
       fractionService.recordEntry({
         invoiceId: invoice.id,
         doctorId: doctor.id,
-        baseAmount: 3333.33,
         recordedBy: STAFF_ID,
       }),
     );
@@ -163,11 +163,33 @@ describe('FractionService (integration)', () => {
     expect(entry.shareAmount).toBe(500);
   });
 
+  it('ignores a caller-supplied baseAmount and always uses the invoice totalAmount', async () => {
+    const doctor = await makeDoctor();
+    const patient = await makePatient();
+    const invoice = await makeInvoice(patient.id, 500);
+    await ctx.inTenant(() => fractionService.createRule({ doctorId: doctor.id, fractionPercent: 10 }));
+
+    // A caller (or a stale client) attempting the old, now-removed field — must be ignored.
+    const maliciousInput = {
+      invoiceId: invoice.id,
+      doctorId: doctor.id,
+      recordedBy: STAFF_ID,
+      baseAmount: 1000000,
+    } as unknown as Parameters<typeof fractionService.recordEntry>[0];
+
+    const entry = await ctx.inTenant(() => fractionService.recordEntry(maliciousInput));
+    expect(entry.baseAmount).toBe(500);
+    expect(entry.shareAmount).toBe(50); // 500 * 10%, not 1000000 * 10%
+  });
+
   it('resolves an explicit ruleId and rejects unknown, inactive, or mismatched rules', async () => {
     const doctorA = await makeDoctor();
     const doctorB = await makeDoctor();
     const patient = await makePatient();
-    const invoice = await makeInvoice(patient.id);
+    // Each negative sub-case below uses its own fresh invoice: doctorA is only allowed one
+    // entry per invoice (idempotency fix below), so reusing one invoice across sub-cases
+    // would make the second call fail on that instead of the rule-validation being tested.
+    const invoice = await makeInvoice(patient.id, 2000);
 
     const ruleA = await ctx.inTenant(() =>
       fractionService.createRule({ doctorId: doctorA.id, fractionPercent: 25 }),
@@ -181,7 +203,6 @@ describe('FractionService (integration)', () => {
         invoiceId: invoice.id,
         doctorId: doctorA.id,
         ruleId: ruleA.id,
-        baseAmount: 2000,
         recordedBy: STAFF_ID,
       }),
     );
@@ -189,25 +210,25 @@ describe('FractionService (integration)', () => {
     expect(entry.shareAmount).toBe(500);
 
     // Unknown rule id.
+    const invoiceForUnknownRule = await makeInvoice(patient.id);
     await expect(
       ctx.inTenant(() =>
         fractionService.recordEntry({
-          invoiceId: invoice.id,
+          invoiceId: invoiceForUnknownRule.id,
           doctorId: doctorA.id,
           ruleId: '00000000-0000-0000-0000-000000000000',
-          baseAmount: 1000,
           recordedBy: STAFF_ID,
         }),
       ),
     ).rejects.toThrow(BadRequestException);
     // Rule that belongs to another doctor.
+    const invoiceForMismatchedRule = await makeInvoice(patient.id);
     await expect(
       ctx.inTenant(() =>
         fractionService.recordEntry({
-          invoiceId: invoice.id,
+          invoiceId: invoiceForMismatchedRule.id,
           doctorId: doctorA.id,
           ruleId: ruleB.id,
-          baseAmount: 1000,
           recordedBy: STAFF_ID,
         }),
       ),
@@ -215,13 +236,13 @@ describe('FractionService (integration)', () => {
 
     // Deactivated rule is rejected even when it matches the doctor.
     await ctx.inTenant(() => fractionService.deactivateRule(ruleA.id));
+    const invoiceForDeactivatedRule = await makeInvoice(patient.id);
     await expect(
       ctx.inTenant(() =>
         fractionService.recordEntry({
-          invoiceId: invoice.id,
+          invoiceId: invoiceForDeactivatedRule.id,
           doctorId: doctorA.id,
           ruleId: ruleA.id,
-          baseAmount: 1000,
           recordedBy: STAFF_ID,
         }),
       ),
@@ -239,7 +260,6 @@ describe('FractionService (integration)', () => {
         fractionService.recordEntry({
           invoiceId: invoice.id,
           doctorId: doctor.id,
-          baseAmount: 1000,
           recordedBy: STAFF_ID,
         }),
       ),
@@ -255,22 +275,67 @@ describe('FractionService (integration)', () => {
         fractionService.recordEntry({
           invoiceId: '00000000-0000-0000-0000-000000000000',
           doctorId: doctor.id,
-          baseAmount: 1000,
           recordedBy: STAFF_ID,
         }),
       ),
     ).rejects.toThrow(NotFoundException);
-    // Invalid base amount.
+  });
+
+  it('rejects a second entry for the same invoice and doctor (idempotency)', async () => {
+    const doctor = await makeDoctor();
+    const patient = await makePatient();
+    const invoice = await makeInvoice(patient.id);
+    await ctx.inTenant(() => fractionService.createRule({ doctorId: doctor.id, fractionPercent: 10 }));
+
+    await ctx.inTenant(() =>
+      fractionService.recordEntry({ invoiceId: invoice.id, doctorId: doctor.id, recordedBy: STAFF_ID }),
+    );
+
     await expect(
       ctx.inTenant(() =>
-        fractionService.recordEntry({
-          invoiceId: invoice.id,
-          doctorId: doctor.id,
-          baseAmount: 0,
-          recordedBy: STAFF_ID,
-        }),
+        fractionService.recordEntry({ invoiceId: invoice.id, doctorId: doctor.id, recordedBy: STAFF_ID }),
       ),
-    ).rejects.toThrow(BadRequestException);
+    ).rejects.toThrow(ConflictException);
+
+    // Different doctor, same invoice — not a duplicate, must still succeed.
+    const otherDoctor = await makeDoctor();
+    await ctx.inTenant(() => fractionService.createRule({ doctorId: otherDoctor.id, fractionPercent: 5 }));
+    await expect(
+      ctx.inTenant(() =>
+        fractionService.recordEntry({ invoiceId: invoice.id, doctorId: otherDoctor.id, recordedBy: STAFF_ID }),
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('UQ_fraction_entries_invoice_doctor rejects a second concurrent entry for the same invoice/doctor', async () => {
+    // The service-level pre-check above closes the sequential case; this proves the DB
+    // constraint itself — the backstop for two truly concurrent recordEntry calls — actually
+    // exists and rejects the second insert, the same way UQ_admissions_active_bed/
+    // UQ_admissions_active_patient are proven elsewhere in this codebase.
+    const doctor = await makeDoctor();
+    const patient = await makePatient();
+    const invoice = await makeInvoice(patient.id);
+
+    const results = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) => {
+        const repository = manager.getRepository(FractionEntry);
+        const insertOne = () =>
+          repository.save(
+            repository.create({
+              invoiceId: invoice.id,
+              doctorId: doctor.id,
+              fractionPercent: 10,
+              baseAmount: 1000,
+              shareAmount: 100,
+              recordedBy: STAFF_ID,
+            }),
+          );
+        return Promise.allSettled([insertOne(), insertOne()]);
+      }),
+    );
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
   });
 
   it('lists and fetches entries, filtered by invoice and doctor', async () => {
@@ -285,7 +350,6 @@ describe('FractionService (integration)', () => {
       fractionService.recordEntry({
         invoiceId: invoice.id,
         doctorId: doctorA.id,
-        baseAmount: 10000,
         recordedBy: STAFF_ID,
       }),
     );
@@ -293,7 +357,6 @@ describe('FractionService (integration)', () => {
       fractionService.recordEntry({
         invoiceId: invoice.id,
         doctorId: doctorB.id,
-        baseAmount: 5000,
         recordedBy: STAFF_ID,
       }),
     );
@@ -307,7 +370,7 @@ describe('FractionService (integration)', () => {
     expect(byDoctor.data[0].id).toBe(entryA.id);
 
     const fetched = await ctx.inTenant(() => fractionService.getEntry(entryA.id));
-    expect(fetched.shareAmount).toBe(1500);
+    expect(fetched.shareAmount).toBe(225); // invoice totalAmount 1500 * 15%
     await expect(
       ctx.inTenant(() => fractionService.getEntry('00000000-0000-0000-0000-000000000000')),
     ).rejects.toThrow(NotFoundException);
@@ -325,7 +388,6 @@ describe('FractionService (integration)', () => {
       fractionService.recordEntry({
         invoiceId: invoice.id,
         doctorId: doctor.id,
-        baseAmount: 1000,
         recordedBy: '00000000-0000-0000-0000-0000000000ff',
       }),
     );
@@ -343,7 +405,6 @@ describe('FractionService (integration)', () => {
       fractionService.recordEntry({
         invoiceId: invoice.id,
         doctorId: doctor.id,
-        baseAmount: 10000,
         recordedBy: STAFF_ID,
       }),
     );

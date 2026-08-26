@@ -60,6 +60,7 @@ import { AddJournalSourceRef3000000000058 } from './0058-add-journal-source-ref.
 import { SeedDefaultLedgerAccounts3000000000059 } from './0059-seed-default-ledger-accounts.js';
 import { CreateAssetDepreciationEntriesTable3000000000061 } from './0061-create-asset-depreciation-entries.js';
 import { AddAdmissionsActivePatientUnique3000000000062 } from './0062-add-admissions-active-patient-unique.js';
+import { AddFractionEntriesUnique3000000000063 } from './0063-add-fraction-entries-unique.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -134,4 +135,5 @@ export const TENANT_MIGRATIONS = [
   SeedDefaultLedgerAccounts3000000000059,
   CreateAssetDepreciationEntriesTable3000000000061,
   AddAdmissionsActivePatientUnique3000000000062,
+  AddFractionEntriesUnique3000000000063,
 ];
