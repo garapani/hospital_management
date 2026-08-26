@@ -2919,3 +2919,38 @@ block by hand. Worth knowing for any future cross-domain import this pass adds: 
 domain isn't already a sanctioned dependency, budget for asking the user to make that one-line
 `eslint.config.mjs` edit themselves** rather than assuming an approved plan/AskUserQuestion answer
 will satisfy the hook.
+
+## 70. Clinical/encounters P2/P3 batch: note sign-off lock, patient-existence check,
+    prescription discontinue/complete, pagination (2026-08-26)
+
+Four items from the clinical/encounters section of `code-review-findings-2026-08-25.md`.
+
+**Signed notes are now locked, using the discharge-summary pattern.** `updateNote()` was a plain
+`Object.assign` with no status awareness — a signed note stayed fully editable forever. Added the
+same guard shape as `AdmissionsService.updateDischargeSummary`'s `reviewedAt` lock: `updateNote()`
+now rejects with 409 once `note.status === 'Signed'`. The transition into `'Signed'` itself still
+goes through this same method and isn't blocked — the guard checks the status *before* applying the
+update, so a Draft note being signed (status still `'Draft'` at that point) sails through; only a
+second edit after signing hits the lock.
+
+**Patient-existence check, and the same protected-config wall as appointments.** `createNote`/
+`createDiagnosis`/`createPrescription` now 404 on a `patientId` that doesn't resolve to a real
+patient — the same `assertPatientExists` shape (new private helper, one per-create call). This
+needed a `domain:clinical-encounters` → `domain:patients` boundary policy that Claude could not add
+itself (see §69's note on `guard-config.sh`); the code fix is correct and tested, `nx lint` will
+flag it until a human adds that one block.
+
+**Prescription discontinue/complete: a status machine, not a free-text field.** `Prescription.status`
+could never change after creation. Added `discontinuePrescription`/`completePrescription`, both
+routed through one private `transitionPrescription(id, nextStatus)` that only allows the transition
+from `'Active'` (409 otherwise). New endpoints:
+`POST /encounters/prescriptions/:id/discontinue` and `.../complete`. This closes only the
+status-transition half of the finding — the other half ("nothing for Nursing's MAR to reference")
+is nursing's own separate, still-open finding; a real prescription↔MAR link is that module's fix,
+not this one's.
+
+**Per-patient reads paginated.** `getNotesByPatient`/`getDiagnosesByPatient`/
+`getPrescriptionsByPatient` now go through `@hospital/pagination`'s `paginate()` +
+`PaginationQueryDto`, converting `find()` calls to `createQueryBuilder` + `paginate(qb, query)` —
+identical shape to the nursing P1 pagination fix and `PatientsService.findAll`. Controllers accept
+`page`/`limit` as `@Query()`.
