@@ -160,7 +160,7 @@ the root `CLAUDE.md`.
 - [x] **P3** — Write access sits with Billing/Accounts Staff; PRD places this under HR/Payroll Admin, which has zero grants. (`rbac/seed-rbac-catalog.ts:617-622`) — **Fixed 2026-08-26:** per PRD §6.1 (Fraction & Incentive is in HR/Payroll Admin's primary scope; Billing/Accounts Staff's scope is "Billing, Insurance & Claims, Accounting, Verification"), the fraction grants moved from Billing/Accounts Staff to HR/Payroll Admin. Same create-only-seed caveat as every other seed fix in this file.
 
 ### cross-cutting (supply-chain group)
-- [ ] **P3** — Stale comments in three modules claim charge capture "isn't wired yet" — it has been since §27, understating the orders-P1 blast radius. (`lab-workflow.service.ts:255-256`, `radiology-workflow.service.ts:226-227`, `pharmacy-dispensing.service.ts:209-210`)
+- [x] **P3** — Stale comments in three modules claim charge capture "isn't wired yet" — it has been since §27, understating the orders-P1 blast radius. (`lab-workflow.service.ts:255-256`, `radiology-workflow.service.ts:226-227`, `pharmacy-dispensing.service.ts:209-210`) — **Fixed 2026-08-26:** all three comments now describe the real behavior — completing the order item via `completeItemInTransaction` fires `ChargeCaptureSubscriber` (billing, Dev Standards §27), which captures a charge for the patient's open invoice, best-effort (unpriced/unsupported items skipped, never rolled back).
 
 ---
 
