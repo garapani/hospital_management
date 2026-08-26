@@ -178,6 +178,35 @@ describe('RadiologyWorkflowService (integration)', () => {
         ctx.inTenant(() => workflowService.verify(requisition.id, RADIOLOGIST_ID)),
       ).rejects.toThrow(ConflictException);
     });
+
+    it('verify does not resurrect an order item that was independently cancelled', async () => {
+      // Regression test for code-review-findings-2026-08-25's radiology P2 (same root cause as
+      // the orders P1: `completeItemInTransaction` used to resurrect any non-Completed order item,
+      // including a Cancelled one, to Completed). Cancels the order item directly via
+      // OrdersService — bypassing the order-cancellation-cascade subscriber, which isn't wired up
+      // in this spec's standalone service construction — so the requisition itself stays
+      // ReportEntered and verify() genuinely reaches completeItemInTransaction with a Cancelled
+      // order item underneath it, exactly reproducing the original race.
+      const item = await makeImagingItem('verify-vs-cancelled-item');
+      const orderItem = await makeOrderItem('4460000098');
+      const requisition = await ctx.inTenant(() =>
+        workflowService.createRequisition({ orderItemId: orderItem.id, imagingItemId: item.id }),
+      );
+      await ctx.inTenant(() => workflowService.markScanned(requisition.id, TECH_ID));
+      await ctx.inTenant(() =>
+        workflowService.enterReport(requisition.id, { reportText: 'Normal study', reportEnteredBy: TECH_ID }),
+      );
+
+      await ctx.inTenant(() => ordersService.cancelItem(orderItem.orderId, orderItem.id, {}));
+
+      const verified = await ctx.inTenant(() => workflowService.verify(requisition.id, RADIOLOGIST_ID));
+      expect(verified.status).toBe('Verified');
+
+      const order = await ctx.inTenant(() => ordersService.findOne(orderItem.orderId));
+      const item2 = order.items.find((i) => i.id === orderItem.id);
+      expect(item2?.status).toBe('Cancelled');
+      expect(item2?.completedAt).toBeNull();
+    });
   });
 
   describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {

@@ -126,12 +126,6 @@ export class RadiologyWorkflowService {
     });
   }
 
-  async listByOrderItem(orderItemId: string): Promise<RadiologyRequisition[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(RadiologyRequisition).find({ where: { orderItemId }, order: { createdAt: 'DESC' } }),
-    );
-  }
-
   async findAll(query: ListRadiologyRequisitionDto): Promise<PaginatedResponseDto<RadiologyRequisition>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const qb = manager.getRepository(RadiologyRequisition).createQueryBuilder('requisition')
