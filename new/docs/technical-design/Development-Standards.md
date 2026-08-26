@@ -3477,3 +3477,43 @@ migration 0079 — deliberately varchar for the actor column, matching the §73 
 tokens sign non-uuid `sub` values) even though the entity's older `appliedBy`/`approvedBy`
 columns are still uuid-typed; new audit-style actor columns follow the varchar convention going
 forward.
+
+## 85. Fraction P2/P3 batch: a reversal subscriber that hooks the *invoice* update, a default-rule
+    uniqueness guard, and the RBAC fix (2026-08-26)
+
+Three items, closing out the fraction section (its P1s landed 2026-08-25). The reversal is the
+interesting shape; the other two reuse established patterns.
+
+**The automatic reversal subscriber's trigger point matters — hook the invoice update, not the
+returns insert.** The gap was: an entry stayed live (and payable) after its source invoice was
+returned or cancelled. The fix is a tableName-filtered subscriber in the fraction module (no
+fraction → billing entity import, same boundary-clean shape as `ChargeCaptureSubscriber`) that
+reverses the invoice's live entries in the same transaction on two events: `invoices` afterUpdate
+where status becomes `Cancelled`, and `returns` afterInsert. The subtle part is why the return
+path listens on `invoices` rather than `returns`: `InvoicesService.createReturn()` saves the
+Return row *before* updating the invoice's totalAmount, so a returns-insert hook fires with the
+stale total in hand — but the invoice update fires after the money moved, inside the same
+transaction. When a subscriber must react to a multi-step mutation, pick the event that carries
+the *post-mutation* state, not the first event in the sequence. (For cancellation it made no
+difference — the entry only needs the invoice id — but one hook covering the reliable event
+keeps the design single-shaped.)
+
+**Reversal is all-or-nothing, matching the entry's snapshot design.** `FractionEntry` documents
+itself as a snapshot (percent + base at recording time); recomputing a live entry's base to a
+partially-returned invoice's new total would violate that contract and create a moving target the
+payroll side can't trust. So both return and cancel void the entry (`reversedAt`/`reversedBy`,
+idempotent — already-reversed rows are skipped), and the partial-recompute alternative is
+explicitly left open. Also note the reversal column follows the §73 varchar convention
+(`reversedBy`), and the subscriber is fail-loud: a reversal that throws aborts the cancel/return
+transaction rather than silently leaving a stale payable share — the same stance `createReturn`'s
+journal post already takes. Subscriber wiring is proven e2e by a spec booting the real AppModule
+(cancel, return, and an unrelated-payment control that must NOT reverse).
+
+**The default-rule guard is the status-partial unique index pattern again** — a doctor's default
+(null-department) share is single-valued, so `createRule` pre-checks plus
+`UQ_fraction_rules_active_default_per_doctor` on `(doctorId) WHERE "departmentId" IS NULL AND
+"isActive" = true` (0080), with the `recordEntry` fallback additionally ordered
+`createdAt DESC` so legacy ambiguity resolves to the newest rule deterministically rather than
+arbitrarily. And the RBAC fix simply applies PRD §6.1: Fraction & Incentive moved from
+Billing/Accounts Staff (whose scope is Billing/Insurance/Accounting/Verification) to HR/Payroll
+Admin (whose primary scope names Fraction & Incentive explicitly).
