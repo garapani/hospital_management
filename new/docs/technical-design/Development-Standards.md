@@ -3909,3 +3909,27 @@ object is removed best-effort after commit. The residue analysis is what makes t
 failure *before* the upload changes nothing; a failure *between* upload and commit leaves at most
 an orphaned object, which the next upload's cleanup removes; nothing can leave the DB row pointing
 at a missing object, because the DB write happens only after the upload succeeded.
+
+## 99. Notifications P2/P3 batch: a real permission for a decorative gate, and query-shaped
+    indexes (2026-08-26)
+
+The P2 is a small but telling shape; the P3 index half is a pattern-fill; the retention half was
+deferred to `new-features.md` #23.
+
+**A decorative guard is fixed by giving it something real to check.** `NotificationsController`
+had `@UseGuards(PermissionGuard)` with no `@RequirePermission` anywhere — the guard always
+returned true, and the package-catalog comment even admitted the `notifications` module mapping
+was dead ("no permissions in the catalog ... effectively always-on"). The fix adds a real
+`notification.read` permission, grants it to every catalog role (the endpoints are self-scoped —
+recipient-only — so the permission gates feature access, not data visibility), and applies it as
+a **class-level** `@RequirePermission` — the first production use of the class-level guard support
+added in the rbac batch. Worth noting: the dead mapping was *documented as dead* in a comment —
+that's exactly the "unmapped prefix fails closed with no signal" class of drift the rbac batch
+warned about, now with a real permission behind the prefix.
+
+**Indexes are named after the query shapes they serve.** The old single-column
+`(recipientAccountId)` index served neither hot read well; migration 0087 replaces it with
+`(recipientAccountId, createdAt DESC)` (newest-first list + summary's recent rows) and a partial
+`(recipientAccountId) WHERE isRead = false` (the unread count — a partial index is the canonical
+shape for a boolean-filtered count). Retention (a delete job for old rows) is deferred: this
+codebase has no scheduler, and a cleanup path is an ops feature, not a schema fix.

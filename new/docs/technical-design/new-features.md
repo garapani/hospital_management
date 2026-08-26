@@ -237,6 +237,20 @@ token that was stolen outright stays cryptographically valid until its 7-day exp
 Related review comments: code-review-findings-2026-08-25.md, auth module, P3
 (`auth/auth.service.ts`).
 
+### 23. Notification retention / cleanup job
+
+`notifications` rows accumulate forever — there's no retention path (code-review-findings-2026-08-25
+notifications P3, index half fixed in migration 0087). Add:
+
+- A cleanup job (this codebase has no scheduler yet — a cron/worker or an admin-gated endpoint)
+  that deletes read notifications older than a retention window (e.g. 90 days), and a decision on
+  whether unread notifications age out too.
+- Index/query review once the cleanup runs at volume: the two new query-shape indexes (0087) are
+  the read side; a delete-heavy job may want a `(isRead, createdAt)`-shaped index for the scan.
+
+Related review comments: code-review-findings-2026-08-25.md, notifications module, P3
+(`migrations/0028-create-notifications-table.ts:22`).
+
 ## Product Module Backlog
 
 The PRD phases still leave these major domains to add:
