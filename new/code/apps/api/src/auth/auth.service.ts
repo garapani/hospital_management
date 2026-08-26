@@ -180,7 +180,16 @@ export class AuthService {
       );
       throw new UnauthorizedException('Invalid credentials');
     }
-    if (!found) {
+    // Credentials are verified before anything else about the account's state is revealed — same
+    // reasoning as login()'s status-gate placement above. This endpoint is deliberately
+    // unauthenticated, so a distinct response for "unknown username" vs. "known username, already
+    // past the must-change state" (formerly checked here before any password comparison) would let
+    // a caller enumerate valid usernames without ever supplying a correct password.
+    const passwordMatches =
+      !!found &&
+      found.account.passwordHash !== null &&
+      (await bcrypt.compare(currentPassword, found.account.passwordHash));
+    if (!found || !passwordMatches) {
       throw new UnauthorizedException('Invalid credentials');
     }
     if (!found.account.needsPasswordUpdate) {

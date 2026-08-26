@@ -5,7 +5,15 @@ import { AuthService } from './auth.service.js';
 import { LoginDto, ChangeInitialPasswordDto } from './dto/login.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 
-const AUTH_RATE_LIMIT = process.env['NODE_ENV'] === 'test' ? 1_000_000 : 5;
+// AUTH_RATE_LIMIT_OVERRIDE lets a dedicated test import this module with a small, deliberately
+// chosen limit (via dynamic import, after setting the env var) to prove the @Throttle() override
+// below actually takes effect, without disturbing the huge test-mode default every other spec
+// relies on to avoid tripping the guard incidentally.
+const AUTH_RATE_LIMIT = process.env['AUTH_RATE_LIMIT_OVERRIDE']
+  ? Number(process.env['AUTH_RATE_LIMIT_OVERRIDE'])
+  : process.env['NODE_ENV'] === 'test'
+    ? 1_000_000
+    : 5;
 
 @Controller('auth')
 export class AuthController {

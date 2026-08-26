@@ -48,14 +48,19 @@ import { VaccinationModule } from '../vaccination/vaccination.module.js';
   imports: [
     ThrottlerModule.forRootAsync({
       useFactory: () => ({
-        // Role-based rate limiting: different limits for different user types
-        // Default throttler applies to all authenticated users
-        // Specific throttlers can be applied via @Throttle() decorator on routes
-        throttlers: [
-          { name: 'guest', ttl: 60000, limit: Number(process.env['RATE_LIMIT_GUEST'] ?? 20) },
-          { name: 'authenticated', ttl: 60000, limit: Number(process.env['RATE_LIMIT_AUTHENTICATED'] ?? 100) },
-          { name: 'admin', ttl: 60000, limit: Number(process.env['RATE_LIMIT_ADMIN'] ?? 1000) },
-        ],
+        // A single named 'default' throttler applies to every route; routes needing a tighter
+        // ceiling (login/refresh/change-password) override it per-route via @Throttle({ default:
+        // {...} }) — see AuthController. This used to be three named throttlers ('guest',
+        // 'authenticated', 'admin'), but nothing in the codebase ever selected which one applied
+        // per caller (no @SkipThrottle, no role-based tracker) — ThrottlerGuard runs every
+        // configured named throttler on every request and requires all to pass, so all three
+        // limits stacked on every route regardless of caller, and the tightest ('guest', 20/min)
+        // silently became the ceiling for the entire API, including admins. Meanwhile
+        // AuthController's own override named its bucket 'default', which matched none of the
+        // three configured names, so `reflector.getAllAndOverride` never found it and the route
+        // fell back to the (stacked) module defaults instead of the intended tighter limit —
+        // making the auth-specific throttle a complete no-op on top of the global overcap.
+        throttlers: [{ name: 'default', ttl: 60000, limit: Number(process.env['RATE_LIMIT_DEFAULT'] ?? 100) }],
         // Passing connection options (not a pre-built ioredis instance) so
         // ThrottlerStorageRedisService creates and owns the client itself — only then does its
         // onModuleDestroy() actually disconnect it (disconnectRequired is only set on the

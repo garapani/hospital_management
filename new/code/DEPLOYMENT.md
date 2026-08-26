@@ -342,10 +342,9 @@ DB_STATEMENT_TIMEOUT_MS=30000
 REDIS_HOST=localhost
 REDIS_PORT=6379
 
-# Rate Limiting
-RATE_LIMIT_GUEST=20
-RATE_LIMIT_AUTHENTICATED=100
-RATE_LIMIT_ADMIN=1000
+# Rate Limiting (applies to every route; login/refresh/change-password override it to a tighter
+# limit — see AuthController)
+RATE_LIMIT_DEFAULT=100
 
 # JWT
 JWT_SECRET=your-super-secret-key-min-32-chars

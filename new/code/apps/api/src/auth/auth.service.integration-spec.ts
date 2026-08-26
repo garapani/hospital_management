@@ -147,6 +147,18 @@ describe('AuthService (integration)', () => {
       ).rejects.toThrow('not required to change its password');
     });
 
+    it('does not leak "not required to change its password" for a wrong current password — same generic rejection as an unknown username', async () => {
+      // Regression test for the username-enumeration P1: this must throw the same generic
+      // "Invalid credentials" a caller sees for an unknown username, not the more specific
+      // "not required to change its password" — that message can only be trusted once the caller
+      // has already proven they hold the current password.
+      await expect(
+        ctx.inTenant(() =>
+          authService.changeInitialPassword('dr.carol', 'wrong-password', 'some-new-pass-789'),
+        ),
+      ).rejects.toThrow('Invalid credentials');
+    });
+
     it('changeInitialPassword replaces the password and clears the flag', async () => {
       await ctx.inTenant(() =>
         authService.changeInitialPassword('fresh.staff', 'initial-pass-123', 'brand-new-pass-456'),
