@@ -73,6 +73,17 @@ describe('MaternityService (integration)', () => {
     return rows[0].id;
   }
 
+  /** admissions.patientId is unique while status='Admitted' — discharge first when a test needs
+   *  a second admission (and thus a second maternity record, now one-per-admission) for the same
+   *  patient. */
+  async function dischargeAdmission(admissionId: string): Promise<void> {
+    await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.query(`UPDATE admissions SET status = 'Discharged' WHERE id = $1`, [admissionId]),
+      ),
+    );
+  }
+
   async function makeRecord(patientId: string, overrides: Record<string, unknown> = {}) {
     const admissionId = await makeAdmission(patientId);
     return ctx.inTenant(() =>
@@ -115,9 +126,12 @@ describe('MaternityService (integration)', () => {
     expect(record.complications).toBeNull();
     expect(record.deliveredBy).toBeNull();
 
-    // Defaults for omitted antenatal fields.
+    // Defaults for omitted antenatal fields — a distinct admission, since a maternity record is
+    // now at most one per admission.
+    await dischargeAdmission(admissionId);
+    const secondAdmissionId = await makeAdmission(patient.id);
     const minimal = await ctx.inTenant(() =>
-      maternityService.createRecord({ admissionId, patientId: patient.id }),
+      maternityService.createRecord({ admissionId: secondAdmissionId, patientId: patient.id }),
     );
     expect(minimal.gravida).toBe(0);
     expect(minimal.para).toBe(0);
@@ -293,6 +307,39 @@ describe('MaternityService (integration)', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('rejects a second maternity record for the same admission', async () => {
+    const patient = await makePatient();
+    const record = await makeRecord(patient.id);
+
+    await expect(
+      ctx.inTenant(() =>
+        maternityService.createRecord({ admissionId: record.admissionId, patientId: record.patientId }),
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('paginates listed records', async () => {
+    const patient = await makePatient();
+    let lastAdmissionId = await makeAdmission(patient.id);
+    await ctx.inTenant(() =>
+      maternityService.createRecord({ admissionId: lastAdmissionId, patientId: patient.id }),
+    );
+    for (let i = 0; i < 2; i++) {
+      await dischargeAdmission(lastAdmissionId);
+      lastAdmissionId = await makeAdmission(patient.id);
+      await ctx.inTenant(() =>
+        maternityService.createRecord({ admissionId: lastAdmissionId, patientId: patient.id }),
+      );
+    }
+
+    const page1 = await ctx.inTenant(() =>
+      maternityService.listRecords({ patientId: patient.id, page: 1, limit: 2 }),
+    );
+    expect(page1.data).toHaveLength(2);
+    expect(page1.meta.total).toBe(3);
+    expect(page1.meta.totalPages).toBe(2);
+  });
+
   it('validates delivery inputs', async () => {
     const patient = await makePatient();
     const record = await makeRecord(patient.id);
@@ -350,10 +397,12 @@ describe('MaternityService (integration)', () => {
       maternityService.createRecord({ admissionId: admissionA, patientId: patientA.id, gravida: 1 }),
     );
 
-    const recordB = await makeRecord(patientB.id);
+    const firstRecordB = await makeRecord(patientB.id);
+    await dischargeAdmission(firstRecordB.admissionId);
+    const admissionB2 = await makeAdmission(patientB.id);
     await ctx.inTenant(() =>
       maternityService.createRecord({
-        admissionId: recordB.admissionId,
+        admissionId: admissionB2,
         patientId: patientB.id,
         gravida: 2,
       }),

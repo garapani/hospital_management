@@ -1,4 +1,5 @@
 import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { PaginationQueryDto } from '@hospital/pagination';
 
 import type { DeliveryType } from '../entities/maternity-record.entity.js';
 
@@ -73,7 +74,7 @@ export class RecordDeliveryDto {
   notes?: string;
 }
 
-export class ListMaternityRecordsQueryDto {
+export class ListMaternityRecordsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   patientId?: string;

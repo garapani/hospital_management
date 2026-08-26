@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import type { EntityManager } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
@@ -68,22 +69,41 @@ export class MaternityService {
     this.validateAntenatalFields(input.gravida, input.para, input.lmp, input.edd);
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       await this.assertAdmissionBelongsToPatient(manager, input.admissionId, input.patientId);
-      return manager.getRepository(MaternityRecord).save(
-        manager.getRepository(MaternityRecord).create({
-          admissionId: input.admissionId,
-          patientId: input.patientId,
-          gravida: input.gravida ?? 0,
-          para: input.para ?? 0,
-          lmp: input.lmp ?? null,
-          edd: input.edd ?? null,
-          deliveryDate: null,
-          deliveryType: null,
-          babyCount: 0,
-          complications: null,
-          deliveredBy: null,
-          notes: input.notes ?? null,
-        }),
-      );
+      const existing = await manager.getRepository(MaternityRecord).findOne({
+        where: { admissionId: input.admissionId },
+      });
+      if (existing) {
+        throw new ConflictException(`Admission ${input.admissionId} already has a maternity record`);
+      }
+      try {
+        return await manager.getRepository(MaternityRecord).save(
+          manager.getRepository(MaternityRecord).create({
+            admissionId: input.admissionId,
+            patientId: input.patientId,
+            gravida: input.gravida ?? 0,
+            para: input.para ?? 0,
+            lmp: input.lmp ?? null,
+            edd: input.edd ?? null,
+            deliveryDate: null,
+            deliveryType: null,
+            babyCount: 0,
+            complications: null,
+            deliveredBy: null,
+            notes: input.notes ?? null,
+          }),
+        );
+      } catch (error) {
+        // Backstop for the race the pre-check above can't close: concurrent creates for the
+        // same admission, closed by UQ_maternity_records_admission.
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint ===
+            'UQ_maternity_records_admission'
+        ) {
+          throw new ConflictException(`Admission ${input.admissionId} already has a maternity record`);
+        }
+        throw error;
+      }
     });
   }
 
