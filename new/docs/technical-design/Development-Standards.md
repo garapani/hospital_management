@@ -2765,3 +2765,65 @@ specifically about a *race* (transfer bed conflict, discharge-summary duplicate)
 race-simulation test using the same `Promise.allSettled` — direct-repository-insert pattern already
 established for `UQ_admissions_active_patient` (§ the 2026-08-25 admissions P1 spec) rather than
 relying on true concurrency, which is flaky in this test environment.
+
+## 67. Billing P2 batch: deposit-refund idempotency, a charge-capture row lock, and the
+    billing.read/billing.manage split (2026-08-26)
+
+Five P2s from `code-review-findings-2026-08-25.md`'s billing section, picked as a single batch. The
+remaining two (GST-split reversal on returns; charge capture's hardcoded 0% tax) are left open —
+both are already documented, deliberately deferred, larger design gaps (§63), not a P2-batch-sized
+fix.
+
+**Deposit-refund idempotency: check the ledger *before* mutating balance, not after.**
+`DepositsService.refund` previously decremented `deposit.balance` unconditionally, then called
+`AccountingService.postAutoJournal` keyed on `(sourceType: 'DepositRefund', sourceId: depositId)`.
+A same-amount retry passed that journal's own idempotency check (§63: existing lines match → safe
+no-op), but the balance had already moved a second time before that check ever ran — real money
+moved twice while the ledger only ever showed it once. `refund()` now queries `JournalEntry`/
+`JournalLine` for an existing `DepositRefund` journal on this deposit *before* touching balance,
+mirroring `postAutoJournal`'s own dedup logic instead of relying on it after the fact: a
+same-amount match returns the deposit unchanged (true no-op, no new journal); a different-amount
+match throws `ConflictException` immediately, before any mutation (previously this same outcome
+only happened indirectly, via the journal call's own conflict deep in the transaction, after
+balance was already touched and then rolled back by the transaction failure). No new
+migration/entity — this reuses the existing partial unique index backing
+`journal_entries(sourceType, sourceId)` from migration `0058`. Billing importing
+`JournalEntry`/`JournalLine` from `../accounting/entities/...` is not a new edge: `InvoicesService`
+already imports `AccountingService`/`LEDGER_ACCOUNT_IDS` from the same module, and `accounting` has
+no domain tag in `eslint.config.mjs`'s module-boundary rules (a separate, already-tracked P2, not
+introduced here).
+
+**Charge capture's invoice read is now row-locked, like every sibling mutator.**
+`captureChargeForOrderItem` read the open invoice via a plain `findOne` (no lock), then later wrote
+the *entire* invoice row back via `save()` — including whatever `paidAmount` was in memory at that
+unlocked read. A concurrent `recordPayment`/`createReturn`/`cancel` (all of which already take
+`lock: { mode: 'pessimistic_write' }` on the same invoice) committing between that read and
+capture's later `save()` had its `paidAmount` update silently overwritten by capture's stale
+in-memory copy — a real payment recorded and journaled, then invisibly reverted. Added the same
+`pessimistic_write` lock to capture's open-invoice lookup. The existing per-patient advisory lock
+(`withAdvisoryLock`) is unrelated and stays: it serializes concurrent *charge captures* for the same
+patient (the open-invoice-*creation* race, before any row exists to lock), not access to an
+invoice that already exists.
+
+This is the one test in this batch that uses true concurrency rather than the deterministic
+`Promise.allSettled` pattern established in §66 — deliberately: that pattern works for a *unique
+constraint* race (the DB rejects a losing concurrent insert regardless of timing), but this bug is
+about a **row lock** blocking a stale read, which only manifests under actual overlapping
+transactions. `charge-capture.integration-spec.ts`'s new test holds `captureChargeForOrderItem`'s
+transaction open (via a plain `setTimeout` after the call, inside the same `runInTenantSchema`
+callback) well past its internal commit point, then asserts a concurrent `recordPayment` against
+the same invoice cannot resolve until that hold releases — Postgres's row-level locking guarantees
+this deterministically once genuinely concurrent transactions are opened, unlike an
+application-level timing race, so it isn't the flaky kind of concurrency test §66 avoids.
+
+**`billing.read` / `billing.manage` split, mirroring `accounting.read`/`accounting.manage`
+exactly.** `billing.manage` gated every billing endpoint, so front desk could issue refunds and
+Auditor/Compliance had no way to view invoices at all. Added `billing.read`; `InvoicesController`'s
+and `DepositsController`'s GET handlers now require it instead of `billing.manage` (writes
+unchanged). Every role that held `billing.manage` (Super Admin, Hospital Admin, Receptionist/Front
+Desk, Billing/Accounts Staff) also gets `billing.read` granted alongside it — no role lost write
+access. Additionally, `billing.read` (read-only, no `.manage`) now goes to Auditor/Compliance,
+closing the "auditors can't view invoices" half of the finding. Same caveat as every other
+seed-only RBAC change so far: the seed is create-only (`ON CONFLICT DO NOTHING`, itself a tracked
+P2), so this permission reaches an already-provisioned tenant only via that pipeline's existing
+re-seed mechanism.
