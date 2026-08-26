@@ -211,8 +211,10 @@ export class PharmacyDispensingService {
       const savedDispensing = await dispensingRepository.save(dispensing);
 
       // Completes the order item via OrdersService (in this same transaction) instead of
-      // mutating the OrderItem repository directly. Billing charge-capture is not wired to
-      // this event yet — see pending-tasks.md.
+      // mutating the OrderItem repository directly. Completing the item fires
+      // ChargeCaptureSubscriber (billing, Dev Standards §27), which captures a charge for the
+      // patient's open invoice — best-effort: unpriced/unsupported items are skipped, never
+      // rolled back.
       await this.ordersService.completeItemInTransaction(manager, orderItem.id, {
         completedBy: dispensedBy,
       });
