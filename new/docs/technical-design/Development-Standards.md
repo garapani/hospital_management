@@ -176,7 +176,7 @@ platform allow-list were corrected once actually run against the codebase.
 ## 8. Database-Enforced Tenant Isolation
 
 Every tenant has its own `NOLOGIN` Postgres role, named identically to its schema
-(`tenant_<hospitalId>` for both). The app's single DB role (`identity_access`) is granted
+(`tenant_<hospitalId>` for both). The app's single DB role (`hospital_db_user`) is granted
 membership in every tenant role and uses `SET LOCAL ROLE` — inside a real transaction, not just a
 bare query — to scope each request's actual database privileges to one tenant. `SET LOCAL` is a
 silent no-op outside an explicit transaction, which is why `TenantConnectionService.runInTenantSchema()`
@@ -206,7 +206,7 @@ privileges → run every `TENANT_MIGRATIONS` entry via `dataSource.runMigrations
 schema (via a Postgres `-c search_path=...` connection option — TypeORM's own `schema`
 DataSourceOption does NOT set the real session search_path for raw migration SQL, only for
 generated entity queries) → explicit grant on what the migrations just created → grant
-`identity_access` membership in the new role. Both `TenantsService.provisionTenant()` and the test
+`hospital_db_user` membership in the new role. Both `TenantsService.provisionTenant()` and the test
 helper (`apps/api/src/testing/tenant-test-context.ts`) call this one service.
 
 **Migrations split into two tracked sets**, exported from `apps/api/src/database/migrations/index.ts`:

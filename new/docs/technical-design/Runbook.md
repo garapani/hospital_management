@@ -9,7 +9,7 @@ new tenant is created via `POST /tenants`, `TenantsService.provisionTenant()` ca
 creates the `tenant_<id>` role, grants it schema `USAGE` plus `ALTER DEFAULT PRIVILEGES` on future
 tables/sequences, runs `TENANT_MIGRATIONS` against that schema, grants the role explicit access to
 the tables/sequences the migrations just created, and grants `tenant_<id>` membership to
-`identity_access` (so `SET LOCAL ROLE` can switch into it — see `TenantConnectionService`).
+`hospital_db_user` (so `SET LOCAL ROLE` can switch into it — see `TenantConnectionService`).
 
 ### Symptoms
 - 500 Internal Server Errors when a specific tenant tries to log in or use the API.
@@ -122,7 +122,7 @@ RPO until it's enabled and drilled at least once.
 aws s3 cp s3://$S3_BUCKET/$S3_PREFIX/<filename>.dump.gz ./restore.dump.gz
 gunzip ./restore.dump.gz
 docker compose -f docker-compose.dev.yml exec -T api-postgres \
-  pg_restore -U identity_access -d hospital_db --clean --if-exists < ./restore.dump
+  pg_restore -U hospital_db_user -d hospital_db --clean --if-exists < ./restore.dump
 ```
 `--clean --if-exists` drops existing objects before recreating them, so this is safe to run
 against a database that already has stale or corrupt data in it.
@@ -133,7 +133,7 @@ Restores exactly one tenant's schema without touching any other tenant or the pl
 schema:
 ```bash
 docker compose -f docker-compose.dev.yml exec -T api-postgres \
-  pg_restore -U identity_access -d hospital_db --schema=tenant_<hospitalId> --clean --if-exists < ./restore.dump
+  pg_restore -U hospital_db_user -d hospital_db --schema=tenant_<hospitalId> --clean --if-exists < ./restore.dump
 ```
 
 ### Monthly restore-drill procedure
@@ -141,21 +141,21 @@ docker compose -f docker-compose.dev.yml exec -T api-postgres \
 Once a month, prove a real backup actually restores:
 1. Restore the latest dump into a scratch database:
    ```bash
-   docker compose -f docker-compose.dev.yml exec -T api-postgres createdb -U identity_access restore_drill_scratch
+   docker compose -f docker-compose.dev.yml exec -T api-postgres createdb -U hospital_db_user restore_drill_scratch
    docker compose -f docker-compose.dev.yml exec -T api-postgres \
-     pg_restore -U identity_access -d restore_drill_scratch --clean --if-exists < ./restore.dump
+     pg_restore -U hospital_db_user -d restore_drill_scratch --clean --if-exists < ./restore.dump
    ```
 2. Run smoke queries confirming non-zero row counts on both a platform table and at least one
    tenant schema:
    ```bash
    docker compose -f docker-compose.dev.yml exec -T api-postgres \
-     psql -U identity_access -d restore_drill_scratch -c "SELECT count(*) FROM public.tenants;"
+     psql -U hospital_db_user -d restore_drill_scratch -c "SELECT count(*) FROM public.tenants;"
    docker compose -f docker-compose.dev.yml exec -T api-postgres \
-     psql -U identity_access -d restore_drill_scratch -c "SELECT count(*) FROM tenant_<any-known-tenant-id>.patients;"
+     psql -U hospital_db_user -d restore_drill_scratch -c "SELECT count(*) FROM tenant_<any-known-tenant-id>.patients;"
    ```
 3. Drop the scratch database:
    ```bash
-   docker compose -f docker-compose.dev.yml exec -T api-postgres dropdb -U identity_access restore_drill_scratch
+   docker compose -f docker-compose.dev.yml exec -T api-postgres dropdb -U hospital_db_user restore_drill_scratch
    ```
 4. Log the result below.
 
@@ -196,7 +196,7 @@ data volume — add a second bind mount for the archive directory):
    succeeding — no `.ready` files piling up in `pg_wal/archive_status/` inside the container):
    ```bash
    docker compose -f docker-compose.dev.yml exec api-postgres \
-     pg_basebackup -U identity_access -D /wal-archive/base/$(date +%Y%m%d) -Fp -Xs -P
+     pg_basebackup -U hospital_db_user -D /wal-archive/base/$(date +%Y%m%d) -Fp -Xs -P
    ```
 5. Periodically ship `/wal-archive` offsite (same S3 target `backup-db.sh` already uploads to,
    under its own `S3_PREFIX` e.g. `wal-archive`) — a local-only archive volume defeats the purpose

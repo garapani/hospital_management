@@ -12,7 +12,7 @@ This document outlines the standard deployment procedures for the Hospital Manag
 The system uses a **Modular Monolith** architecture. This means the entire backend is deployed as a single Node.js process (NestJS) scaling horizontally behind a load balancer, connected to a single shared PostgreSQL instance.
 
 ### Postgres Configuration
-The application relies heavily on multi-tenancy via Postgres schemas. Ensure the `identity_access` user (or equivalent production user) has permissions to execute DDL (Data Definition Language) commands like `CREATE SCHEMA` because tenant provisioning happens dynamically at runtime.
+The application relies heavily on multi-tenancy via Postgres schemas. Ensure the `hospital_db_user` user (or equivalent production user) has permissions to execute DDL (Data Definition Language) commands like `CREATE SCHEMA` because tenant provisioning happens dynamically at runtime.
 
 ## 3. Environment Variables
 Before starting the application, ensure the `.env` file is populated.
@@ -25,8 +25,8 @@ NODE_ENV=production
 # Database
 DB_HOST=localhost
 DB_PORT=5433
-DB_USERNAME=identity_access
-DB_PASSWORD=identity_access_dev_password
+DB_USERNAME=hospital_db_user
+DB_PASSWORD=hospital_db_password
 DB_DATABASE=hospital_db
 
 # Security
@@ -150,7 +150,7 @@ deferred gap, not an oversight).
 |---|---|---|
 | `COMPOSE_FILE` | `docker-compose.dev.yml` | Compose file the Postgres service lives in (backup script default; set to `docker-compose.prod.yml` on a prod host). |
 | `POSTGRES_SERVICE` | `api-postgres` | Compose service name to `docker exec` into (backup script default; `hospital-postgres` on prod). |
-| `POSTGRES_USER` | `identity_access` | Matches `DB_USERNAME`. |
+| `POSTGRES_USER` | `hospital_db_user` | Matches `DB_USERNAME`. |
 | `POSTGRES_DB` | `hospital_db` | Matches `DB_DATABASE`. |
 | `BACKUP_DIR` | `./backups` | Local working directory for dump files before/after upload. |
 | `RETENTION_DAYS` | `30` | Local dump files older than this are deleted after a successful run. |
