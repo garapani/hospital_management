@@ -4055,3 +4055,32 @@ nullable-column twist on the codebase's standard uniqueness fix: a plain UNIQUE 
 let only one NULL row exist, so nullable-but-when-present-unique columns need the partial form.
 `createEmployee` and `updateEmployee` both map the violation to a 409, and `@IsEmail` gives the
 format check at the pipe.
+
+## 106. Database P2/P3 batch: a DB password guard, removing a dead timer, and migration-ordering
+    guards (2026-08-26)
+
+Four items, closing out the database section. Two shapes worth recording; the migration-ordering
+item deserves the most care.
+
+**The migration-ordering investigation corrected the repo's own mental model.** The migration
+skill claimed TypeORM sorts by each migration name's last-13-character timestamp — but the
+migrations-table history proves otherwise for array-loaded migrations: legacy interleavings (the
+2-prefix tenant migrations before the 1-prefix backfills; platform 0064's 3-prefix before 0084's
+1-prefix) all ran *exactly as the arrays list them*, i.e. TypeORM executes array-loaded
+migrations in array order. The finding's complaint — ordering carried by one hand-maintained array
+— is therefore literally true and can't be fixed by "sorting by timestamps" (that would change
+execution). The honest hardening: document the array-is-execution-order contract on the arrays,
+enforce append-only by guarding the two failure modes a test can actually see — every migration's
+sort key stays unique (so any timestamp-based tooling stays deterministic) and the modern 3-prefix
+block stays ascending (appending a new migration out of order in the tail is the failure that
+would silently run DDL before its dependencies). One extraction trap surfaced: the sort key is the
+*last 13 characters* of the name, not "all trailing digits" — `AddInvoiceItemChargeUnique0049
+2000000000049` would otherwise parse as 49,200,000,000,049 instead of 2,000,000,000,049.
+
+**The other three are pattern-fills.** The DB password got the `resolveJwtSecret` production guard
+(throw when `NODE_ENV === 'production'` and the var is unset — a known default credential must
+never be silently usable in production). The pool monitor was removed rather than repaired: it
+read a pool TypeORM never exposes there, so it was dead code *and* a permanent timer — when dead
+code also holds a resource, deletion is the fix, not instrumentation. The missing secondary
+indexes on newer tenant tables were closed by the modules' own batches where they existed (0087,
+0088, 0090) and migration 0092 for the remainder (`employees`, `patient_referrals`).
