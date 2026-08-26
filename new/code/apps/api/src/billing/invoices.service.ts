@@ -90,7 +90,7 @@ export class InvoicesService {
     return this.tenantContext.getAccountId() ?? (fallback as string);
   }
 
-  private static readonly PAYMENT_MODES = ['Cash', 'Card', 'UPI', 'Cheque', 'Deposit'] as const;
+  private static readonly PAYMENT_MODES = ['Cash', 'Card', 'UPI', 'Cheque', 'Deposit', 'Insurance'] as const;
 
   private async generateInvoiceNumber(manager: EntityManager): Promise<{ invoiceNumber: number; financialYear: string }> {
     const startYear = getFinancialYearStart(new Date());

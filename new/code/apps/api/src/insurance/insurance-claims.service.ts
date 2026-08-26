@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -14,6 +15,7 @@ import {
   InsuranceClaimStatus,
 } from './entities/insurance-claim.entity.js';
 import { InsuranceClaimNumberGeneratorService } from './insurance-claim-number-generator.service.js';
+import { InvoicesService } from '../billing/invoices.service.js';
 
 export interface CreatePayerInput {
   name: string;
@@ -82,6 +84,7 @@ export class InsuranceClaimsService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly claimNumberGenerator: InsuranceClaimNumberGeneratorService,
     private readonly tenantContext: TenantContextService,
+    private readonly invoicesService: InvoicesService,
   ) {}
 
   /**
@@ -171,7 +174,7 @@ export class InsuranceClaimsService {
   // ---------- Policies ----------
 
   async createPolicy(input: CreatePolicyInput): Promise<PatientPolicy> {
-    this.validatePolicyInput(input);
+    this.validatePolicyInput(input, true);
     if (new Date(input.coverageStartDate) > new Date(input.coverageEndDate)) {
       throw new BadRequestException('coverageStartDate must not be after coverageEndDate');
     }
@@ -188,19 +191,35 @@ export class InsuranceClaimsService {
         throw new NotFoundException(`Patient ${input.patientId} not found`);
       }
 
-      return manager.getRepository(PatientPolicy).save(
-        manager.getRepository(PatientPolicy).create({
-          patientId: input.patientId,
-          payerId: input.payerId,
-          policyNumber: input.policyNumber,
-          insuredName: input.insuredName ?? null,
-          relationshipToInsured: input.relationshipToInsured ?? null,
-          coverageStartDate: input.coverageStartDate,
-          coverageEndDate: input.coverageEndDate,
-          sumInsured: input.sumInsured,
-          copayPercent: input.copayPercent ?? 0,
-        }),
-      );
+      // At most one policy per (patient, payer, policyNumber) — the same insurance policy
+      // entered twice would double-count coverage (code-review-findings-2026-08-25 P3).
+      const repository = manager.getRepository(PatientPolicy);
+      try {
+        return await repository.save(
+          repository.create({
+            patientId: input.patientId,
+            payerId: input.payerId,
+            policyNumber: input.policyNumber,
+            insuredName: input.insuredName ?? null,
+            relationshipToInsured: input.relationshipToInsured ?? null,
+            coverageStartDate: input.coverageStartDate,
+            coverageEndDate: input.coverageEndDate,
+            sumInsured: input.sumInsured,
+            copayPercent: input.copayPercent ?? 0,
+          }),
+        );
+      } catch (error) {
+        // Race-safety backstop for the pre-check above (unique index, migration 0083).
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint === 'UQ_patient_policies_patient_payer_number'
+        ) {
+          throw new ConflictException(
+            `A policy with number ${input.policyNumber} already exists for this patient under payer ${input.payerId}`,
+          );
+        }
+        throw error;
+      }
     });
   }
 
@@ -226,12 +245,30 @@ export class InsuranceClaimsService {
   }
 
   async updatePolicy(id: string, input: UpdatePolicyInput): Promise<PatientPolicy> {
-    this.validatePolicyInput(input);
+    // Partial update: policyNumber is NOT required here (it's a create-only requirement) —
+    // previously the shared validator demanded it even for a one-field update, making the
+    // endpoint unusable (code-review-findings-2026-08-25 P2).
+    this.validatePolicyInput(input, false);
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(PatientPolicy);
       const policy = await repository.findOne({ where: { id } });
       if (!policy) {
         throw new NotFoundException(`Patient policy ${id} not found`);
+      }
+      // Coverage terms are the basis every approved claim was capped against (sumInsured at
+      // approval, the window at eligibility) — once claims exist, changing them would
+      // retroactively invalidate approvals (code-review-findings-2026-08-25 P3). Administrative
+      // fields (policyNumber/insuredName/relationship) stay editable.
+      if (input.sumInsured !== undefined || input.coverageStartDate !== undefined || input.coverageEndDate !== undefined) {
+        const claims = await manager.query(
+          `SELECT 1 FROM insurance_claims WHERE "policyId" = $1 LIMIT 1`,
+          [id],
+        );
+        if (claims.length > 0) {
+          throw new ConflictException(
+            `Patient policy ${id} has claims; its coverage terms (sumInsured / coverage window) cannot be changed`,
+          );
+        }
       }
       if (input.policyNumber !== undefined) policy.policyNumber = input.policyNumber;
       if (input.insuredName !== undefined) policy.insuredName = input.insuredName;
@@ -274,7 +311,7 @@ export class InsuranceClaimsService {
     });
   }
 
-  /** Eligibility check: policy active AND the given date falls inside the coverage window. */
+  /** Eligibility check: policy active AND its payer active AND the date inside the coverage window. */
   async checkCoverage(policyId: string, date: string = new Date().toISOString().slice(0, 10)): Promise<CoverageResult> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const policy = await manager.getRepository(PatientPolicy).findOne({ where: { id: policyId } });
@@ -282,8 +319,11 @@ export class InsuranceClaimsService {
         throw new NotFoundException(`Patient policy ${policyId} not found`);
       }
       const payer = await manager.getRepository(InsurancePayer).findOne({ where: { id: policy.payerId } });
+      // A deactivated payer cannot underwrite new coverage — eligibility must not ignore it
+      // (code-review-findings-2026-08-25 P3).
+      const payerActive = payer?.isActive === true;
       const inWindow = date >= policy.coverageStartDate && date <= policy.coverageEndDate;
-      const eligible = policy.isActive && inWindow;
+      const eligible = policy.isActive && inWindow && payerActive;
       return {
         eligible,
         policyId: policy.id,
@@ -292,7 +332,13 @@ export class InsuranceClaimsService {
         coverageEndDate: policy.coverageEndDate,
         copayPercent: policy.copayPercent,
         sumInsured: policy.sumInsured,
-        reason: eligible ? undefined : !policy.isActive ? 'policy-inactive' : 'outside-coverage-window',
+        reason: eligible
+          ? undefined
+          : !policy.isActive
+            ? 'policy-inactive'
+            : !payerActive
+              ? 'payer-inactive'
+              : 'outside-coverage-window',
       };
     });
   }
@@ -389,7 +435,9 @@ export class InsuranceClaimsService {
     });
   }
 
-  /** Draft -> Submitted: the submitter is the authenticated actor (audit-relevant). */
+  /** Draft -> Submitted: the submitter is the authenticated actor (audit-relevant). The
+   *  processed* fields are stamped only at adjudication (approve/reject) — submitting is not a
+   *  decision (code-review-findings-2026-08-25 P2). */
   async submitClaim(id: string, actor?: string): Promise<InsuranceClaim> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(InsuranceClaim);
@@ -403,8 +451,6 @@ export class InsuranceClaimsService {
       claim.status = 'Submitted';
       claim.submittedBy = this.resolveActor(actor);
       claim.submittedAt = new Date();
-      claim.processedBy = this.resolveActor(actor);
-      claim.processedAt = new Date();
       return repository.save(claim);
     });
   }
@@ -481,7 +527,13 @@ export class InsuranceClaimsService {
     });
   }
 
-  /** Approved -> Paid: the payer has reimbursed; amountApproved must have been set. */
+  /**
+   * Approved -> Paid: the payer has reimbursed. Moves money — records an 'Insurance' payment
+   * against the claim's invoice (which also posts the Cash/AR journal), so the insurer-settled
+   * invoice stops reading Unpaid (code-review-findings-2026-08-25 P2). The payment is recorded
+   * FIRST and the claim flips to Paid only after it succeeds, so a failed settlement leaves the
+   * claim Approved rather than falsely Paid. amountApproved must have been set.
+   */
   async markClaimPaid(id: string, actor?: string): Promise<InsuranceClaim> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(InsuranceClaim);
@@ -492,6 +544,20 @@ export class InsuranceClaimsService {
       if (claim.status !== 'Approved') {
         throw new ConflictException(`Insurance claim ${id} must be Approved to be paid (current: ${claim.status})`);
       }
+      if (claim.amountApproved === null || claim.amountApproved <= 0) {
+        throw new ConflictException(`Insurance claim ${id} has no amountApproved to settle`);
+      }
+
+      // Runs in its own transaction (recordPayment opens one); the payment is the money-moving
+      // step, so it must succeed before the claim is marked Paid. Fail-loud: an amountApproved
+      // exceeding the invoice's outstanding balance (e.g. the patient already paid in full) is
+      // rejected rather than silently capped — billing staff resolves the mismatch.
+      await this.invoicesService.recordPayment(claim.invoiceId, {
+        amount: claim.amountApproved,
+        paymentMode: 'Insurance',
+        receivedBy: this.resolveActor(actor),
+      });
+
       claim.status = 'Paid';
       claim.processedBy = this.resolveActor(actor);
       claim.processedAt = new Date();
@@ -499,7 +565,7 @@ export class InsuranceClaimsService {
     });
   }
 
-  private validatePolicyInput(input: Partial<CreatePolicyInput>): void {
+  private validatePolicyInput(input: Partial<CreatePolicyInput>, requirePolicyNumber: boolean): void {
     if (input.sumInsured !== undefined && (!Number.isFinite(input.sumInsured) || input.sumInsured < 0)) {
       throw new BadRequestException('sumInsured must be a non-negative number');
     }
@@ -509,7 +575,7 @@ export class InsuranceClaimsService {
     ) {
       throw new BadRequestException('copayPercent must be between 0 and 100');
     }
-    if (!input.policyNumber?.trim()) {
+    if (requirePolicyNumber && !input.policyNumber?.trim()) {
       throw new BadRequestException('policyNumber is required');
     }
   }

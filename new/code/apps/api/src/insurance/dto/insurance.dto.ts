@@ -155,7 +155,7 @@ export class CheckCoverageQueryDto {
   date?: string;
 }
 
-export class ListClaimsQueryDto {
+export class ListClaimsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   patientId?: string;

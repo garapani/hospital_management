@@ -24,16 +24,17 @@ describe('InsuranceClaimsService (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'insurance' });
-    insuranceService = new InsuranceClaimsService(
-      ctx.tenantConnection,
-      new InsuranceClaimNumberGeneratorService(ctx.tenantConnection),
-      ctx.tenantContext,
-    );
     patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
     invoicesService = new InvoicesService(
       ctx.tenantConnection,
       ctx.tenantContext,
       new AccountingService(ctx.tenantConnection, new JournalNumberGeneratorService(ctx.tenantConnection), ctx.tenantContext),
+    );
+    insuranceService = new InsuranceClaimsService(
+      ctx.tenantConnection,
+      new InsuranceClaimNumberGeneratorService(ctx.tenantConnection),
+      ctx.tenantContext,
+      invoicesService,
     );
   });
 
@@ -210,6 +211,108 @@ describe('InsuranceClaimsService (integration)', () => {
     const paid = await withActor(() => insuranceService.markClaimPaid(claim.id));
     expect(paid.status).toBe('Paid');
     expect(paid.processedBy).toBe(AUTHENTICATED_ACCOUNT);
+
+    // markClaimPaid moves money: an 'Insurance' payment lands on the invoice (P2).
+    const invoiceAfter = await ctx.inTenant(() => invoicesService.findOne(invoice.id));
+    expect(invoiceAfter.payments).toHaveLength(1);
+    expect(invoiceAfter.payments[0].paymentMode).toBe('Insurance');
+    expect(invoiceAfter.payments[0].amount).toBe(1100);
+    expect(invoiceAfter.paidAmount).toBe(1100);
+    expect(invoiceAfter.status).toBe('PartiallyPaid');
+  });
+
+  it('supports partial policy updates without resending policyNumber', async () => {
+    const patient = await makePatient();
+    const payer = await makePayer('Partial Update Payer');
+    const policy = await makePolicy(patient.id, payer.id);
+
+    // A one-field update must not demand policyNumber (previously the shared validator required
+    // it, making the endpoint unusable for partial updates).
+    const updated = await ctx.inTenant(() =>
+      insuranceService.updatePolicy(policy.id, { insuredName: 'Renamed Insured' }),
+    );
+    expect(updated.insuredName).toBe('Renamed Insured');
+    expect(updated.policyNumber).toBe(policy.policyNumber);
+
+    // Administrative fields stay editable.
+    const renumbered = await ctx.inTenant(() =>
+      insuranceService.updatePolicy(policy.id, { policyNumber: 'POL-RENUMBERED' }),
+    );
+    expect(renumbered.policyNumber).toBe('POL-RENUMBERED');
+  });
+
+  it('freezes coverage terms once a policy has claims', async () => {
+    const patient = await makePatient();
+    const payer = await makePayer('Freeze Payer');
+    const policy = await makePolicy(patient.id, payer.id);
+    const invoice = await makeInvoice(patient.id);
+    await ctx.inTenant(() =>
+      insuranceService.createClaim({
+        patientId: patient.id,
+        policyId: policy.id,
+        invoiceId: invoice.id,
+        amountClaimed: 500,
+        submittedBy: STAFF_ID,
+      }),
+    );
+
+    // Coverage terms are the basis of approvals — frozen once claims exist (P3).
+    await expect(
+      ctx.inTenant(() => insuranceService.updatePolicy(policy.id, { sumInsured: 100000 })),
+    ).rejects.toThrow(ConflictException);
+    await expect(
+      ctx.inTenant(() => insuranceService.updatePolicy(policy.id, { coverageEndDate: '2030-12-31' })),
+    ).rejects.toThrow(ConflictException);
+
+    // Administrative fields are still fine.
+    const updated = await ctx.inTenant(() =>
+      insuranceService.updatePolicy(policy.id, { insuredName: 'Still Editable' }),
+    );
+    expect(updated.insuredName).toBe('Still Editable');
+  });
+
+  it('rejects a duplicate policy for the same patient/payer/number', async () => {
+    const patient = await makePatient();
+    const payer = await makePayer('Dup Payer');
+    await makePolicy(patient.id, payer.id, { policyNumber: 'POL-DUP-1' });
+
+    await expect(
+      ctx.inTenant(() =>
+        insuranceService.createPolicy({
+          patientId: patient.id,
+          payerId: payer.id,
+          policyNumber: 'POL-DUP-1',
+          coverageStartDate: '2024-01-01',
+          coverageEndDate: '2026-12-31',
+          sumInsured: 500000,
+        }),
+      ),
+    ).rejects.toThrow(ConflictException);
+
+    // Same number under a DIFFERENT payer is a distinct policy — allowed.
+    const otherPayer = await makePayer('Other Payer');
+    const distinct = await ctx.inTenant(() =>
+      insuranceService.createPolicy({
+        patientId: patient.id,
+        payerId: otherPayer.id,
+        policyNumber: 'POL-DUP-1',
+        coverageStartDate: '2024-01-01',
+        coverageEndDate: '2026-12-31',
+        sumInsured: 500000,
+      }),
+    );
+    expect(distinct.payerId).toBe(otherPayer.id);
+  });
+
+  it('treats a deactivated payer as ineligible in checkCoverage', async () => {
+    const patient = await makePatient();
+    const payer = await makePayer('Deact Payer');
+    const policy = await makePolicy(patient.id, payer.id);
+    await ctx.inTenant(() => insuranceService.deactivatePayer(payer.id));
+
+    const coverage = await ctx.inTenant(() => insuranceService.checkCoverage(policy.id, '2026-06-01'));
+    expect(coverage.eligible).toBe(false);
+    expect(coverage.reason).toBe('payer-inactive');
   });
 
   // Regression tests for the P1 in code-review-findings-2026-08-25.md: nothing capped total
