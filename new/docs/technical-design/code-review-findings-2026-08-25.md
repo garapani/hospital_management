@@ -281,9 +281,9 @@ the root `CLAUDE.md`.
 - [x] **P3** — No index on `status`/`assigneeAccountId`/`createdAt`. (`migrations/0044-create-helpdesk-tables.ts:9-25`) — **Fixed 2026-08-26:** migration 0088 adds the three list-filter indexes (`status`, `assigneeAccountId`, `createdAt DESC`).
 
 ### marketing
-- [ ] **P3** — Referral sources have no uniqueness at any layer. (`marketing/marketing.service.ts:59-76`)
-- [ ] **P3** — Write-path ids validated as strings while the read path uses UUID checks. (`dto/marketing.dto.ts:25,28,47-53`)
-- [ ] **P3** — Front desk can't record a referral, despite capturing it at registration. (`rbac/seed-rbac-catalog.ts:629-632`)
+- [x] **P3** — Referral sources have no uniqueness at any layer. (`marketing/marketing.service.ts:59-76`) — **Fixed 2026-08-26:** added `UQ_referral_sources_name` (migration 0089) plus a conflict catch in `createSource` mapping it to a 409, same shape as the lab/inventory code-uniqueness fixes.
+- [x] **P3** — Write-path ids validated as strings while the read path uses UUID checks. (`dto/marketing.dto.ts:25,28,47-53`) — **Fixed 2026-08-26:** `RecordReferralDto`'s `patientId`/`sourceId`/`referredByDoctorId` switched to `@IsUUID`, matching the read DTOs — a bad id now 400s at the pipe instead of 500ing on the FK.
+- [x] **P3** — Front desk can't record a referral, despite capturing it at registration. (`rbac/seed-rbac-catalog.ts:629-632`) — **Fixed 2026-08-26:** added a `marketing.create` permission (record referrals) granted to Super Admin / Hospital Admin / Receptionist / Front Desk / Billing/Accounts Staff — recording a referral no longer requires full `marketing.manage`; `POST /marketing/referrals` now uses it.
 
 ### reporting
 - [ ] **P2** — The revenue dashboard double-counts deposit-funded payments and ignores refunds. (`reporting/reporting-query.service.ts:32,92-115`)

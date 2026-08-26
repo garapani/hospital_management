@@ -3953,3 +3953,23 @@ learn the new reality: they assigned to a bare UUID with no backing row, which t
 correctly rejects — the fixtures now seed the account (the pattern established by the
 notifications subscriber spec). The list-filter indexes (`status`/`assigneeAccountId`/`createdAt
 DESC`, migration 0088) round out the batch.
+
+## 101. Marketing P3 batch: source-name uniqueness, UUID write-path validation, and a
+    marketing.create permission for the front desk (2026-08-26)
+
+Three P3s, closing out the marketing section — all pattern-fills this file has now established.
+
+**Source-name uniqueness** is the lab_tests shape for the fourth time (`UQ_referral_sources_name`,
+migration 0089, plus the constraint-name-checked 409 catch in `createSource`) — referral sources
+with duplicate names would make the picker ambiguous and the referral source-identity unreliable.
+
+**Write-path ids matched the read path's `@IsUUID`** — `RecordReferralDto` had `@IsString` on its
+uuid columns while `ListReferralsQueryDto` correctly used `@IsUUID`, so a bad id 400'd on reads
+but raw-500'd on the FK at write. This is the recurring "string-typed fields against uuid columns"
+class (see the platform cross-cutting P3 that names it); each module batch keeps fixing its own
+instance.
+
+**`marketing.create` split the referral action off `marketing.manage`** — same "broad grant for
+the common action, narrow grant for management" shape as `helpdesk.create` (§100) and
+`notification.read` (§99): front-desk roles (Receptionist / Front Desk, Billing/Accounts Staff)
+can record a referral at registration without being able to manage the source catalog.
