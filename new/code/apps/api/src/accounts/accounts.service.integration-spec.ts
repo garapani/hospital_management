@@ -67,8 +67,13 @@ describe('AccountsService (integration)', () => {
 
     const helpdeskRole = await ctx.dataSource.getRepository(Role).findOneOrFail({ where: { name: 'Helpdesk Agent' } });
     const permissionsForHelpdesk = await ctx.accountsService.getPermissionNamesForRoles([helpdeskRole.id]);
-    // Helpdesk Agent's first grants landed with the Helpdesk module (2026-08-20).
-    expect(permissionsForHelpdesk.sort()).toEqual(['helpdesk.manage', 'helpdesk.read']);
+    // Helpdesk Agent's grants: helpdesk module (2026-08-20) plus the universal notification.read
+    // (2026-08-26, notifications P2 — granted to every catalog role).
+    expect(permissionsForHelpdesk.sort()).toEqual([
+      'helpdesk.manage',
+      'helpdesk.read',
+      'notification.read',
+    ]);
   });
 
   it('creates a staff account with needsPasswordUpdate set when requested', async () => {

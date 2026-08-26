@@ -389,6 +389,13 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     description: 'Manage helpdesk tickets',
   },
   {
+    // Notifications are self-scoped (recipient-only), but the controller's PermissionGuard was
+    // decorative — no permission existed, so the gate always passed. A real permission makes
+    // the gate meaningful (code-review-findings-2026-08-25 notifications P2).
+    name: 'notification.read',
+    description: 'View and mark your own notifications',
+  },
+  {
     name: 'marketing.read',
     description: 'View referral sources and patient referrals',
   },
@@ -519,6 +526,22 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Super Admin', permissionName: 'reporting.read' },
   { roleName: 'Hospital Admin', permissionName: 'reporting.read' },
   { roleName: 'Auditor/Compliance', permissionName: 'reporting.read' },
+  // notification.read goes to every catalog role — notifications are self-scoped (recipient-only),
+  // so the permission gates "may use the notifications feature" rather than "may see others'".
+  { roleName: 'Super Admin', permissionName: 'notification.read' },
+  { roleName: 'Hospital Admin', permissionName: 'notification.read' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'notification.read' },
+  { roleName: 'Doctor', permissionName: 'notification.read' },
+  { roleName: 'Nurse', permissionName: 'notification.read' },
+  { roleName: 'Lab Technician', permissionName: 'notification.read' },
+  { roleName: 'Radiology Technician', permissionName: 'notification.read' },
+  { roleName: 'Pharmacist', permissionName: 'notification.read' },
+  { roleName: 'Billing/Accounts Staff', permissionName: 'notification.read' },
+  { roleName: 'Inventory/Store Manager', permissionName: 'notification.read' },
+  { roleName: 'HR/Payroll Admin', permissionName: 'notification.read' },
+  { roleName: 'Helpdesk Agent', permissionName: 'notification.read' },
+  { roleName: 'Auditor/Compliance', permissionName: 'notification.read' },
+  { roleName: 'Patient', permissionName: 'notification.read' },
   // audit.read: the trail is read by the auditor and by admins (who already had it via the
   // reporting.read reuse) — Auditor/Compliance's audit mandate is PRD §6.1.
   { roleName: 'Super Admin', permissionName: 'audit.read' },

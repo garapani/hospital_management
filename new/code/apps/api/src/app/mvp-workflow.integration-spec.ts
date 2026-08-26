@@ -62,6 +62,7 @@ describe('MVP end-to-end workflow (integration)', () => {
     'encounter.manage',
     'encounter.read',
     'triage.read',
+    'notification.read',
     'employee.read',
     'employee.manage',
     'payroll.read',
