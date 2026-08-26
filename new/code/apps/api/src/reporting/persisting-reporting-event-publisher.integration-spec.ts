@@ -11,6 +11,7 @@ import { AdmissionsService } from '../admissions/admissions.service.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { InvoicesService } from '../billing/invoices.service.js';
 import { DepositsService } from '../billing/deposits.service.js';
+import { ReportingQueryService } from './reporting-query.service.js';
 import { AuditRecord } from '../audit/entities/audit-record.entity.js';
 import { ReportingEvent } from './entities/reporting-event.entity.js';
 import { PersistingReportingEventPublisher } from './persisting-reporting-event-publisher.js';
@@ -38,6 +39,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
   let ordersService: OrdersService;
   let invoicesService: InvoicesService;
   let depositsService: DepositsService;
+  let reportingQueryService: ReportingQueryService;
 
   const DOCTOR_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -61,6 +63,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     ordersService = moduleFixture.get(OrdersService);
     invoicesService = moduleFixture.get(InvoicesService);
     depositsService = moduleFixture.get(DepositsService);
+    reportingQueryService = moduleFixture.get(ReportingQueryService);
   });
 
   afterAll(async () => {
@@ -580,6 +583,50 @@ describe('PersistingReportingEventPublisher (integration)', () => {
 
       const orderEvents = await getEvents(ctx.tenantId, 'OrderPlaced');
       expect(orderEvents.map((e) => e.entityId)).not.toContain(order.id);
+    });
+  });
+
+  it('revenue excludes deposits and subtracts returns (reporting P2 regression)', async () => {
+    // Runs in its own tenant so the aggregate is free of the other tests' events. The old query
+    // summed PaymentRecorded + DepositReceived (double-counting a deposit that later funds a
+    // payment) and never subtracted returns.
+    const revenueCtx = await ctx.createTenant();
+    await inTenant(revenueCtx.tenantId, async () => {
+      const patient = await patientsService.create({
+        firstName: 'Revenue',
+        lastName: 'Test',
+        dateOfBirth: '1990-01-01',
+        gender: 'Female',
+        phoneNumber: '5560000999',
+      });
+
+      // Deposit: 5000 held, NOT revenue.
+      await depositsService.create({ patientId: patient.id, amount: 5000, receivedBy: DOCTOR_ID });
+      // Cash payment: 2000 — revenue.
+      const invoice = await invoicesService.create({
+        patientId: patient.id,
+        createdBy: DOCTOR_ID,
+        items: [{ description: 'Consultation', unitPrice: 2000 }],
+      });
+      await invoicesService.recordPayment(invoice.id, {
+        amount: 2000,
+        paymentMode: 'Cash',
+        receivedBy: DOCTOR_ID,
+      });
+      // Return: 500 — subtracted.
+      await invoicesService.createReturn(invoice.id, {
+        amount: 500,
+        reason: 'Partial refund',
+        returnedBy: DOCTOR_ID,
+      });
+
+      const revenue = await inTenant(revenueCtx.tenantId, () =>
+        reportingQueryService.getRevenue({ from: '2026-01-01', to: '2026-12-31' }),
+      );
+      const total = revenue.reduce((sum, row) => sum + row.totalAmount, 0);
+      // 2000 payment - 500 return = 1500; the 5000 deposit is excluded (it becomes revenue only
+      // when a PaymentRecorded event fires for the payment it funds).
+      expect(total).toBe(1500);
     });
   });
 });

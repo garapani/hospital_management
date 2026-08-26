@@ -2,15 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { PdfService } from '@hospital/pdf';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { ReportingEvent } from './entities/reporting-event.entity.js';
+import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
 import { toCsv } from './reporting-csv.util.js';
 import { buildReportingEventsPdfDocument } from './reporting-events-pdf-document.js';
 
-export interface ListEventsParams {
+export interface ListEventsParams extends PaginationQueryDto {
   eventType?: string;
   from?: string;
   to?: string;
-  page?: number;
-  limit?: number;
 }
 
 export interface DateRangeParams {
@@ -29,7 +28,14 @@ export interface RevenueRow {
   totalAmount: number;
 }
 
-const REVENUE_EVENT_TYPES = ['PaymentRecorded', 'DepositReceived'];
+// Revenue = money collected through payments minus money returned — the dashboard's old
+// "PaymentRecorded + DepositReceived" sum double-counted deposit-funded payments (a deposit
+// funds a payment, which fires BOTH events) and ignored refunds entirely
+// (code-review-findings-2026-08-25 reporting P2). A deposit is patient money held, not revenue;
+// the PaymentRecorded event it eventually funds is the revenue event. InvoiceReturned (the
+// `returns` insert, added to the reporting subscriber) subtracts.
+const REVENUE_POSITIVE_EVENT_TYPES = ['PaymentRecorded'];
+const REVENUE_NEGATIVE_EVENT_TYPES = ['InvoiceReturned'];
 
 @Injectable()
 export class ReportingQueryService {
@@ -38,11 +44,8 @@ export class ReportingQueryService {
     private readonly pdfService: PdfService,
   ) {}
 
-  async listEvents(params: ListEventsParams): Promise<{ items: ReportingEvent[]; total: number }> {
-    const page = params.page ?? 1;
-    const limit = params.limit ?? 50;
-
-    return this.tenantConnection.runInTenantSchema(async (manager) => {
+  async listEvents(params: ListEventsParams): Promise<PaginatedResponseDto<ReportingEvent>> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
       const qb = manager.createQueryBuilder(ReportingEvent, 'e').orderBy('e.occurredAt', 'DESC');
 
       if (params.eventType) {
@@ -55,10 +58,9 @@ export class ReportingQueryService {
         qb.andWhere('e.occurredAt <= :to', { to: params.to });
       }
 
-      qb.skip((page - 1) * limit).take(limit);
-
-      const [items, total] = await qb.getManyAndCount();
-      return { items, total };
+      // Shared pagination contract ({ data, meta }) — reporting previously hand-rolled a
+      // divergent { items, total } shape (code-review-findings-2026-08-25 reporting P2).
+      return paginate(qb, params);
     });
   }
 
@@ -94,8 +96,18 @@ export class ReportingQueryService {
       const qb = manager
         .createQueryBuilder(ReportingEvent, 'e')
         .select(`date_trunc('day', e.occurredAt)`, 'date')
-        .addSelect(`SUM((e.payload->>'amount')::numeric)`, 'totalAmount')
-        .where('e.eventType IN (:...types)', { types: REVENUE_EVENT_TYPES })
+        // PaymentRecorded adds, InvoiceReturned subtracts — one pass, net revenue per day
+        // (the old query summed both event types as positive, double-counting deposits and
+        // ignoring refunds; reporting P2).
+        .addSelect(
+          `SUM(CASE WHEN e.eventType = 'PaymentRecorded'
+               THEN (e.payload->>'amount')::numeric
+               ELSE -((e.payload->>'amount')::numeric) END)`,
+          'totalAmount',
+        )
+        .where('e.eventType IN (:...types)', {
+          types: [...REVENUE_POSITIVE_EVENT_TYPES, ...REVENUE_NEGATIVE_EVENT_TYPES],
+        })
         .groupBy(`date_trunc('day', e.occurredAt)`)
         .orderBy('date', 'ASC');
 
@@ -125,11 +137,13 @@ export class ReportingQueryService {
     };
   }
 
-  /** Whole-set CSV export (capped at 10000 rows) of the events archive matching the filters. */
+  /** Whole-set CSV export (capped at 10000 rows — the cap is what bounds the in-memory
+   *  materialization; true response streaming is a larger response-layer feature, per the
+   *  findings note) of the events archive matching the filters. */
   async exportEventsCsv(params: ListEventsParams): Promise<string> {
-    const { items } = await this.listEvents({ ...params, page: 1, limit: 10000 });
+    const { data } = await this.listEvents({ ...params, page: 1, limit: 10000 });
     const columns = ['id', 'occurredAt', 'eventType', 'entityId', 'correlationId', 'payload'];
-    return toCsv(items.map((e) => this.mapEventToExportRow(e)), columns);
+    return toCsv(data.map((e) => this.mapEventToExportRow(e)), columns);
   }
 
   /** CSV export of the daily revenue aggregates. */
@@ -141,11 +155,11 @@ export class ReportingQueryService {
   /** Whole-set PDF export (capped at 500 rows to prevent event-loop blocking) of the events archive matching
    *  the filters, via the shared `@hospital/pdf` lib. */
   async exportEventsPdf(params: ListEventsParams): Promise<Buffer> {
-    const { items, total } = await this.listEvents({ ...params, page: 1, limit: 500 });
+    const { data, meta } = await this.listEvents({ ...params, page: 1, limit: 500 });
     return this.pdfService.render(
       buildReportingEventsPdfDocument({
-        rows: items.map((e) => this.mapEventToExportRow(e)),
-        totalMatching: total,
+        rows: data.map((e) => this.mapEventToExportRow(e)),
+        totalMatching: meta.total,
         eventType: params.eventType,
         from: params.from,
         to: params.to,

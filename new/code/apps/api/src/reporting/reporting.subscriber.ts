@@ -4,6 +4,7 @@ import { Order } from '../orders/entities/order.entity.js';
 import { Invoice } from '../billing/entities/invoice.entity.js';
 import { Payment } from '../billing/entities/payment.entity.js';
 import { Deposit } from '../billing/entities/deposit.entity.js';
+import { Return } from '../billing/entities/return.entity.js';
 import { Admission } from '../admissions/entities/admission.entity.js';
 import { BedTransfer } from '../admissions/entities/bed-transfer.entity.js';
 import { PersistingReportingEventPublisher } from './persisting-reporting-event-publisher.js';
@@ -71,6 +72,19 @@ export class ReportingSubscriber implements EntitySubscriberInterface {
         buildPayload: (entity: Deposit) => ({
           depositId: entity.id,
           patientId: entity.patientId,
+          amount: entity.amount,
+        }),
+      },
+    ],
+    [
+      Return,
+      {
+        // A return/credit note reduces what the hospital actually collected — the revenue
+        // dashboard subtracts these (reporting P2).
+        eventType: 'InvoiceReturned',
+        buildPayload: (entity: Return) => ({
+          returnId: entity.id,
+          invoiceId: entity.invoiceId,
           amount: entity.amount,
         }),
       },
