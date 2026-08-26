@@ -1,6 +1,10 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { FixedAssetsService, computeStraightLineValuation } from './fixed-assets.service.js';
 import { FixedAssetNumberGeneratorService } from './fixed-asset-number-generator.service.js';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
+import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
+import { JournalEntry, JournalLine } from '../accounting/entities/journal-entry.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -17,6 +21,11 @@ describe('FixedAssetsService (integration)', () => {
       ctx.tenantConnection,
       new FixedAssetNumberGeneratorService(ctx.tenantConnection),
       ctx.tenantContext,
+      new AccountingService(
+        ctx.tenantConnection,
+        new JournalNumberGeneratorService(ctx.tenantConnection),
+        ctx.tenantContext,
+      ),
     );
   });
 
@@ -287,5 +296,98 @@ describe('FixedAssetsService (integration)', () => {
       const forPeriod = await ctx.inTenant(() => fixedAssetsService.listDepreciationEntries({ month: 5, year: 2025 }));
       expect(forPeriod.data.map((e: { assetId: string }) => e.assetId)).toEqual(expect.arrayContaining([assetA.id, assetB.id]));
     });
+
+    it('back-filling an earlier period charges the incremental amount, not ₹0', async () => {
+      // P2: the prior-entry lookup used to take the highest period OVERALL — so a back-fill of
+      // an earlier period compared its (smaller) accumulated figure against a later period's and
+      // silently booked ₹0. The prior entry must be the latest one strictly before the period.
+      const category = await makeCategory('accrual-backfill');
+      const asset = await makeAsset(category.id, { purchaseCost: 120000, usefulLifeYears: 10, purchaseDate: '2024-01-01' });
+
+      // Forward run: period 6/2025 -> 18 months elapsed -> accumulated 18000.
+      await withActor(() => fixedAssetsService.runDepreciationAccrual(6, 2025));
+      // Back-fill: period 3/2025 -> 15 months elapsed -> accumulated 15000; prior-before-3 is
+      // nothing, so the charge is the full 15000, NOT max(0, 15000 - 18000) = 0.
+      const backfilled = await withActor(() => fixedAssetsService.runDepreciationAccrual(3, 2025));
+      const entry = backfilled.find((e) => e.assetId === asset.id)!;
+      expect(entry.depreciationAmount).toBe(15000);
+      expect(entry.accumulatedDepreciation).toBe(15000);
+    });
+
+    it('posts a Depreciation Expense / Accumulated Depreciation journal when a charge accrues', async () => {
+      const category = await makeCategory('accrual-ledger');
+      const asset = await makeAsset(category.id, { purchaseCost: 60000, usefulLifeYears: 5, purchaseDate: '2024-01-01' });
+      const entries = await withActor(() => fixedAssetsService.runDepreciationAccrual(2, 2025));
+      const entry = entries.find((e) => e.assetId === asset.id)!;
+      expect(entry.depreciationAmount).toBeGreaterThan(0);
+
+      const journal = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema(async (manager) => {
+          const journalEntry = await manager.getRepository(JournalEntry).findOne({
+            where: { sourceType: 'Depreciation', sourceId: entry.id },
+          });
+          if (!journalEntry) return null;
+          const lines = await manager.getRepository(JournalLine).find({ where: { journalId: journalEntry.id } });
+          return { ...journalEntry, lines };
+        }),
+      );
+      expect(journal).not.toBeNull();
+      expect(journal!.status).toBe('Posted');
+      expect(
+        journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.DEPRECIATION_EXPENSE)?.debit,
+      ).toBe(entry.depreciationAmount);
+      expect(
+        journal!.lines.find((line) => line.accountId === LEDGER_ACCOUNT_IDS.ACCUMULATED_DEPRECIATION)?.credit,
+      ).toBe(entry.depreciationAmount);
+    });
+  });
+
+  it('freezes the valuation inputs once depreciation entries exist', async () => {
+    const category = await makeCategory('freeze-valuation');
+    const asset = await makeAsset(category.id, { purchaseCost: 60000, usefulLifeYears: 5 });
+    await withActor(() => fixedAssetsService.runDepreciationAccrual(6, 2026));
+
+    // Cost/date/useful-life/salvage are what every persisted entry was computed from — frozen
+    // once entries exist (P2); administrative fields stay editable.
+    await expect(
+      ctx.inTenant(() => fixedAssetsService.updateAsset(asset.id, { purchaseCost: 70000 })),
+    ).rejects.toThrow(ConflictException);
+    await expect(
+      ctx.inTenant(() => fixedAssetsService.updateAsset(asset.id, { usefulLifeYears: 8 })),
+    ).rejects.toThrow(ConflictException);
+    await expect(
+      ctx.inTenant(() => fixedAssetsService.updateAsset(asset.id, { salvageValue: 5000 })),
+    ).rejects.toThrow(ConflictException);
+
+    const renamed = await ctx.inTenant(() =>
+      fixedAssetsService.updateAsset(asset.id, { name: 'Renamed after accrual' }),
+    );
+    expect(renamed.name).toBe('Renamed after accrual');
+  });
+
+  it('rejects a salvageValue above purchaseCost on create and update', async () => {
+    const category = await makeCategory('salvage-bound');
+    await expect(
+      ctx.inTenant(() =>
+        fixedAssetsService.createAsset({
+          categoryId: category.id,
+          name: 'Bad Salvage',
+          purchaseDate: '2024-01-01',
+          purchaseCost: 10000,
+          salvageValue: 15000,
+          usefulLifeYears: 5,
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    const asset = await makeAsset(category.id, { purchaseCost: 10000, usefulLifeYears: 5 });
+    await expect(
+      ctx.inTenant(() => fixedAssetsService.updateAsset(asset.id, { salvageValue: 20000 })),
+    ).rejects.toThrow(BadRequestException);
+    // And the combination: raising cost first, then a salvage above it, is caught post-update.
+    await ctx.inTenant(() => fixedAssetsService.updateAsset(asset.id, { purchaseCost: 25000 }));
+    await expect(
+      ctx.inTenant(() => fixedAssetsService.updateAsset(asset.id, { salvageValue: 30000 })),
+    ).rejects.toThrow(BadRequestException);
   });
 });

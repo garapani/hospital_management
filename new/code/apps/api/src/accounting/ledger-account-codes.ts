@@ -15,6 +15,9 @@
  *   note against Patient AR.
  * - SALARY_EXPENSE: Expense — debited when a payslip is marked Paid (payroll, migration 0085).
  * - SALARIES_PAYABLE: Liability — credited when a payslip is marked Paid (payroll, migration 0085).
+ * - DEPRECIATION_EXPENSE: Expense — debited when depreciation accrues (fixed-assets, migration 0086).
+ * - ACCUMULATED_DEPRECIATION: Asset (contra — carries a credit-normal balance), credited when
+ *   depreciation accrues (fixed-assets, migration 0086).
  */
 export const LEDGER_ACCOUNT_IDS = {
   PATIENT_ACCOUNTS_RECEIVABLE: '00000000-1000-4000-8000-000000000001',
@@ -24,4 +27,6 @@ export const LEDGER_ACCOUNT_IDS = {
   SALES_RETURNS: '00000000-1000-4000-8000-000000000005',
   SALARY_EXPENSE: '00000000-1000-4000-8000-000000000006',
   SALARIES_PAYABLE: '00000000-1000-4000-8000-000000000007',
+  DEPRECIATION_EXPENSE: '00000000-1000-4000-8000-000000000008',
+  ACCUMULATED_DEPRECIATION: '00000000-1000-4000-8000-000000000009',
 } as const;

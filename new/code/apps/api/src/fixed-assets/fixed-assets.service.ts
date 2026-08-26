@@ -10,6 +10,8 @@ import { FixedAssetNumberGeneratorService } from './fixed-asset-number-generator
 import { FixedAsset, FixedAssetCondition, FIXED_ASSET_CONDITIONS } from './entities/fixed-asset.entity.js';
 import { FixedAssetCategory } from './entities/fixed-asset-category.entity.js';
 import { AssetDepreciationEntry } from './entities/asset-depreciation-entry.entity.js';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
 
 export interface CreateFixedAssetCategoryInput {
@@ -111,12 +113,14 @@ export class FixedAssetsService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly assetNumberGenerator: FixedAssetNumberGeneratorService,
     private readonly tenantContext: TenantContextService,
+    private readonly accountingService: AccountingService,
   ) {}
 
   /** `accruedBy` derives from the authenticated principal (see §25) — money-relevant, like
-   *  payroll's processedBy. */
-  private resolveActor(): string {
-    return this.tenantContext.getAccountId() as string;
+   *  payroll's processedBy. The fallback parameter matches the sibling-module convention
+   *  (code-review-findings-2026-08-25 P3). */
+  private resolveActor(fallback?: string): string {
+    return this.tenantContext.getAccountId() ?? (fallback as string);
   }
 
   async createCategory(input: CreateFixedAssetCategoryInput): Promise<FixedAssetCategory> {
@@ -172,6 +176,11 @@ export class FixedAssetsService {
     }
     if (input.salvageValue !== undefined && (!Number.isFinite(input.salvageValue) || input.salvageValue < 0)) {
       throw new BadRequestException('salvageValue must be a non-negative number');
+    }
+    // salvageValue above purchaseCost would make the depreciable base negative
+    // (code-review-findings-2026-08-25 P3).
+    if (input.salvageValue !== undefined && input.salvageValue > input.purchaseCost) {
+      throw new BadRequestException('salvageValue cannot exceed purchaseCost');
     }
     if (input.condition && !FIXED_ASSET_CONDITIONS.includes(input.condition)) {
       throw new BadRequestException(`condition must be one of: ${FIXED_ASSET_CONDITIONS.join(', ')}`);
@@ -245,14 +254,14 @@ export class FixedAssetsService {
    * Re-runs are idempotent — an asset that already has an entry for (month, year) is skipped
    * rather than failing the whole run. Returns the entries created by this run.
    */
-  async runDepreciationAccrual(month: number, year: number): Promise<AssetDepreciationEntry[]> {
+  async runDepreciationAccrual(month: number, year: number, actor?: string): Promise<AssetDepreciationEntry[]> {
     if (!Number.isInteger(month) || month < 1 || month > 12) {
       throw new BadRequestException('month must be an integer between 1 and 12');
     }
     if (!Number.isInteger(year) || year < 1900 || year > 9999) {
       throw new BadRequestException('year must be an integer between 1900 and 9999');
     }
-    const accruedBy = this.resolveActor();
+    const accruedBy = this.resolveActor(actor);
     // First-of-next-month: computeStraightLineValuation's monthsInService counts full elapsed
     // calendar months up to `asOf`, so this asOf yields "accumulated through the end of `month`".
     const periodEnd = new Date(year, month, 1);
@@ -270,10 +279,21 @@ export class FixedAssetsService {
         if (existing) {
           continue;
         }
-        const priorEntry = await repository.findOne({
-          where: { assetId: asset.id },
-          order: { periodYear: 'DESC', periodMonth: 'DESC' },
-        });
+        // The prior entry is the latest one STRICTLY BEFORE this period — a back-fill of an
+        // earlier period must compare against what was accumulated before it, not the highest
+        // period overall, or the catch-up charge silently books ₹0
+        // (code-review-findings-2026-08-25 P2).
+        const priorEntry = await manager
+          .getRepository(AssetDepreciationEntry)
+          .createQueryBuilder('entry')
+          .where('entry.assetId = :assetId', { assetId: asset.id })
+          .andWhere(
+            '(entry.periodYear < :year OR (entry.periodYear = :year AND entry.periodMonth < :month))',
+            { year, month },
+          )
+          .orderBy('entry.periodYear', 'DESC')
+          .addOrderBy('entry.periodMonth', 'DESC')
+          .getOne();
         const valuation = computeStraightLineValuation(
           {
             purchaseDate: asset.purchaseDate,
@@ -287,19 +307,37 @@ export class FixedAssetsService {
         const depreciationAmount = roundMoney(
           Math.max(0, valuation.accumulatedDepreciation - priorAccumulated),
         );
-        created.push(
-          await repository.save(
-            repository.create({
-              assetId: asset.id,
-              periodMonth: month,
-              periodYear: year,
-              depreciationAmount,
-              accumulatedDepreciation: valuation.accumulatedDepreciation,
-              bookValue: valuation.bookValue,
-              accruedBy,
-            }),
-          ),
+        const entry = await repository.save(
+          repository.create({
+            assetId: asset.id,
+            periodMonth: month,
+            periodYear: year,
+            depreciationAmount,
+            accumulatedDepreciation: valuation.accumulatedDepreciation,
+            bookValue: valuation.bookValue,
+            accruedBy,
+          }),
         );
+        created.push(entry);
+
+        // Depreciation accrual posts to the ledger (Depreciation Expense / Accumulated
+        // Depreciation) at the moment the charge is booked (code-review-findings-2026-08-25 P2).
+        // A ₹0 charge (e.g. a fully-depreciated asset's trailing period) is a no-op row, not a
+        // journal — postAutoJournal rejects zero lines. Fail-loud otherwise: a charge that can't
+        // be booked should not silently accrue.
+        if (depreciationAmount > 0) {
+          await this.accountingService.postAutoJournal(manager, {
+            sourceType: 'Depreciation',
+            sourceId: entry.id,
+            entryDate: `${year}-${String(month).padStart(2, '0')}-01`,
+            narration: `Depreciation ${year}-${String(month).padStart(2, '0')} for asset ${asset.id}`,
+            actor: accruedBy,
+            lines: [
+              { accountId: LEDGER_ACCOUNT_IDS.DEPRECIATION_EXPENSE, debit: depreciationAmount },
+              { accountId: LEDGER_ACCOUNT_IDS.ACCUMULATED_DEPRECIATION, credit: depreciationAmount },
+            ],
+          });
+        }
       }
       return created;
     });
@@ -331,6 +369,26 @@ export class FixedAssetsService {
       if (!asset) {
         throw new NotFoundException(`Fixed asset ${id} not found`);
       }
+      // The valuation inputs (cost/date/useful life/salvage) are what every persisted
+      // depreciation entry was computed from — changing them after entries exist would make the
+      // history unre-statable and silently desync future catch-up charges
+      // (code-review-findings-2026-08-25 P2). Administrative fields stay editable.
+      const changesValuation =
+        input.purchaseCost !== undefined ||
+        input.purchaseDate !== undefined ||
+        input.usefulLifeYears !== undefined ||
+        input.salvageValue !== undefined;
+      if (changesValuation) {
+        const entries = await manager.query(
+          `SELECT 1 FROM asset_depreciation_entries WHERE "assetId" = $1 LIMIT 1`,
+          [id],
+        );
+        if (entries.length > 0) {
+          throw new ConflictException(
+            `Fixed asset ${id} has depreciation entries; its valuation inputs (cost/date/useful life/salvage) cannot be changed`,
+          );
+        }
+      }
       if (input.condition !== undefined) {
         if (!FIXED_ASSET_CONDITIONS.includes(input.condition)) {
           throw new BadRequestException(`condition must be one of: ${FIXED_ASSET_CONDITIONS.join(', ')}`);
@@ -354,6 +412,10 @@ export class FixedAssetsService {
           throw new BadRequestException('salvageValue must be a non-negative number');
         }
         asset.salvageValue = input.salvageValue;
+      }
+      // Post-update combination check: salvageValue must not exceed purchaseCost (P3).
+      if (asset.salvageValue > asset.purchaseCost) {
+        throw new BadRequestException('salvageValue cannot exceed purchaseCost');
       }
       if (input.name !== undefined) asset.name = input.name;
       if (input.description !== undefined) asset.description = input.description;
