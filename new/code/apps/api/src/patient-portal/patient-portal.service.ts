@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { EntityManager, In } from 'typeorm';
 import { TenantContextService } from '@hospital/tenant-context';
+import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Patient } from '../patients/entities/patient.entity.js';
 import { Appointment } from '../appointments/entities/appointment.entity.js';
@@ -30,6 +31,105 @@ export interface PatientResultView {
   verifiedAt: Date | null;
 }
 
+/** Patient-facing appointment view — excludes createdBy/updatedBy (internal staff account ids)
+ *  and cancelledRemarks (an internal front-desk note, not written for the patient to read). */
+export type PatientAppointmentView = Pick<
+  Appointment,
+  | 'id'
+  | 'patientId'
+  | 'firstName'
+  | 'lastName'
+  | 'contactNumber'
+  | 'appointmentDate'
+  | 'appointmentTime'
+  | 'doctorId'
+  | 'departmentId'
+  | 'appointmentType'
+  | 'status'
+  | 'reason'
+>;
+
+/** Patient-facing invoice view — excludes createdBy/updatedBy and the internal billing `notes`
+ *  field (not written for the patient to read). */
+export type PatientInvoiceView = Pick<
+  Invoice,
+  | 'id'
+  | 'patientId'
+  | 'sourceAppointmentId'
+  | 'sourceAdmissionId'
+  | 'invoiceNumber'
+  | 'financialYear'
+  | 'subtotal'
+  | 'discountAmount'
+  | 'taxableAmount'
+  | 'taxAmount'
+  | 'totalAmount'
+  | 'paidAmount'
+  | 'status'
+>;
+
+/** Patient-facing prescription view — excludes createdBy/updatedBy; `notes` is kept (medication
+ *  instructions are written for the patient, unlike the internal notes on the other two views). */
+export type PatientPrescriptionView = Pick<
+  Prescription,
+  | 'id'
+  | 'patientId'
+  | 'appointmentId'
+  | 'doctorId'
+  | 'medicationName'
+  | 'dosage'
+  | 'frequency'
+  | 'route'
+  | 'durationDays'
+  | 'notes'
+  | 'status'
+>;
+
+const APPOINTMENT_VIEW_COLUMNS: (keyof PatientAppointmentView)[] = [
+  'id',
+  'patientId',
+  'firstName',
+  'lastName',
+  'contactNumber',
+  'appointmentDate',
+  'appointmentTime',
+  'doctorId',
+  'departmentId',
+  'appointmentType',
+  'status',
+  'reason',
+];
+
+const INVOICE_VIEW_COLUMNS: (keyof PatientInvoiceView)[] = [
+  'id',
+  'patientId',
+  'sourceAppointmentId',
+  'sourceAdmissionId',
+  'invoiceNumber',
+  'financialYear',
+  'subtotal',
+  'discountAmount',
+  'taxableAmount',
+  'taxAmount',
+  'totalAmount',
+  'paidAmount',
+  'status',
+];
+
+const PRESCRIPTION_VIEW_COLUMNS: (keyof PatientPrescriptionView)[] = [
+  'id',
+  'patientId',
+  'appointmentId',
+  'doctorId',
+  'medicationName',
+  'dosage',
+  'frequency',
+  'route',
+  'durationDays',
+  'notes',
+  'status',
+];
+
 @Injectable()
 export class PatientPortalService {
   constructor(
@@ -54,6 +154,19 @@ export class PatientPortalService {
     return patientId;
   }
 
+  /**
+   * Rejects a deactivated patient's session — a patient's own already-issued JWT stays valid
+   * until it expires (no logout/revocation exists yet — a separate, already-tracked gap), so
+   * deactivation must be enforced here, on every read, not just at login. Every method below
+   * calls this before touching any other table.
+   */
+  private async assertPatientActive(manager: EntityManager, patientId: string): Promise<void> {
+    const patient = await manager.getRepository(Patient).findOne({ where: { id: patientId, isActive: true } });
+    if (!patient) {
+      throw new NotFoundException('Patient record not found');
+    }
+  }
+
   async getMe(): Promise<Pick<Patient, 'id' | 'patientNo' | 'firstName' | 'lastName' | 'email' | 'phoneNumber'>> {
     const patientId = this.requirePatientId();
     return this.tenantConnection.runInTenantSchema(async (manager) => {
@@ -66,28 +179,46 @@ export class PatientPortalService {
     });
   }
 
-  async listAppointments(): Promise<Appointment[]> {
+  async listAppointments(query: PaginationQueryDto = {}): Promise<PaginatedResponseDto<PatientAppointmentView>> {
     const patientId = this.requirePatientId();
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Appointment).find({
-        where: { patientId },
-        order: { appointmentDate: 'DESC', appointmentTime: 'DESC' },
-      }),
-    );
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      await this.assertPatientActive(manager, patientId);
+      const qb = manager
+        .createQueryBuilder(Appointment, 'appointment')
+        .select(APPOINTMENT_VIEW_COLUMNS.map((column) => `appointment.${column}`))
+        .where('appointment.patientId = :patientId', { patientId })
+        .orderBy('appointment.appointmentDate', 'DESC')
+        .addOrderBy('appointment.appointmentTime', 'DESC');
+      return paginate(qb, query);
+    });
   }
 
-  async listInvoices(): Promise<Invoice[]> {
+  async listInvoices(query: PaginationQueryDto = {}): Promise<PaginatedResponseDto<PatientInvoiceView>> {
     const patientId = this.requirePatientId();
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Invoice).find({ where: { patientId }, order: { createdAt: 'DESC' } }),
-    );
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      await this.assertPatientActive(manager, patientId);
+      const qb = manager
+        .createQueryBuilder(Invoice, 'invoice')
+        .select(INVOICE_VIEW_COLUMNS.map((column) => `invoice.${column}`))
+        .where('invoice.patientId = :patientId', { patientId })
+        .orderBy('invoice.createdAt', 'DESC');
+      return paginate(qb, query);
+    });
   }
 
-  async listPrescriptions(): Promise<Prescription[]> {
+  async listPrescriptions(
+    query: PaginationQueryDto = {},
+  ): Promise<PaginatedResponseDto<PatientPrescriptionView>> {
     const patientId = this.requirePatientId();
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Prescription).find({ where: { patientId }, order: { createdAt: 'DESC' } }),
-    );
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      await this.assertPatientActive(manager, patientId);
+      const qb = manager
+        .createQueryBuilder(Prescription, 'prescription')
+        .select(PRESCRIPTION_VIEW_COLUMNS.map((column) => `prescription.${column}`))
+        .where('prescription.patientId = :patientId', { patientId })
+        .orderBy('prescription.createdAt', 'DESC');
+      return paginate(qb, query);
+    });
   }
 
   /**
@@ -97,13 +228,21 @@ export class PatientPortalService {
    * Order -> OrderItem -> requisition. Only 'Verified' requisitions are included: an
    * in-progress or just-sampled result hasn't been clinically reviewed yet, and showing it to
    * the patient before a clinician has verified it would bypass that review.
+   *
+   * Pagination here is applied in-memory, after both sources are fetched and merged — the two
+   * queries can't be paginated independently (page 1 needs to know both sources' combined,
+   * verifiedAt-sorted order first). This bounds what's returned to the client, matching every
+   * other portal endpoint's response shape, but doesn't reduce the round-trip count — that's
+   * inherent to walking Order -> OrderItem -> requisition with no direct patientId on either
+   * result table, a schema-level gap larger than this fix.
    */
-  async listResults(): Promise<PatientResultView[]> {
+  async listResults(query: PaginationQueryDto = {}): Promise<PaginatedResponseDto<PatientResultView>> {
     const patientId = this.requirePatientId();
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      await this.assertPatientActive(manager, patientId);
       const orders = await manager.getRepository(Order).find({ where: { patientId } });
       if (orders.length === 0) {
-        return [];
+        return paginateInMemory([], query);
       }
       const orderIds = orders.map((order) => order.id);
       const orderItems = await manager
@@ -118,7 +257,12 @@ export class PatientPortalService {
         this.listVerifiedLabResults(manager, labItemIds),
         this.listVerifiedRadiologyResults(manager, radiologyItemIds),
       ]);
-      return [...labResults, ...radiologyResults];
+      const merged = [...labResults, ...radiologyResults].sort((a, b) => {
+        const aTime = a.verifiedAt?.getTime() ?? 0;
+        const bTime = b.verifiedAt?.getTime() ?? 0;
+        return bTime - aTime;
+      });
+      return paginateInMemory(merged, query);
     });
   }
 
@@ -206,4 +350,21 @@ export class PatientPortalService {
       verifiedAt: requisition.verifiedAt,
     }));
   }
+}
+
+/** In-memory equivalent of @hospital/pagination's paginate() for an already-fetched array — see
+ *  listResults()'s doc comment for why this one can't paginate at the query level. */
+function paginateInMemory<T>(items: T[], options: PaginationQueryDto): PaginatedResponseDto<T> {
+  const page = Math.max(1, Number(options.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(options.limit) || 20));
+  const start = (page - 1) * limit;
+  return {
+    data: items.slice(start, start + limit),
+    meta: {
+      total: items.length,
+      page,
+      limit,
+      totalPages: Math.ceil(items.length / limit),
+    },
+  };
 }

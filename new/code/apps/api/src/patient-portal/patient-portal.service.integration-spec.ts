@@ -161,16 +161,16 @@ describe('PatientPortalService (integration)', () => {
       ]),
     );
 
-    expect(appointmentsA).toHaveLength(1);
-    expect(appointmentsA[0].patientId).toBe(patientA.id);
-    expect(invoicesA).toHaveLength(1);
-    expect(invoicesA[0].patientId).toBe(patientA.id);
-    expect(prescriptionsA).toHaveLength(1);
-    expect(prescriptionsA[0].medicationName).toBe('Paracetamol');
+    expect(appointmentsA.data).toHaveLength(1);
+    expect(appointmentsA.data[0].patientId).toBe(patientA.id);
+    expect(invoicesA.data).toHaveLength(1);
+    expect(invoicesA.data[0].patientId).toBe(patientA.id);
+    expect(prescriptionsA.data).toHaveLength(1);
+    expect(prescriptionsA.data[0].medicationName).toBe('Paracetamol');
 
     const appointmentsB = await inPatientContext(patientB.id, () => portalService.listAppointments());
-    expect(appointmentsB).toHaveLength(1);
-    expect(appointmentsB[0].patientId).toBe(patientB.id);
+    expect(appointmentsB.data).toHaveLength(1);
+    expect(appointmentsB.data[0].patientId).toBe(patientB.id);
   });
 
   it('returns only verified lab and radiology results, scoped to the calling patient', async () => {
@@ -263,8 +263,8 @@ describe('PatientPortalService (integration)', () => {
 
     const resultsA = await inPatientContext(patientA.id, () => portalService.listResults());
 
-    const labResultsA = resultsA.filter((r) => r.type === 'lab');
-    const radiologyResultsA = resultsA.filter((r) => r.type === 'radiology');
+    const labResultsA = resultsA.data.filter((r) => r.type === 'lab');
+    const radiologyResultsA = resultsA.data.filter((r) => r.type === 'radiology');
 
     expect(labResultsA).toHaveLength(1);
     expect(labResultsA[0].value).toBe('13.5');
@@ -274,8 +274,8 @@ describe('PatientPortalService (integration)', () => {
     expect(radiologyResultsA[0].reportText).toBe('No acute findings.');
 
     // Never patient B's values, and never the unverified pending requisition.
-    expect(resultsA.some((r) => r.value === '9.0')).toBe(false);
-    expect(resultsA.some((r) => r.reportText === 'Unrelated finding.')).toBe(false);
+    expect(resultsA.data.some((r) => r.value === '9.0')).toBe(false);
+    expect(resultsA.data.some((r) => r.reportText === 'Unrelated finding.')).toBe(false);
   });
 
   it('getMe returns the calling patient\'s own basic profile', async () => {
@@ -292,5 +292,99 @@ describe('PatientPortalService (integration)', () => {
     await expect(inPatientContext(patient.id, () => portalService.getMe())).rejects.toThrow(
       NotFoundException,
     );
+  });
+
+  it('rejects every list endpoint for a deactivated patient, not just getMe', async () => {
+    const patient = await makePatient('DeactivatedLists');
+    await withStaffActor(() => patientsService.deactivate(patient.id));
+
+    await expect(inPatientContext(patient.id, () => portalService.listAppointments())).rejects.toThrow(
+      NotFoundException,
+    );
+    await expect(inPatientContext(patient.id, () => portalService.listInvoices())).rejects.toThrow(
+      NotFoundException,
+    );
+    await expect(inPatientContext(patient.id, () => portalService.listPrescriptions())).rejects.toThrow(
+      NotFoundException,
+    );
+    await expect(inPatientContext(patient.id, () => portalService.listResults())).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('excludes internal staff-only fields (audit columns, internal notes) from the appointment/invoice views', async () => {
+    const patient = await makePatient('Projection');
+
+    const appointment = await withStaffActor(async () => {
+      const appointmentsService = new AppointmentsService(ctx.tenantConnection);
+      const created = await appointmentsService.create({
+        patientId: patient.id,
+        firstName: patient.firstName,
+        lastName: patient.lastName,
+        contactNumber: '9000000099',
+        appointmentDate: '2026-09-05',
+        appointmentTime: '09:00',
+        appointmentType: 'OPD',
+      });
+      // Sets cancelledRemarks — an internal front-desk note the finding flags as leaked.
+      return appointmentsService.cancel(created.id, 'Front-desk-only cancellation note');
+    });
+    expect(appointment.cancelledRemarks).toBe('Front-desk-only cancellation note');
+
+    await withStaffActor(() => {
+      const invoicesService = new InvoicesService(
+        ctx.tenantConnection,
+        ctx.tenantContext,
+        new AccountingService(ctx.tenantConnection, new JournalNumberGeneratorService(ctx.tenantConnection), ctx.tenantContext),
+      );
+      return invoicesService.create({
+        patientId: patient.id,
+        items: [{ description: 'Consultation', quantity: 1, unitPrice: 500 }],
+      });
+    });
+
+    const appointmentsView = await inPatientContext(patient.id, () => portalService.listAppointments());
+    const invoicesView = await inPatientContext(patient.id, () => portalService.listInvoices());
+
+    const appointmentView = appointmentsView.data.find((a) => a.id === appointment.id) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(appointmentView).toBeDefined();
+    expect(appointmentView.patientId).toBe(patient.id); // legitimate fields still present
+    expect(appointmentView.cancelledRemarks).toBeUndefined();
+    expect(appointmentView.createdBy).toBeUndefined();
+    expect(appointmentView.updatedBy).toBeUndefined();
+
+    const invoiceView = invoicesView.data[0] as unknown as Record<string, unknown>;
+    expect(invoiceView.totalAmount).toBeDefined(); // legitimate field still present
+    expect(invoiceView.notes).toBeUndefined();
+    expect(invoiceView.createdBy).toBeUndefined();
+    expect(invoiceView.updatedBy).toBeUndefined();
+  });
+
+  it('paginates listAppointments', async () => {
+    const patient = await makePatient('Paginated');
+    await withStaffActor(async () => {
+      const appointmentsService = new AppointmentsService(ctx.tenantConnection);
+      for (let i = 0; i < 3; i++) {
+        await appointmentsService.create({
+          patientId: patient.id,
+          firstName: patient.firstName,
+          lastName: patient.lastName,
+          contactNumber: `900000010${i}`,
+          appointmentDate: '2026-09-10',
+          appointmentTime: `1${i}:00`,
+          appointmentType: 'OPD',
+        });
+      }
+    });
+
+    const page1 = await inPatientContext(patient.id, () =>
+      portalService.listAppointments({ page: 1, limit: 2 }),
+    );
+    expect(page1.data).toHaveLength(2);
+    expect(page1.meta.total).toBe(3);
+    expect(page1.meta.totalPages).toBe(2);
   });
 });

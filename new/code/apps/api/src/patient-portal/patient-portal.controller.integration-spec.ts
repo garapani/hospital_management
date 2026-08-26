@@ -86,4 +86,14 @@ describe('PatientPortalController (integration)', () => {
 
     expect(response.status).toBe(401);
   });
+
+  it('sends Cache-Control: no-store on every response, since this whole controller serves PHI', async () => {
+    const routes = ['/patient-portal/me', '/patient-portal/appointments', '/patient-portal/invoices', '/patient-portal/prescriptions', '/patient-portal/results'];
+    for (const route of routes) {
+      const response = await request(app.getHttpServer())
+        .get(route)
+        .set('Authorization', `Bearer ${patientToken}`);
+      expect(response.headers['cache-control']).toBe('no-store');
+    }
+  });
 });
