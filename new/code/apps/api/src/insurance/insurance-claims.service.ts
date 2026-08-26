@@ -315,12 +315,34 @@ export class InsuranceClaimsService {
       if (!policy.isActive) {
         throw new ConflictException(`Patient policy ${input.policyId} is deactivated`);
       }
+      // FOR UPDATE serializes concurrent claim creation against the same invoice — without it,
+      // two concurrent createClaim calls could both pass the sum check below before either
+      // commits, jointly claiming more than the invoice is worth.
       const invoice = await manager.query(
-        `SELECT id FROM invoices WHERE id = $1 AND "patientId" = $2`,
+        `SELECT id, "totalAmount" FROM invoices WHERE id = $1 AND "patientId" = $2 FOR UPDATE`,
         [input.invoiceId, input.patientId],
       );
       if (invoice.length === 0) {
         throw new NotFoundException(`Invoice ${input.invoiceId} not found for patient ${input.patientId}`);
+      }
+
+      // Nothing else reconciles claims against what the invoice is actually worth — without this,
+      // any number of claims (Draft included, since a Draft can still be submitted and approved
+      // later) can be minted against one invoice with no ceiling. Rejected claims are excluded:
+      // they never collect anything.
+      const invoiceTotal = Number(invoice[0].totalAmount);
+      const { sum: existingClaimedRaw } = await manager
+        .getRepository(InsuranceClaim)
+        .createQueryBuilder('claim')
+        .select('COALESCE(SUM(claim.amountClaimed), 0)', 'sum')
+        .where('claim.invoiceId = :invoiceId', { invoiceId: input.invoiceId })
+        .andWhere('claim.status != :rejected', { rejected: 'Rejected' })
+        .getRawOne();
+      const existingClaimed = Number(existingClaimedRaw);
+      if (existingClaimed + input.amountClaimed > invoiceTotal) {
+        throw new BadRequestException(
+          `Claiming ${input.amountClaimed} would bring total claims against invoice ${input.invoiceId} to ${existingClaimed + input.amountClaimed}, exceeding its total of ${invoiceTotal}`,
+        );
       }
 
       return manager.getRepository(InsuranceClaim).save(
@@ -405,6 +427,31 @@ export class InsuranceClaimsService {
           `amountApproved ${amountApproved} exceeds amountClaimed ${claim.amountClaimed}`,
         );
       }
+
+      // Nothing else reconciles approvals against the policy's own coverage limit. The lock
+      // serializes concurrent approvals of DIFFERENT claims under the same policy — without it,
+      // two approvals could each pass the sum check before either commits, jointly approving more
+      // than the policy covers.
+      const policy = await manager
+        .getRepository(PatientPolicy)
+        .findOne({ where: { id: claim.policyId }, lock: { mode: 'pessimistic_write' } });
+      if (!policy) {
+        throw new NotFoundException(`Patient policy ${claim.policyId} not found`);
+      }
+      const { sum: existingApprovedRaw } = await manager
+        .getRepository(InsuranceClaim)
+        .createQueryBuilder('c')
+        .select('COALESCE(SUM(c.amountApproved), 0)', 'sum')
+        .where('c.policyId = :policyId', { policyId: claim.policyId })
+        .andWhere('c.status IN (:...statuses)', { statuses: ['Approved', 'Paid'] })
+        .getRawOne();
+      const existingApproved = Number(existingApprovedRaw);
+      if (existingApproved + amountApproved > policy.sumInsured) {
+        throw new BadRequestException(
+          `Approving ${amountApproved} would bring total approved claims against policy ${claim.policyId} to ${existingApproved + amountApproved}, exceeding its sumInsured of ${policy.sumInsured}`,
+        );
+      }
+
       claim.status = 'Approved';
       claim.amountApproved = amountApproved;
       claim.processedBy = this.resolveActor(actor);

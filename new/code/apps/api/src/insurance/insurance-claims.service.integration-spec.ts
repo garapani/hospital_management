@@ -212,6 +212,105 @@ describe('InsuranceClaimsService (integration)', () => {
     expect(paid.processedBy).toBe(AUTHENTICATED_ACCOUNT);
   });
 
+  // Regression tests for the P1 in code-review-findings-2026-08-25.md: nothing capped total
+  // claims against an invoice or a policy's sumInsured.
+  it('rejects a claim that would bring total claims against the invoice above its total', async () => {
+    const patient = await makePatient();
+    const payer = await makePayer('Claim Cap Payer');
+    const policy = await makePolicy(patient.id, payer.id);
+    const invoice = await makeInvoice(patient.id); // totalAmount 1500
+
+    await ctx.inTenant(() =>
+      insuranceService.createClaim({
+        patientId: patient.id,
+        policyId: policy.id,
+        invoiceId: invoice.id,
+        amountClaimed: 1000,
+        submittedBy: STAFF_ID,
+      }),
+    );
+
+    // 1000 (existing Draft claim) + 600 would total 1600, over the invoice's 1500.
+    await expect(
+      ctx.inTenant(() =>
+        insuranceService.createClaim({
+          patientId: patient.id,
+          policyId: policy.id,
+          invoiceId: invoice.id,
+          amountClaimed: 600,
+          submittedBy: STAFF_ID,
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('a rejected claim does not count toward the invoice cap', async () => {
+    const patient = await makePatient();
+    const payer = await makePayer('Rejected Claim Cap Payer');
+    const policy = await makePolicy(patient.id, payer.id);
+    const invoice = await makeInvoice(patient.id); // totalAmount 1500
+
+    const claim = await ctx.inTenant(() =>
+      insuranceService.createClaim({
+        patientId: patient.id,
+        policyId: policy.id,
+        invoiceId: invoice.id,
+        amountClaimed: 1200,
+        submittedBy: STAFF_ID,
+      }),
+    );
+    await ctx.inTenant(() => insuranceService.submitClaim(claim.id, STAFF_ID));
+    await ctx.inTenant(() => insuranceService.rejectClaim(claim.id, 'Not covered', STAFF_ID));
+
+    // The rejected 1200 claim must not count against the 1500 cap.
+    const second = await ctx.inTenant(() =>
+      insuranceService.createClaim({
+        patientId: patient.id,
+        policyId: policy.id,
+        invoiceId: invoice.id,
+        amountClaimed: 1200,
+        submittedBy: STAFF_ID,
+      }),
+    );
+    expect(second.amountClaimed).toBe(1200);
+  });
+
+  it('rejects an approval that would bring total approved claims against the policy above its sumInsured', async () => {
+    const patient = await makePatient();
+    const payer = await makePayer('Sum Insured Cap Payer');
+    const policy = await makePolicy(patient.id, payer.id, { sumInsured: 1500 });
+    const invoiceA = await makeInvoice(patient.id);
+    const invoiceB = await makeInvoice(patient.id);
+
+    const claimA = await ctx.inTenant(() =>
+      insuranceService.createClaim({
+        patientId: patient.id,
+        policyId: policy.id,
+        invoiceId: invoiceA.id,
+        amountClaimed: 1000,
+        submittedBy: STAFF_ID,
+      }),
+    );
+    await ctx.inTenant(() => insuranceService.submitClaim(claimA.id, STAFF_ID));
+    await ctx.inTenant(() => insuranceService.approveClaim(claimA.id, 1000, STAFF_ID));
+
+    const claimB = await ctx.inTenant(() =>
+      insuranceService.createClaim({
+        patientId: patient.id,
+        policyId: policy.id,
+        invoiceId: invoiceB.id,
+        amountClaimed: 1000,
+        submittedBy: STAFF_ID,
+      }),
+    );
+    await ctx.inTenant(() => insuranceService.submitClaim(claimB.id, STAFF_ID));
+
+    // 1000 (already approved) + 1000 would total 2000, over the policy's sumInsured of 1500.
+    await expect(
+      ctx.inTenant(() => insuranceService.approveClaim(claimB.id, 1000, STAFF_ID)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
   it('enforces the status machine and validates amounts/remarks', async () => {
     const patient = await makePatient();
     const payer = await makePayer('SBI General');
