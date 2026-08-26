@@ -11,6 +11,7 @@ import { Admission } from '../admissions/entities/admission.entity.js';
 import { AppointmentsService } from '../appointments/appointments.service.js';
 import { NotificationsService } from './notifications.service.js';
 import { Notification } from './entities/notification.entity.js';
+import { Account } from '../accounts/entities/account.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -29,7 +30,7 @@ describe('NotificationsSubscriber (integration)', () => {
   let appointmentsService: AppointmentsService;
   let notificationsService: NotificationsService;
 
-  const DOCTOR_ID = '00000000-0000-0000-0000-000000000001';
+  let DOCTOR_ID: string;
 
   beforeAll(async () => {
     // Boots the real AppModule DI graph rather than instantiating NotificationsSubscriber by hand:
@@ -53,6 +54,23 @@ describe('NotificationsSubscriber (integration)', () => {
     admissionsService = moduleFixture.get(AdmissionsService);
     appointmentsService = moduleFixture.get(AppointmentsService);
     notificationsService = moduleFixture.get(NotificationsService);
+
+    // Notifications only ever reach a real Account row (NotificationsService.create() drops
+    // anything else) — DOCTOR_ID must be a real account for the "notification arrives" specs
+    // below to exercise anything beyond the drop path.
+    DOCTOR_ID = await tenantContextService.run({ tenantId: ctx.tenantId, correlationId: 'test' }, () =>
+      tenantConnection
+        .runInTenantSchema((manager: EntityManager) =>
+          manager.getRepository(Account).save(
+            manager.getRepository(Account).create({
+              accountType: 'staff',
+              displayName: 'Notif Test Doctor',
+              isActive: true,
+            }),
+          ),
+        )
+        .then((account) => account.id),
+    );
   });
 
   afterAll(async () => {
@@ -141,6 +159,33 @@ describe('NotificationsSubscriber (integration)', () => {
         m.getRepository(Notification).count(),
       );
       expect(afterCount).toBe(beforeCount);
+    });
+  });
+
+  it('does not create a reachable notification when admittingDoctorId has no matching account', async () => {
+    await inTenant(async () => {
+      const bogusDoctorId = '00000000-0000-0000-0000-0000000000bb';
+
+      const patient = await patientsService.create({
+        firstName: 'Orphan',
+        lastName: 'Patient',
+        dateOfBirth: '1990-01-01',
+        gender: 'Male',
+        phoneNumber: '4440000005',
+      });
+      const ward = await masterDataService.createWard({ wardCode: 'NOTIF3', wardName: 'NOTIF3' });
+      const bed = await masterDataService.createBed({ wardId: ward.id, bedNumber: '1' });
+
+      const admission = await admissionsService.admit({
+        patientId: patient.id,
+        admissionSource: 'Direct',
+        admittingDoctorId: bogusDoctorId,
+        bedId: bed.id,
+      });
+
+      expect(admission.id).toBeDefined();
+      const notifications = await notificationsFor(bogusDoctorId);
+      expect(notifications).toHaveLength(0);
     });
   });
 

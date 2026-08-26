@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
+import { Account } from '../accounts/entities/account.entity.js';
 import { Notification } from './entities/notification.entity.js';
 import { CreateNotificationDto } from './dto/create-notification.dto.js';
 import { SearchNotificationsDto } from './dto/search-notifications.dto.js';
@@ -14,10 +15,32 @@ export interface NotificationSummary {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(private readonly tenantConnection: TenantConnectionService) {}
 
-  async create(dto: CreateNotificationDto): Promise<Notification> {
+  /**
+   * Producers (e.g. NotificationsSubscriber) pass a recipient id sourced from unvalidated,
+   * client-supplied fields (Admission.admittingDoctorId, Appointment.doctorId) with no FK to
+   * `accounts` anywhere in the schema. Without this check a bad id silently persists a
+   * notification no JWT-authenticated read (all of which filter by the caller's real accountId)
+   * can ever match — the row exists but is permanently unreachable. Returns null instead of
+   * inserting that dead row, so the caller can log the drop rather than fail the write it rode in on.
+   */
+  async create(dto: CreateNotificationDto): Promise<Notification | null> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const recipient = await manager
+        .getRepository(Account)
+        .findOne({ where: { id: dto.recipientAccountId } });
+      if (!recipient || !recipient.isActive) {
+        this.logger.warn(
+          `Dropping notification "${dto.title}": recipient account ${dto.recipientAccountId} ${
+            recipient ? 'is deactivated' : 'does not exist'
+          }`,
+        );
+        return null;
+      }
+
       const repository = manager.getRepository(Notification);
       const notification = repository.create({
         recipientAccountId: dto.recipientAccountId,
