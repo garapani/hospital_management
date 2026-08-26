@@ -1064,7 +1064,7 @@ recur — not chased further per this task's own "don't fix a passing-alone spec
 `seed-rbac`, `metrics`, `master-data-permgate` "ctx undefined") — each passes alone and the
 run is green on repeat. Likely parallel-load contention on the shared dev Postgres (all
 specs run against the same DB with prefixes + cleanup).
-**What to do:** investigate whether a dedicated test database (e.g. `identity_access_test`
+**What to do:** investigate whether a dedicated test database (e.g. `hospital_db_test`
 with `DB_NAME`/`DB_PORT` env override) or reduced jest `maxWorkers` stabilizes full runs.
 Do **not** "fix" a passing-alone spec. If a real bug surfaces during triage, that's a
 separate fix task.

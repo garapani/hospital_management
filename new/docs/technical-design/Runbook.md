@@ -122,7 +122,7 @@ RPO until it's enabled and drilled at least once.
 aws s3 cp s3://$S3_BUCKET/$S3_PREFIX/<filename>.dump.gz ./restore.dump.gz
 gunzip ./restore.dump.gz
 docker compose -f docker-compose.dev.yml exec -T api-postgres \
-  pg_restore -U identity_access -d identity_access --clean --if-exists < ./restore.dump
+  pg_restore -U identity_access -d hospital_db --clean --if-exists < ./restore.dump
 ```
 `--clean --if-exists` drops existing objects before recreating them, so this is safe to run
 against a database that already has stale or corrupt data in it.
@@ -133,7 +133,7 @@ Restores exactly one tenant's schema without touching any other tenant or the pl
 schema:
 ```bash
 docker compose -f docker-compose.dev.yml exec -T api-postgres \
-  pg_restore -U identity_access -d identity_access --schema=tenant_<hospitalId> --clean --if-exists < ./restore.dump
+  pg_restore -U identity_access -d hospital_db --schema=tenant_<hospitalId> --clean --if-exists < ./restore.dump
 ```
 
 ### Monthly restore-drill procedure

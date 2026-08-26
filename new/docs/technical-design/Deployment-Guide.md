@@ -27,7 +27,7 @@ DB_HOST=localhost
 DB_PORT=5433
 DB_USERNAME=identity_access
 DB_PASSWORD=identity_access_dev_password
-DB_DATABASE=identity_access
+DB_DATABASE=hospital_db
 
 # Security
 JWT_SECRET=your_super_secret_production_key_here
@@ -151,7 +151,7 @@ deferred gap, not an oversight).
 | `COMPOSE_FILE` | `docker-compose.dev.yml` | Compose file the Postgres service lives in (backup script default; set to `docker-compose.prod.yml` on a prod host). |
 | `POSTGRES_SERVICE` | `api-postgres` | Compose service name to `docker exec` into (backup script default; `hospital-postgres` on prod). |
 | `POSTGRES_USER` | `identity_access` | Matches `DB_USERNAME`. |
-| `POSTGRES_DB` | `identity_access` | Matches `DB_DATABASE`. |
+| `POSTGRES_DB` | `hospital_db` | Matches `DB_DATABASE`. |
 | `BACKUP_DIR` | `./backups` | Local working directory for dump files before/after upload. |
 | `RETENTION_DAYS` | `30` | Local dump files older than this are deleted after a successful run. |
 | `S3_BUCKET` | *(unset)* | Target bucket. **If unset, the script runs in dry-run mode** — it still dumps, validates, and gzips locally, but skips the upload step and logs a warning instead. |
