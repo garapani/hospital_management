@@ -3207,3 +3207,47 @@ existing functional coverage already exercises both methods and passed unchanged
 `itemType === '...'` comparison in the codebase (billing charge capture, patient-portal, seed data)
 to confirm `Lab`/`Radiology`/`Pharmacy` are the only three values anything ever checks for, then
 added `@IsIn([...])` — no new enum invented, no value guessed.
+
+## 78. Lab P2/P3 batch: reference-range evaluation, worklist, constraint-name-checked catches, PDF
+    cross-domain join (2026-08-26)
+
+Six items closing out `code-review-findings-2026-08-25.md`'s lab section.
+
+**Reference-range evaluation: computed value overrides operator input, not the other way round.**
+`isAbnormal` was entirely operator-supplied even though `LabTestComponent` already carries
+`referenceRangeLow`/`referenceRangeHigh`. The new `computeIsAbnormal()` helper evaluates the
+component's numeric range against the entered value whenever both are usable, and that computed
+result **wins over whatever the operator passed** — the finding's whole point was that a human
+shouldn't be the sole authority on abnormality when a numeric range exists to check it against.
+Falls back to the operator-supplied value only when the range can't govern: a qualitative component
+(text-only `referenceRangeText`, e.g. Negative/Positive) or a non-numeric entered value (e.g.
+"Hemolyzed"). Existing test fixtures were unaffected because none of them define a numeric range on
+their components — worth remembering when writing a *new* lab fixture that needs a specific
+`isAbnormal` outcome: pass `referenceRangeLow`/`referenceRangeHigh` explicitly if the range should
+apply, or leave both unset if the test wants operator input to pass through untouched.
+
+**Worklist: widen the existing endpoint, don't add a new one.** The finding was "no way to find a
+requisition without already knowing its order item id" — `radiology`'s `findAll` already solved this
+shape by making `orderItemId` optional and adding a `status` filter. Applied the identical fix to
+lab's `listByOrderItem` (kept the method name — a full rename to `findAll` would've touched call
+sites for no behavioral gain) rather than adding a second endpoint; `GET /lab/requisitions?status=
+Pending` is now the worklist. The removed `requireParam(query.orderItemId, ...)` call was the
+existing test's entire assertion surface, so that test was rewritten (not just deleted) into two new
+assertions proving the status filter actually partitions Pending vs. SampleCollected requisitions.
+
+**Constraint-name checks, not bare `23505`.** Both `lab-workflow.service.ts`'s `createRequisition`
+catch and the new `lab-catalog.service.ts` `createTest` catch check `error.constraint === '...'`
+against the specific unique constraint they're guarding, exactly like every other constraint-backstop
+catch in this codebase (`admissions`, `appointments`, `radiology`, etc.) — never a bare `code ===
+'23505'`, which conflates every unique-constraint violation on the table into one misleading error
+message.
+
+**PDF cross-domain join → `domain:lab` -> `domain:patients` boundary edge, blocked pending human
+edit.** Same shape as the appointments/encounters `-> patients` edges from earlier passes: the fix
+needs `PatientsService` injected into `LabWorkflowService` (plus `PatientsModule` imported into
+`LabModule`), which needs a new `eslint.config.mjs` boundary policy Claude cannot add. Implemented
+the correct fix anyway (replacing the raw `orders`/`order_items`/`patients` SQL joins with
+`OrdersService.findOne` + `PatientsService.findOne`) and left the lint gap documented rather than
+re-introducing the raw SQL to dodge a check that isn't wired up yet. This required updating every
+manual `new LabWorkflowService(...)` construction across four other spec files to pass the new
+`patientsService` constructor argument — a pure DI-wiring ripple, no behavior change in those files.
