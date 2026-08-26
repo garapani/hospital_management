@@ -127,6 +127,42 @@ describe('AccountingService (integration)', () => {
     ).rejects.toThrow(/non-zero/);
   });
 
+  it('rejects a manual journal referencing an unknown or deactivated account', async () => {
+    const cash = await makeAccount('1000', 'Asset');
+    const revenue = await makeAccount('4000', 'Income');
+    await ctx.inTenant(() => accountingService.deactivateAccount(revenue.id));
+
+    // Unknown account id: previously created a journal_lines row with no matching
+    // ledger_accounts row (no FK on that column) — trialBalance's `if (!account) return null`
+    // silently dropped it from every report instead of erroring.
+    await expect(
+      ctx.inTenant(() =>
+        accountingService.createJournal({
+          entryDate: '2025-06-01',
+          lines: [
+            { accountId: cash.id, debit: 500 },
+            { accountId: '00000000-0000-0000-0000-000000000000', credit: 500 },
+          ],
+          createdBy: STAFF_ID,
+        }),
+      ),
+    ).rejects.toThrow(/not found/);
+
+    // Deactivated account.
+    await expect(
+      ctx.inTenant(() =>
+        accountingService.createJournal({
+          entryDate: '2025-06-01',
+          lines: [
+            { accountId: cash.id, debit: 500 },
+            { accountId: revenue.id, credit: 500 },
+          ],
+          createdBy: STAFF_ID,
+        }),
+      ),
+    ).rejects.toThrow(/inactive/);
+  });
+
   it('derives createdBy/postedBy from the authenticated principal', async () => {
     const cash = await makeAccount('1000', 'Asset');
     const revenue = await makeAccount('4000', 'Income');
@@ -167,6 +203,72 @@ describe('AccountingService (integration)', () => {
     await expect(ctx.inTenant(() => accountingService.postJournal(journal.id))).rejects.toThrow(
       ConflictException,
     );
+  });
+
+  describe('postAutoJournal', () => {
+    it('generates sequential journal numbers using the caller-supplied manager, not a second connection', async () => {
+      // Regression test for the P1 fix: postAutoJournal used to generate its journal number via
+      // JournalNumberGeneratorService, which opens its own runInTenantSchema — a second pooled
+      // connection/transaction — while running on a manager that (in production callers like
+      // recordPayment) is already mid-transaction. This proves postAutoJournal works end-to-end
+      // when invoked exactly that way: on an already-open manager, inside a transaction.
+      const cash = await makeAccount('1000', 'Asset');
+      const revenue = await makeAccount('4000', 'Income');
+
+      const [first, second] = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema(async (manager) => {
+          const a = await accountingService.postAutoJournal(manager, {
+            sourceType: 'Test',
+            sourceId: '00000000-0000-0000-0000-000000000001',
+            entryDate: '2025-06-04',
+            lines: [
+              { accountId: cash.id, debit: 100 },
+              { accountId: revenue.id, credit: 100 },
+            ],
+            actor: STAFF_ID,
+          });
+          const b = await accountingService.postAutoJournal(manager, {
+            sourceType: 'Test',
+            sourceId: '00000000-0000-0000-0000-000000000002',
+            entryDate: '2025-06-04',
+            lines: [
+              { accountId: cash.id, debit: 200 },
+              { accountId: revenue.id, credit: 200 },
+            ],
+            actor: STAFF_ID,
+          });
+          return [a, b];
+        }),
+      );
+
+      expect(first.status).toBe('Posted');
+      expect(second.status).toBe('Posted');
+      expect(first.journalNumber).toMatch(/^JRN-\d{4}-\d+$/);
+      expect(second.journalNumber).not.toBe(first.journalNumber);
+    });
+
+    it('rejects an auto-posted journal referencing an unknown or deactivated account', async () => {
+      const cash = await makeAccount('1000', 'Asset');
+      const revenue = await makeAccount('4000', 'Income');
+      await ctx.inTenant(() => accountingService.deactivateAccount(revenue.id));
+
+      await expect(
+        ctx.inTenant(() =>
+          ctx.tenantConnection.runInTenantSchema((manager) =>
+            accountingService.postAutoJournal(manager, {
+              sourceType: 'Test',
+              sourceId: '00000000-0000-0000-0000-000000000003',
+              entryDate: '2025-06-04',
+              lines: [
+                { accountId: cash.id, debit: 50 },
+                { accountId: revenue.id, credit: 50 },
+              ],
+              actor: STAFF_ID,
+            }),
+          ),
+        ),
+      ).rejects.toThrow(/inactive/);
+    });
   });
 
   it('computes the trial balance, income statement, and balance sheet (hermetically, in its own tenant)', async () => {

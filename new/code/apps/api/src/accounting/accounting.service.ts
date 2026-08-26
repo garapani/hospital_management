@@ -195,6 +195,14 @@ export class AccountingService {
     const journalNumber = await this.journalNumberGenerator.generateNextJournalNumber();
 
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      // Manual journals previously had no check that each accountId actually exists: a typo'd or
+      // stale id inserted a journal_lines row with no matching ledger_accounts row (no FK on that
+      // column), and trialBalance's `if (!account) return null` silently dropped it from every
+      // report instead of erroring — debits could permanently diverge from credits with no alert
+      // (code-review-findings-2026-08-25 P1). postAutoJournal already had this check; manual
+      // journals now share it.
+      await this.assertAccountsUsable(manager, normalized);
+
       const journalRepository = manager.getRepository(JournalEntry);
       const journal = await journalRepository.save(
         journalRepository.create({
@@ -294,21 +302,17 @@ export class AccountingService {
     // an unmapped/mistyped account id would otherwise insert a silently-orphaned line. Auto-posted
     // journals are never reviewed by a human before going Posted, so this check is what stands
     // between a misconfigured mapping and a broken ledger.
-    const accountIds = [...new Set(normalized.map((line) => line.accountId))];
-    const accounts = await manager.getRepository(LedgerAccount).find({ where: { id: In(accountIds) } });
-    const accountsById = new Map(accounts.map((account) => [account.id, account]));
-    const missing = accountIds.filter((id) => !accountsById.has(id));
-    if (missing.length > 0) {
-      throw new ConflictException(`Ledger account(s) not found: ${missing.join(', ')}`);
-    }
-    const inactive = accounts.filter((account) => !account.isActive);
-    if (inactive.length > 0) {
-      throw new ConflictException(
-        `Ledger account(s) inactive: ${inactive.map((account) => account.accountCode).join(', ')}`,
-      );
-    }
+    await this.assertAccountsUsable(manager, normalized);
 
-    const journalNumber = await this.journalNumberGenerator.generateNextJournalNumber();
+    // Generates the journal number against the CALLER's manager, not via
+    // JournalNumberGeneratorService: that service opens its own runInTenantSchema — a brand-new
+    // pooled connection and transaction — but postAutoJournal always runs on a manager that's
+    // already mid-transaction (recordPayment/createReturn/deposit flows hold a row lock at this
+    // point). Every concurrent caller doing that at once can exhaust the pool with connections
+    // each waiting on one more connection that never frees up (code-review-findings-2026-08-25
+    // P1) — the same "generate the number against the caller's own manager" pattern
+    // InvoicesService.generateInvoiceNumber already uses for exactly this reason.
+    const journalNumber = await this.generateJournalNumberInTransaction(manager);
     const actor = this.resolveActor(input.actor);
     const now = new Date();
 
@@ -370,6 +374,46 @@ export class AccountingService {
       });
       return { ...journal, lines };
     });
+  }
+
+  /** Throws if any line references an account that doesn't exist or is deactivated. Shared by
+   *  createJournal and postAutoJournal so neither path can post an orphaned journal_lines row. */
+  private async assertAccountsUsable(
+    manager: EntityManager,
+    lines: { accountId: string }[],
+  ): Promise<void> {
+    const accountIds = [...new Set(lines.map((line) => line.accountId))];
+    const accounts = await manager.getRepository(LedgerAccount).find({ where: { id: In(accountIds) } });
+    const accountsById = new Map(accounts.map((account) => [account.id, account]));
+    const missing = accountIds.filter((id) => !accountsById.has(id));
+    if (missing.length > 0) {
+      throw new ConflictException(`Ledger account(s) not found: ${missing.join(', ')}`);
+    }
+    const inactive = accounts.filter((account) => !account.isActive);
+    if (inactive.length > 0) {
+      throw new ConflictException(
+        `Ledger account(s) inactive: ${inactive.map((account) => account.accountCode).join(', ')}`,
+      );
+    }
+  }
+
+  /** Same sequence table/prefix as JournalNumberGeneratorService (journal_sequences, 'JRN'), but
+   *  run against the caller's own manager instead of opening a separate connection — see the
+   *  comment at its call site in postAutoJournal. */
+  private async generateJournalNumberInTransaction(manager: EntityManager): Promise<string> {
+    const currentYear = new Date().getFullYear();
+    const result = await manager.query(
+      `
+      INSERT INTO journal_sequences (prefix, year, "lastSequence")
+      VALUES ($1, $2, 1)
+      ON CONFLICT (prefix, year)
+      DO UPDATE SET "lastSequence" = journal_sequences."lastSequence" + 1
+      RETURNING "lastSequence"
+      `,
+      ['JRN', currentYear],
+    );
+    const nextSeq = result[0].lastSequence as number;
+    return `JRN-${currentYear}-${String(nextSeq).padStart(5, '0')}`;
   }
 
   private async loadJournal(manager: EntityManager, id: string): Promise<JournalEntry> {
