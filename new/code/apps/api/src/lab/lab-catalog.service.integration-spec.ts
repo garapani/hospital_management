@@ -25,16 +25,17 @@ describe('LabCatalogService catalog update/deactivate (integration)', () => {
     ctx = await setupTenantTestContext({ namePrefix: 'lab_catalog_gap' });
     catalogService = new LabCatalogService(ctx.tenantConnection);
     ordersService = new OrdersService(ctx.tenantConnection);
+    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
     labWorkflowService = new LabWorkflowService(
       ctx.tenantConnection,
       new LabRequisitionNumberGeneratorService(ctx.tenantConnection),
       catalogService,
       ordersService,
+      patientsService,
       ctx.tenantContext,
       new PdfService(),
       new ObjectStorageService(),
     );
-    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
@@ -265,6 +266,42 @@ describe('LabCatalogService catalog update/deactivate (integration)', () => {
 
       expect(requisition.testId).toBe(test.id);
       expect(requisition.status).toBe('Pending');
+    });
+  });
+
+  describe('createTest guard', () => {
+    it('rejects creating a test under a deactivated category with ConflictException', async () => {
+      const category = await makeCategory('deactivated-for-test');
+      await ctx.inTenant(() => catalogService.deactivateCategory(category.id));
+
+      await expect(
+        ctx.inTenant(() =>
+          catalogService.createTest({
+            categoryId: category.id,
+            name: 'Should Not Be Created',
+            code: 'GUARD-CAT-DEACT',
+            specimenType: 'Blood',
+          }),
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('rejects a duplicate test code with ConflictException', async () => {
+      const category = await makeCategory('dup-code');
+      await ctx.inTenant(() =>
+        catalogService.createTest({ categoryId: category.id, name: 'First', code: 'DUP-CODE-1', specimenType: 'Blood' }),
+      );
+
+      await expect(
+        ctx.inTenant(() =>
+          catalogService.createTest({ categoryId: category.id, name: 'Second', code: 'DUP-CODE-1', specimenType: 'Blood' }),
+        ),
+      ).rejects.toThrow(ConflictException);
+      await expect(
+        ctx.inTenant(() =>
+          catalogService.createTest({ categoryId: category.id, name: 'Second', code: 'DUP-CODE-1', specimenType: 'Blood' }),
+        ),
+      ).rejects.toThrow('is already in use');
     });
   });
 });

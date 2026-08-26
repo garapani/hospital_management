@@ -51,6 +51,7 @@ describe('PatientPortalService (integration)', () => {
       new LabRequisitionNumberGeneratorService(ctx.tenantConnection),
       labCatalogService,
       ordersService,
+      patientsService,
       ctx.tenantContext,
       new PdfService(),
       new ObjectStorageService(),

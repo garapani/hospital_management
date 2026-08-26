@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { LabTestCategory } from './entities/lab-test-category.entity.js';
 import { LabTest } from './entities/lab-test.entity.js';
@@ -92,17 +93,32 @@ export class LabCatalogService {
       if (!category) {
         throw new NotFoundException(`Lab test category ${input.categoryId} not found`);
       }
+      if (!category.isActive) {
+        throw new ConflictException(
+          `Lab test category ${input.categoryId} is deactivated; cannot create a new test under it`,
+        );
+      }
 
       const repository = manager.getRepository(LabTest);
-      return repository.save(
-        repository.create({
-          categoryId: input.categoryId,
-          name: input.name,
-          code: input.code,
-          specimenType: input.specimenType,
-          price: input.price ?? null,
-        }),
-      );
+      try {
+        return await repository.save(
+          repository.create({
+            categoryId: input.categoryId,
+            name: input.name,
+            code: input.code,
+            specimenType: input.specimenType,
+            price: input.price ?? null,
+          }),
+        );
+      } catch (error) {
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint === 'UQ_lab_tests_code'
+        ) {
+          throw new ConflictException(`Lab test code ${input.code} is already in use`);
+        }
+        throw error;
+      }
     });
   }
 

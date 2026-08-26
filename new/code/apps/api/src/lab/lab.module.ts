@@ -6,11 +6,12 @@ import { LabWorkflowController } from './lab-workflow.controller.js';
 import { LabRequisitionNumberGeneratorService } from './lab-requisition-number-generator.service.js';
 import { LabOrderCancellationSubscriber } from './lab-order-cancellation.subscriber.js';
 import { OrdersModule } from '../orders/orders.module.js';
+import { PatientsModule } from '../patients/patients.module.js';
 import { PdfModule } from '@hospital/pdf';
 import { ObjectStorageModule } from '@hospital/object-storage';
 
 @Module({
-  imports: [OrdersModule, PdfModule, ObjectStorageModule],
+  imports: [OrdersModule, PatientsModule, PdfModule, ObjectStorageModule],
   controllers: [LabCatalogController, LabWorkflowController],
   providers: [
     LabCatalogService,

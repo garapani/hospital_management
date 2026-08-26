@@ -60,19 +60,20 @@ describe('Lab report PDF export (integration)', () => {
     // Standalone service instances for the setup flow (same construction as the workflow spec).
     catalogService = new LabCatalogService(ctx.tenantConnection);
     ordersService = new OrdersService(ctx.tenantConnection);
+    patientsService = new PatientsService(
+      ctx.tenantConnection,
+      new PatientNumberGeneratorService(ctx.tenantConnection),
+      new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext),
+    );
     labWorkflowService = new LabWorkflowService(
       ctx.tenantConnection,
       new LabRequisitionNumberGeneratorService(ctx.tenantConnection),
       catalogService,
       ordersService,
+      patientsService,
       ctx.tenantContext,
       new PdfService(),
       new ObjectStorageService(),
-    );
-    patientsService = new PatientsService(
-      ctx.tenantConnection,
-      new PatientNumberGeneratorService(ctx.tenantConnection),
-      new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext),
     );
   });
 

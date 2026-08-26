@@ -7,13 +7,14 @@ import { PdfService } from '@hospital/pdf';
 import { ObjectStorageService } from '@hospital/object-storage';
 import { OrderItem } from '../orders/entities/order-item.entity.js';
 import { OrdersService } from '../orders/orders.service.js';
+import { PatientsService } from '../patients/patients.service.js';
 import { LabRequisition } from './entities/lab-requisition.entity.js';
 import { LabResult } from './entities/lab-result.entity.js';
 import { LabTestComponent } from './entities/lab-test-component.entity.js';
 import { LabTest } from './entities/lab-test.entity.js';
 import { LabRequisitionNumberGeneratorService } from './lab-requisition-number-generator.service.js';
 import { LabCatalogService } from './lab-catalog.service.js';
-import { paginate, PaginatedResponseDto, requireParam } from '@hospital/pagination';
+import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 import { SearchLabRequisitionsDto } from './dto/search-lab-requisitions.dto.js';
 import { buildLabReportDocument } from './lab-report-document.js';
 
@@ -33,6 +34,23 @@ export interface EnterResultInput {
 
 export const NON_TERMINAL_STATUSES = ['Pending', 'SampleCollected', 'ResultsEntered'];
 
+/**
+ * Evaluates a result value against its component's numeric reference range, when both are usable
+ * (code-review-findings-2026-08-25 lab P2: `isAbnormal` was entirely operator-supplied — reference
+ * ranges were never evaluated). Falls back to the operator-supplied value for qualitative
+ * components (no numeric range — e.g. a Negative/Positive result via `referenceRangeText`) or a
+ * non-numeric entered value, since the range can't govern either of those cases.
+ */
+function computeIsAbnormal(component: LabTestComponent, value: string, operatorSupplied?: boolean): boolean {
+  if (component.referenceRangeLow != null && component.referenceRangeHigh != null) {
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue)) {
+      return numericValue < Number(component.referenceRangeLow) || numericValue > Number(component.referenceRangeHigh);
+    }
+  }
+  return operatorSupplied ?? false;
+}
+
 @Injectable()
 export class LabWorkflowService {
   private readonly logger = new Logger(LabWorkflowService.name);
@@ -42,6 +60,14 @@ export class LabWorkflowService {
     private readonly requisitionNumberGenerator: LabRequisitionNumberGeneratorService,
     private readonly labCatalogService: LabCatalogService,
     private readonly ordersService: OrdersService,
+    // domain:lab -> domain:patients: needed for renderReportPdf's patient name/phone lookup
+    // (previously fetched via raw cross-domain SQL joins — see that method for the boundary-check
+    // note). `eslint.config.mjs` needs a matching `boundaries/element-types` edge; the repo's
+    // config-file guard hook blocks Claude from adding it, so `nx lint` will flag this import until
+    // a human adds that edge (not part of CI, so this doesn't block anything today) — same
+    // situation as the appointments -> patients and clinical-encounters -> patients edges added in
+    // earlier passes of this same findings file.
+    private readonly patientsService: PatientsService,
     private readonly tenantContext: TenantContextService,
     private readonly pdfService: PdfService,
     private readonly objectStorage: ObjectStorageService,
@@ -107,7 +133,11 @@ export class LabWorkflowService {
           }),
         );
       } catch (error) {
-        if (error instanceof QueryFailedError && (error as QueryFailedError & { code?: string }).code === '23505') {
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { constraint?: string }).constraint ===
+            'UQ_lab_requisitions_active_order_item'
+        ) {
           throw new ConflictException(
             `Order item ${input.orderItemId} already has a non-cancelled requisition`,
           );
@@ -127,11 +157,21 @@ export class LabWorkflowService {
     });
   }
 
+  /**
+   * Also serves as the technician worklist: `orderItemId` is optional, so `?status=Pending` (or
+   * `?status=SampleCollected`) lists every requisition awaiting action across all patients, not
+   * just one order item's history (code-review-findings-2026-08-25 lab P2: there was previously no
+   * way to find a requisition without already knowing its order item id).
+   */
   async listByOrderItem(query: SearchLabRequisitionsDto): Promise<PaginatedResponseDto<LabRequisition>> {
-    const orderItemId = requireParam(query.orderItemId, 'orderItemId');
     return this.tenantConnection.runInTenantSchema((manager) => {
       const qb = manager.getRepository(LabRequisition).createQueryBuilder('req');
-      qb.where('req.orderItemId = :orderItemId', { orderItemId });
+      if (query.orderItemId) {
+        qb.andWhere('req.orderItemId = :orderItemId', { orderItemId: query.orderItemId });
+      }
+      if (query.status) {
+        qb.andWhere('req.status = :status', { status: query.status });
+      }
       qb.orderBy('req.createdAt', 'DESC');
       return paginate(qb, query);
     });
@@ -182,11 +222,13 @@ export class LabWorkflowService {
       const components = await manager
         .getRepository(LabTestComponent)
         .find({ where: { testId: requisition.testId }, order: { displaySequence: 'ASC' } });
-      if (!components.some((c) => c.id === input.componentId)) {
+      const component = components.find((c) => c.id === input.componentId);
+      if (!component) {
         throw new BadRequestException(
           `Component ${input.componentId} does not belong to requisition ${requisitionId}'s test`,
         );
       }
+      const isAbnormal = computeIsAbnormal(component, input.value, input.isAbnormal);
 
       // Uses find-then-save (not a raw INSERT ... ON CONFLICT upsert) so a result overwrite goes
       // through TypeORM's repository layer and fires AuditSubscriber's afterInsert/afterUpdate —
@@ -202,7 +244,7 @@ export class LabWorkflowService {
       let result: LabResult;
       if (existingResult) {
         existingResult.value = input.value;
-        existingResult.isAbnormal = input.isAbnormal ?? false;
+        existingResult.isAbnormal = isAbnormal;
         existingResult.enteredBy = this.resolveActor(input.enteredBy);
         existingResult.enteredAt = new Date();
         result = await resultRepository.save(existingResult);
@@ -212,7 +254,7 @@ export class LabWorkflowService {
             requisitionId,
             componentId: input.componentId,
             value: input.value,
-            isAbnormal: input.isAbnormal ?? false,
+            isAbnormal,
             enteredBy: this.resolveActor(input.enteredBy),
           }),
         );
@@ -301,6 +343,17 @@ export class LabWorkflowService {
       throw new ConflictException(`Report is only available for Verified requisitions (current: ${requisition.status})`);
     }
 
+    // Goes through OrdersService/PatientsService (typed, module-boundary-checked calls) instead of
+    // the raw cross-domain-join SQL this replaced (code-review-findings-2026-08-25 lab P3) — see
+    // the constructor's boundary-edge note on `patientsService`.
+    const orderItem = await this.tenantConnection.runInTenantSchema((manager) =>
+      manager.getRepository(OrderItem).findOne({ where: { id: requisition.orderItemId } }),
+    );
+    const order = orderItem ? await this.ordersService.findOne(orderItem.orderId) : null;
+    const patient = order ? await this.patientsService.findOne(order.patientId) : null;
+    const patientName = patient ? `${patient.firstName} ${patient.lastName}` : 'Unknown';
+    const patientPhone = patient?.phoneNumber ?? '';
+
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const test = await manager.getRepository(LabTest).findOne({ where: { id: requisition.testId } });
       const components = await manager.getRepository(LabTestComponent).find({
@@ -310,19 +363,10 @@ export class LabWorkflowService {
       const results = await manager.getRepository(LabResult).find({ where: { requisitionId: id } });
       const resultByComponent = new Map(results.map((r) => [r.componentId, r]));
 
-      const orderRows = await manager.query(
-        `SELECT o."patientId" FROM orders o JOIN order_items oi ON oi."orderId" = o.id WHERE oi.id = $1`,
-        [requisition.orderItemId],
-      );
-      const patient = orderRows.length > 0
-        ? await manager.query(`SELECT "firstName", "lastName", "phoneNumber" FROM patients WHERE id = $1`, [orderRows[0].patientId])
-        : [];
-      const patientName = patient.length > 0 ? `${patient[0].firstName} ${patient[0].lastName}` : 'Unknown';
-
       const buffer = await this.pdfService.render(
         buildLabReportDocument({
           patientName,
-          patientPhone: patient[0]?.phoneNumber ?? '',
+          patientPhone,
           requisitionNumber: requisition.requisitionNumber,
           testName: test?.name ?? requisition.testId,
           specimenType: requisition.specimenType,
