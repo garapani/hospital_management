@@ -2719,3 +2719,49 @@ carry, so there's nothing meaningful to compare against beyond "does a row alrea
 departments, maintenance/AMC tracking, and a frontend page — none of `pending-tasks.md`'s Fixed
 Asset "Not done" list beyond the accrual job itself was in scope for this iteration; each remains
 a distinct future item.
+
+## 66. Admissions P2 batch: race backstops and post-review lock, mirroring already-fixed P1 shapes (2026-08-26)
+
+Four P2s from `code-review-findings-2026-08-25.md`'s admissions section, picked as a single batch
+(none touches money and none changes the tenant-isolation/actor-derivation shape §25 and the §57/
+§58 admissions P1 fixes already established) — each one reuses a pattern this file already
+documents rather than inventing a new one:
+
+**`transfer()`'s bed race now maps to 409 the same way `admit()`'s does.** `admit()` already
+catches a `UQ_admissions_active_bed`/`23505` violation on its own insert and maps it to
+`ConflictException` (§ the 2026-08-25 admissions P1 fix); `transfer()` did the identical
+check-then-save dance but had no catch block, so the identical race surfaced as a raw 500. Added
+the same catch, no new constraint needed — `UQ_admissions_active_bed` already covers both
+`INSERT` (admit) and `UPDATE` (transfer) paths since it's a partial unique index on
+`(bedId) WHERE status = 'Admitted'`, not an insert-only trigger.
+
+**`admit()`'s triage-patient check was incomplete, not missing.** It already verified the triage
+entry was linked to *some* patient (`triageEntry.patientId` non-null); it just never compared that
+patient against `input.patientId`. One extra `!==` check, same `BadRequestException` shape as the
+sibling check three lines above it.
+
+**Discharge-summary review lock: `reviewedAt` as the guard column, checked at the top of both
+mutators.** `updateDischargeSummary` and `reviewDischargeSummary` both now reject with
+`ConflictException` when `summary.reviewedAt` is already set, checked before any field mutation —
+this closes both "edit content after sign-off" and "review a second time" in one guard, since both
+paths write through the same `reviewedAt` column. `updateDischargeSummary`'s own inline
+`reviewedBy`/`reviewedAt`-setting branch (a second, less-obvious way to review a summary) is left
+in place rather than removed, since it's now covered by the same guard.
+
+**`discharge_summaries` gets the same select-then-insert race backstop as `admissions`.**
+`createDischargeSummary`'s "does a summary already exist for this admission" check was a bare
+`findOne` with no supporting constraint — identical shape to the bed/patient races above it.
+Added `UQ_discharge_summaries_admission` (migration 0065, a plain unique index — unlike
+`UQ_admissions_active_bed`/`UQ_admissions_active_patient` this one isn't partial, since a
+discharge summary is 1:1 with an admission for its whole lifetime, not scoped to a transient
+"currently admitted" state). No catch-and-remap added to `createDischargeSummary` itself: unlike
+the transfer/admit races, a losing concurrent insert here is not a legitimate live status a caller
+would retry into — it's a true duplicate-write and should not be silently swallowed as anything
+other than the raw constraint error surfacing (this diverges from the transfer/admit precedent
+deliberately, not by oversight).
+
+**Test rigor:** each fix got both a happy-path/synchronous-check test and, where the finding was
+specifically about a *race* (transfer bed conflict, discharge-summary duplicate), a deterministic
+race-simulation test using the same `Promise.allSettled` — direct-repository-insert pattern already
+established for `UQ_admissions_active_patient` (§ the 2026-08-25 admissions P1 spec) rather than
+relying on true concurrency, which is flaky in this test environment.
