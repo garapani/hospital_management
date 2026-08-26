@@ -3861,3 +3861,27 @@ tenant every login fails on); deactivated catalog roles can't be enabled (provis
 `setTenantRoles`, and the package-default resolver all filter/reject `!isActive`); and
 `roleIds`/`departmentCatalogIds` are `@IsUUID({ each: true })` instead of plain strings, so a bad
 id 400s at the pipe instead of 500ing on the FK.
+
+## 97. Master-data P2/P3 batch: a read permission for the layout endpoints, and two guard
+    mirrors (2026-08-26)
+
+Four items, closing out the master-data section. Two shapes:
+
+**The layout GETs are permission-gated now.** Every department/ward/bed GET endpoint was
+unguarded — the controller had `@UseGuards(PermissionGuard)` but no `@RequirePermission`, so any
+authenticated account (including a patient-portal one) could enumerate the hospital's physical
+layout. The fix adds a dedicated `master-data.read` permission (catalog + seed) and applies it to
+all six GETs, granted to the staff roles that legitimately need the layout for their screens. Two
+specs had tests titled "allows listing for any authenticated session" — they were asserting the
+vulnerability as a feature; both were rewritten to assert the 403 and a read-granted 200. When a
+review flags an endpoint class as unguarded, search for tests that assert the unguarded behavior
+and rewrite them, not just the controller.
+
+**The guard mirrors are "deactivate checks its dependents, reactivate checks its prerequisites."**
+`deactivateDepartment` already refused while an active child existed; `reactivateDepartment` now
+refuses while the parent is deactivated (the mirror: deactivation protects dependents,
+reactivation protects the tree's consistency). `deactivateWard` now refuses while any bed is
+`Occupied`, mirroring `deactivateBed` — a ward with a patient in it can't be taken down. And the
+three creators got the standard 23505 → 409 backstop, with constraint names verified against the
+live DB (inline-column `UNIQUE` names like `departments_departmentCode_key` differ from
+explicitly-named ones like `UQ_beds_ward_bed_number` — check before hardcoding).
