@@ -72,10 +72,6 @@ services:
       - '3000:3000'
     volumes:
       - .:/usr/src/app
-      # node_modules lives in ./data, NOT the repo root: the container's `pnpm install`
-      # (run on every start) would otherwise write into the host's node_modules via the bind
-      # mount above and clobber the host toolchain. Persisted to the local filesystem so a
-      # recreated container keeps its install.
       - ./data/node_modules:/usr/src/app/node_modules
     working_dir: /usr/src/app
     command: sh -c "corepack enable && pnpm install && pnpm nx serve api --host 0.0.0.0"
