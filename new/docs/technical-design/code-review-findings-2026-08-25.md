@@ -153,8 +153,8 @@ the root `CLAUDE.md`.
 - [ ] **P3** — Unlimited concurrent Open cases per patient. (`ssu.service.ts:50-81`)
 
 ### fraction
-- [ ] **P1** — `baseAmount` is client-supplied and never reconciled against the invoice — any `fraction.manage` holder can mint an arbitrary doctor payout. (`fraction/fraction.service.ts:118-121,123-126,153`)
-- [ ] **P1** — `recordEntry` has no idempotency and no unique constraint — a double-submit pays a doctor twice, invisibly. (`fraction.service.ts:155-164`, `entities/fraction.entity.ts:37-63`)
+- [x] **P1** — `baseAmount` is client-supplied and never reconciled against the invoice — any `fraction.manage` holder can mint an arbitrary doctor payout. (`fraction/fraction.service.ts:118-121,123-126,153`) — **Fixed 2026-08-25:** `baseAmount` removed from the client-facing input entirely; `recordEntry` now resolves it server-side from the invoice's own `totalAmount`, the same way `InvoicesService.captureChargeForOrderItem` resolves price server-side instead of trusting the caller.
+- [x] **P1** — `recordEntry` has no idempotency and no unique constraint — a double-submit pays a doctor twice, invisibly. (`fraction.service.ts:155-164`, `entities/fraction.entity.ts:37-63`) — **Fixed 2026-08-25:** added `UQ_fraction_entries_invoice_doctor` (migration 0063) plus an in-transaction pre-check, so at most one entry can exist per (invoice, doctor); a concurrent duplicate maps the constraint violation to 409 instead of a raw 500.
 - [ ] **P2** — The default-rule lookup is nondeterministic when a doctor has >1 active null-department rule. (`fraction.service.ts:51-73,144-146`)
 - [ ] **P2** — No reversal when the source invoice is returned or cancelled. (`fraction.service.ts:155`)
 - [ ] **P3** — Write access sits with Billing/Accounts Staff; PRD places this under HR/Payroll Admin, which has zero grants. (`rbac/seed-rbac-catalog.ts:617-622`)
