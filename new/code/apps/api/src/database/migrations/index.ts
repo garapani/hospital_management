@@ -87,6 +87,7 @@ import { AddNotificationQueryShapeIndexes3000000000087 } from './0087-add-notifi
 import { AddHelpdeskTicketIndexes3000000000088 } from './0088-add-helpdesk-ticket-indexes.js';
 import { AddReferralSourcesNameUnique3000000000089 } from './0089-add-referral-sources-name-unique.js';
 import { AddAuditRecordsIndexes3000000000090 } from './0090-add-audit-records-indexes.js';
+import { AddEmployeeEmailPhoneUnique3000000000091 } from './0091-add-employee-email-phone-unique.js';
 import { AddSubscriptionInvoiceNumberTaxAndFullPeriodUnique1000000000084 } from './0084-add-subscription-invoice-number-tax-and-full-period-unique.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
@@ -190,4 +191,5 @@ export const TENANT_MIGRATIONS = [
   AddHelpdeskTicketIndexes3000000000088,
   AddReferralSourcesNameUnique3000000000089,
   AddAuditRecordsIndexes3000000000090,
+  AddEmployeeEmailPhoneUnique3000000000091,
 ];

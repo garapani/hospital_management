@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -80,20 +81,35 @@ export class EmployeeService {
         }
       }
 
-      return manager.getRepository(Employee).save(
-        manager.getRepository(Employee).create({
-          employeeCode,
-          firstName: input.firstName.trim(),
-          lastName: input.lastName.trim(),
-          departmentId: input.departmentId ?? null,
-          designation: input.designation ?? null,
-          phone: input.phone ?? null,
-          email: input.email ?? null,
-          joinDate: input.joinDate,
-          employmentType: input.employmentType ?? 'FullTime',
-          monthlyBasicSalary: input.monthlyBasicSalary ?? 0,
-        }),
-      );
+      try {
+        return await manager.getRepository(Employee).save(
+          manager.getRepository(Employee).create({
+            employeeCode,
+            firstName: input.firstName.trim(),
+            lastName: input.lastName.trim(),
+            departmentId: input.departmentId ?? null,
+            designation: input.designation ?? null,
+            phone: input.phone ?? null,
+            email: input.email ?? null,
+            joinDate: input.joinDate,
+            employmentType: input.employmentType ?? 'FullTime',
+            monthlyBasicSalary: input.monthlyBasicSalary ?? 0,
+          }),
+        );
+      } catch (error) {
+        // Email/phone are unique among non-null rows (partial indexes, migration 0091) — a
+        // duplicate must 409, not 500 (code-review-findings-2026-08-25 employee P3).
+        if (
+          error instanceof QueryFailedError &&
+          ((error as QueryFailedError & { constraint?: string }).constraint === 'UQ_employees_email' ||
+            (error as QueryFailedError & { constraint?: string }).constraint === 'UQ_employees_phone')
+        ) {
+          throw new ConflictException(
+            `An employee with that email or phone already exists`,
+          );
+        }
+        throw error;
+      }
     });
   }
 
@@ -156,7 +172,20 @@ export class EmployeeService {
       if (input.joinDate !== undefined) employee.joinDate = input.joinDate;
       if (input.employmentType !== undefined) employee.employmentType = input.employmentType;
       if (input.monthlyBasicSalary !== undefined) employee.monthlyBasicSalary = input.monthlyBasicSalary;
-      return repository.save(employee);
+      try {
+        return await repository.save(employee);
+      } catch (error) {
+        // Email/phone uniqueness backstop (partial indexes, migration 0091) — updating an
+        // employee onto someone else's email/phone must 409, not 500.
+        if (
+          error instanceof QueryFailedError &&
+          ((error as QueryFailedError & { constraint?: string }).constraint === 'UQ_employees_email' ||
+            (error as QueryFailedError & { constraint?: string }).constraint === 'UQ_employees_phone')
+        ) {
+          throw new ConflictException(`An employee with that email or phone already exists`);
+        }
+        throw error;
+      }
     });
   }
 

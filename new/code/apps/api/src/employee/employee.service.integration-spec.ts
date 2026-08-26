@@ -92,6 +92,54 @@ describe('EmployeeService (integration)', () => {
     expect(minimal.departmentId).toBeNull();
   });
 
+  it('rejects a duplicate email or phone with ConflictException (P3)', async () => {
+    await ctx.inTenant(() =>
+      employeeService.createEmployee({
+        firstName: 'Dup',
+        lastName: 'Email',
+        email: 'dup@example.com',
+        phone: '9999999999',
+        joinDate: '2025-01-01',
+      }),
+    );
+
+    await expect(
+      ctx.inTenant(() =>
+        employeeService.createEmployee({
+          firstName: 'Other',
+          lastName: 'Person',
+          email: 'dup@example.com',
+          joinDate: '2025-01-01',
+        }),
+      ),
+    ).rejects.toThrow(ConflictException);
+    await expect(
+      ctx.inTenant(() =>
+        employeeService.createEmployee({
+          firstName: 'Other',
+          lastName: 'Person',
+          phone: '9999999999',
+          joinDate: '2025-01-01',
+        }),
+      ),
+    ).rejects.toThrow(ConflictException);
+
+    // Updating an employee onto an existing email is also rejected.
+    const existing = await ctx.inTenant(() =>
+      employeeService.createEmployee({
+        firstName: 'Existing',
+        lastName: 'Person',
+        email: 'existing@example.com',
+        joinDate: '2025-01-01',
+      }),
+    );
+    await expect(
+      ctx.inTenant(() =>
+        employeeService.updateEmployee(existing.id, { email: 'dup@example.com' }),
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
   it('generates sequential, unique employee codes', async () => {
     const a = await makeEmployee();
     const b = await makeEmployee();

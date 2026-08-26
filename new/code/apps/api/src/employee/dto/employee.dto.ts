@@ -1,4 +1,5 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDateString, IsEmail, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { PaginationQueryDto } from '@hospital/pagination';
 import type { EmploymentType } from '../entities/employee.entity.js';
 
 export class CreateEmployeeDto {
@@ -8,8 +9,10 @@ export class CreateEmployeeDto {
   @IsString()
   lastName!: string;
 
+  // UUID-typed column — the read DTO already uses @IsUUID; a string here would 500 on the FK
+  // (code-review-findings-2026-08-25 employee P3).
   @IsOptional()
-  @IsString()
+  @IsUUID()
   departmentId?: string;
 
   @IsOptional()
@@ -21,7 +24,7 @@ export class CreateEmployeeDto {
   phone?: string;
 
   @IsOptional()
-  @IsString()
+  @IsEmail()
   email?: string;
 
   @IsDateString()
@@ -51,7 +54,7 @@ export class UpdateEmployeeDto {
   lastName?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   departmentId?: string;
 
   @IsOptional()
@@ -63,7 +66,7 @@ export class UpdateEmployeeDto {
   phone?: string;
 
   @IsOptional()
-  @IsString()
+  @IsEmail()
   email?: string;
 
   @IsOptional()
@@ -79,7 +82,10 @@ export class UpdateEmployeeDto {
   monthlyBasicSalary?: number;
 }
 
-export class ListEmployeesQueryDto {
+// Extends PaginationQueryDto — without it the ValidationPipe strips page/limit and the list is
+// permanently pinned to the service's default page size (code-review-findings-2026-08-25
+// employee P2).
+export class ListEmployeesQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   departmentId?: string;
