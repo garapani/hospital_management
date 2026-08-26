@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 import { Role } from './entities/role.entity.js';
 
 @Injectable()
@@ -31,15 +31,28 @@ export class RoleManagementService {
       throw new ConflictException(`Role with name ${input.name} already exists`);
     }
 
-    return repository.save(
-      repository.create({
-        name: input.name,
-        description: input.description,
-        priority: input.priority,
-        isCrossTenant: input.isCrossTenant ?? false,
-        isActive: true,
-      }),
-    );
+    try {
+      return await repository.save(
+        repository.create({
+          name: input.name,
+          description: input.description,
+          priority: input.priority,
+          isCrossTenant: input.isCrossTenant ?? false,
+          isActive: true,
+        }),
+      );
+    } catch (error) {
+      // Race-safety backstop for the pre-check above (roles.name is unique via the inline
+      // `name varchar NOT NULL UNIQUE`, auto-named roles_name_key) — a concurrent duplicate
+      // must 409, not 500 (code-review-findings-2026-08-25 rbac P3).
+      if (
+        error instanceof QueryFailedError &&
+        (error as QueryFailedError & { constraint?: string }).constraint === 'roles_name_key'
+      ) {
+        throw new ConflictException(`Role with name ${input.name} already exists`);
+      }
+      throw error;
+    }
   }
 
   /** Edits catalog metadata. The name is immutable — renaming would orphan tenant_roles and

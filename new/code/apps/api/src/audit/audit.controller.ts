@@ -11,7 +11,7 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get()
-  @RequirePermission('reporting.read')
+  @RequirePermission('audit.read')
   async search(@Query() query: SearchAuditRecordsDto): Promise<PaginatedResponseDto<AuditRecord>> {
     return this.auditService.getAuditRecords(
       {

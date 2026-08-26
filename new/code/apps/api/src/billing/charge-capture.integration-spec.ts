@@ -566,10 +566,19 @@ describe('Charge capture (integration) — order-item completion auto-charges th
   });
 
   it('best-effort: a revenue-posting failure does not roll back the clinical verification', async () => {
-    // Simulates a ledger misconfiguration (the documented failure mode) by deactivating the
-    // revenue account captureChargeForOrderItem posts to. Restored in finally so it doesn't leak
-    // into the other tests sharing this tenant.
-    await inTenant(() => accountingService.deactivateAccount(LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE));
+    // Simulates a ledger misconfiguration (the documented failure mode) by REMOVING the revenue
+    // account captureChargeForOrderItem posts to. (Deactivating it is no longer usable for this:
+    // system accounts reject deactivation by design — the accounting batch's structural-account
+    // guard.) assertAccountsUsable throws "account not found", which the best-effort posting
+    // envelope swallows. Restored in finally so it doesn't leak into the other tests sharing this
+    // tenant.
+    await inTenant(() =>
+      tenantConnection.runInTenantSchema((manager) =>
+        manager.query(`DELETE FROM ledger_accounts WHERE id = $1`, [
+          LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE,
+        ]),
+      ),
+    );
     try {
       const patient = await makePatient('5560000007');
       const test = await makePricedLabTest('Unmapped CBC', 'UNMAPPED-CBC', 150);
@@ -592,7 +601,17 @@ describe('Charge capture (integration) — order-item completion auto-charges th
       const journal = await journalForInvoiceItem(items[0].id);
       expect(journal).toBeNull();
     } finally {
-      await inTenant(() => accountingService.reactivateAccount(LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE));
+      // Restore the seeded system account row (the seed itself is create-only for existing rows).
+      await inTenant(() =>
+        tenantConnection.runInTenantSchema((manager) =>
+          manager.query(
+            `INSERT INTO ledger_accounts (id, "accountCode", name, type, "isActive", "createdBy")
+             VALUES ($1, '4000', 'Patient Service Revenue', 'Income', true, 'system')
+             ON CONFLICT (id) DO NOTHING`,
+            [LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE],
+          ),
+        ),
+      );
     }
   });
 });

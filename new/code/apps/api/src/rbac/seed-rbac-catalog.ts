@@ -201,6 +201,14 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     description: 'View reporting events, dashboards, and aggregated metrics.',
   },
   {
+    // Dedicated audit permission — the audit trail previously reused reporting.read
+    // (code-review-findings-2026-08-25 rbac P2), so a role with reporting but no audit mandate
+    // (e.g. a future analytics role) could read the audit trail, and revoking reporting killed
+    // audit too.
+    name: 'audit.read',
+    description: 'View the audit trail (insert/update/remove history across tenant tables).',
+  },
+  {
     name: 'lab.catalog.manage',
     description: 'Create and list the lab test category/test/component catalog.',
   },
@@ -496,6 +504,11 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Super Admin', permissionName: 'reporting.read' },
   { roleName: 'Hospital Admin', permissionName: 'reporting.read' },
   { roleName: 'Auditor/Compliance', permissionName: 'reporting.read' },
+  // audit.read: the trail is read by the auditor and by admins (who already had it via the
+  // reporting.read reuse) — Auditor/Compliance's audit mandate is PRD §6.1.
+  { roleName: 'Super Admin', permissionName: 'audit.read' },
+  { roleName: 'Hospital Admin', permissionName: 'audit.read' },
+  { roleName: 'Auditor/Compliance', permissionName: 'audit.read' },
   { roleName: 'Super Admin', permissionName: 'lab.catalog.manage' },
   { roleName: 'Hospital Admin', permissionName: 'lab.catalog.manage' },
   { roleName: 'Super Admin', permissionName: 'lab.read' },
@@ -662,7 +675,17 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
 export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
   const roleRepository = dataSource.getRepository(Role);
   for (const roleSeed of ROLE_CATALOG) {
-    await roleRepository.createQueryBuilder().insert().into(Role).values(roleSeed).orIgnore().execute();
+    // Upsert, not create-only: a seeded role whose metadata (description/priority/isActive/
+    // isCrossTenant) changed in code must reach existing databases when the seed is re-run —
+    // the old ON CONFLICT DO NOTHING meant code changes silently never propagated
+    // (code-review-findings-2026-08-25 rbac P2).
+    await roleRepository
+      .createQueryBuilder()
+      .insert()
+      .into(Role)
+      .values(roleSeed)
+      .orUpdate(['description', 'priority', 'isCrossTenant', 'isActive'], ['name'])
+      .execute();
   }
 
   const permissionRepository = dataSource.getRepository(Permission);
@@ -672,7 +695,7 @@ export async function seedRbacCatalog(dataSource: DataSource): Promise<void> {
       .insert()
       .into(Permission)
       .values(permissionSeed)
-      .orIgnore()
+      .orUpdate(['description', 'isActive'], ['name'])
       .execute();
   }
 

@@ -429,11 +429,15 @@ export class AccountsService {
       // the platform tenant and would leak hospital permissions into platform JWTs.
       query.where('role."isCrossTenant" = true').andWhere('role."isActive" = true');
     } else if (tenantId) {
-      // Package-gated hospital tenants only see roles their tenant_roles enabled.
+      // Package-gated hospital tenants only see roles their tenant_roles enabled — AND never
+      // cross-tenant (platform) roles, which are blocked at assignment but would otherwise
+      // surface here if a hospital's tenant_roles ever contained one, leaking Super Admin into
+      // a hospital role picker (code-review-findings-2026-08-25 rbac P3).
       query
         .innerJoin('tenant_roles', 'tr', 'tr."roleId" = role.id')
         .where('tr."tenantId" = :tenantId', { tenantId })
-        .andWhere('role."isActive" = true');
+        .andWhere('role."isActive" = true')
+        .andWhere('role."isCrossTenant" = false');
     }
 
     return query.getMany();

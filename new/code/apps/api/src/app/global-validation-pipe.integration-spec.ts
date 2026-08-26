@@ -29,6 +29,7 @@ describe('Global ValidationPipe (integration)', () => {
       permissions: [
         'lab.catalog.manage',
         'reporting.read',
+        'audit.read',
         'billing.manage',
         'billing.read',
         'maternity.manage',
