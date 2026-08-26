@@ -3748,3 +3748,25 @@ path already did; the staff path now matches), and `deactivateAccount` 409s an a
 account — the catalog convention the finding names. Note the spec fixture that asserted
 idempotent double-deactivation had to flip to expect the rejection: the finding's whole point was
 that the old behavior was wrong, so the test was testing the bug.
+
+## 93. Financial cross-cutting: closing the money-path test gaps (2026-08-26)
+
+The review's money-test-gap finding named seven paths; this closes the two that weren't already
+covered inside their module batches and records where the rest live. The notable discovery: the
+concurrent-depreciation-accrual test didn't exist because **the race itself still existed** —
+`runDepreciationAccrual` had the exact abort-the-whole-run failure payroll had (two concurrent
+runs both observed "no entry", both inserted, the loser aborted on the `(assetId, periodMonth,
+periodYear)` unique). It now takes the same run-level advisory lock (`depreciation:<month>:<year>`),
+and the test proves both runs fulfill with exactly one entry per asset. The pattern to remember:
+**when a review names a "missing test" on a concurrency path, write the test before assuming the
+underlying code is fine** — the test-gap item for payroll's concurrent runs was closed by the
+payroll fix, but the sibling accrual path had never been fixed because no test forced the issue.
+
+The other named paths were already proven by tests added inside their own module batches
+(cancel-vs-reversal-journal and capture-after-return in charge-capture; `updatePolicy` and
+claim-cap-vs-invoice in insurance; back-filled depreciation in fixed-assets; concurrent payroll
+in payroll). The concurrent deposit-refund test was genuinely missing in its own right: two
+concurrent same-amount refunds now provably decrement the balance exactly once (P1 row lock +
+P2 journal pre-check serialize them; the second sees the first's DepositRefund journal and
+no-ops). The module-boundary-lint half of this section is the same `eslint.config.mjs` work as
+the clinical-group boundary item — tracked there, not duplicated.
