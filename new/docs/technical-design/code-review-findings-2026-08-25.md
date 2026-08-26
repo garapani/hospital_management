@@ -243,8 +243,8 @@ the root `CLAUDE.md`.
 - [ ] **P3** — No maximum length on password fields. (`auth/dto/login.dto.ts:1-20`)
 
 ### rbac
-- [ ] **P1** — `bypassesPermissionChecks` is dead code, and Hospital Admin doesn't actually have the "full access" the seed implies (permission map omits all Lab/Radiology workflow perms, all Pharmacy perms, several Inventory perms). (`rbac/seed-rbac-catalog.ts:19,26,418-645`, `libs/auth-guards/src/lib/permission.guard.ts:14-34`)
-- [ ] **P2** — The dead god-mode flag is settable over HTTP on role updates. (`rbac/dto/update-role.dto.ts:14`)
+- [x] **P1** — `bypassesPermissionChecks` is dead code, and Hospital Admin doesn't actually have the "full access" the seed implies (permission map omits all Lab/Radiology workflow perms, all Pharmacy perms, several Inventory perms). (`rbac/seed-rbac-catalog.ts:19,26,418-645`, `libs/auth-guards/src/lib/permission.guard.ts:14-34`) — **Fixed 2026-08-26:** removed `bypassesPermissionChecks` entirely (column dropped via migration 0064, entity/seed/service/DTO references removed) rather than wiring it up — Super Admin and Hospital Admin's access already came from explicit permission grants seeded alongside the flag, so the flag was never load-bearing even before this. Hospital Admin's seed now also grants the previously-missing Lab/Radiology workflow, Pharmacy, and Inventory permissions.
+- [x] **P2** — The dead god-mode flag is settable over HTTP on role updates. (`rbac/dto/update-role.dto.ts:14`) — **Fixed 2026-08-26:** moot — the field no longer exists on `UpdateRoleDto` (see the P1 fix above).
 - [ ] **P2** — `PermissionGuard` only reads handler-level metadata — a class-level `@RequirePermission` would be silently ignored (latent trap, none exist today). (`libs/auth-guards/src/lib/permission.guard.ts:15-18`)
 - [ ] **P2** — No dedicated `audit.read` permission — audit trail reuses `reporting.read`. (`audit/audit.controller.ts:14`)
 - [ ] **P2** — The RBAC seed is create-only (`ON CONFLICT DO NOTHING`) — changing a seeded role/permission in code never reaches an existing database. (`rbac/seed-rbac-catalog.ts:650,655-662`)
