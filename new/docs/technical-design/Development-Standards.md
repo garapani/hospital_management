@@ -4100,3 +4100,53 @@ now applied everywhere in the sweep: **write-path uuid fields use `@IsUUID`, mat
 path** — the read DTOs have been correct all along, which is why the asymmetry was discoverable.
 A grep for `@IsString()` on uuid-column fields is a cheap lint for the whole codebase; each module
 batch keeps closing its instance, and this sweep closes the named set.
+
+## 108. Migration-history squash + seed data moved out of migrations (2026-08-27)
+
+**The squash.** The 92-file migration history (0001-0092) was consolidated into **two immutable
+baselines** — `0093-initial-platform-schema.ts` (the final public-schema state of the 15 platform
+migrations) and `0094-initial-tenant-schema.ts` (the final per-tenant-schema state of the 77
+tenant migrations). Both were **generated from `pg_dump --schema-only` of fully-migrated reference
+schemas, not hand-written**: the whole 0001→0092 ALTER chain (varchar→uuid conversions, audit-
+column backfills, constraint/index additions) collapsed into final `CREATE TABLE` statements, and
+every index, constraint, CHECK and partial unique index carries its production name. Doable only
+because we're pre-production: every database is resettable (the shared local dev/test DB), which
+is the one condition that makes rewriting schema history safe.
+
+**Verification — the schema a fresh DB gets is unchanged.** BEFORE: reference dumps of the public
+schema (re-provisioned from the old platform migrations) and of a fresh tenant schema (provisioned
+from the old tenant migrations). AFTER: identical dumps from the squashed baselines. The platform
+schema is **byte-identical**; the tenant schema differs only in pg_dump's round-trip re-rendering
+of cast placement in **three CHECK/partial-index predicates** (`radiology_requisitions` report-
+entered/scanned checks, `pharmacy_dispensings` active-order-item unique index) — semantically
+identical predicates with identical row coverage, verified by eye and by the full suite, which
+re-provisions every schema from the baselines (961+ tests green). Any future drift between a fresh
+provision and an upgraded one is caught by the same trick: dump both, diff.
+
+**The new migration regime.** Baselines are **append-only and never hand-edited** — a hand-edit
+would silently diverge every fresh schema from the contract. Schema changes ship as NEW migration
+files with unique 13-digit sort keys appended to `PLATFORM_MIGRATIONS`/`TENANT_MIGRATIONS`
+(index.spec.ts guards uniqueness, the ascending modern block, and that exactly the two baselines
+are present). The old "committed migrations are immutable" rule now applies to the baselines
+themselves.
+
+**Seed data moved out of migrations** (Tech Lead decision, matching the pre-existing
+`seed-rbac-catalog` pattern): the SaaS packages (was migration 0048) moved to
+`seedPackagesCatalog()` in `packages/seed-packages-catalog.ts`; the nine system ledger accounts
+(was migrations 0059/0085/0086) moved to `seedSystemLedgerAccounts()` in
+`accounting/seed-ledger-accounts.ts`, whose data now comes from `LEDGER_ACCOUNTS` in
+`ledger-account-codes.ts` — **the single source of truth**, killing the old "kept in sync with the
+literals below" hazard migration 0059's comment documented. Backfills that were no-ops on a fresh
+schema (0027's `tenant_roles` CROSS JOIN, 0048's `UPDATE tenants`, 0077's `ward_stock_batches`
+backfill) were dropped by design — a baseline only ever runs against a fresh schema with zero rows.
+
+**Wiring — where the guarantee lives now.** Tenant provisioning (`TenantProvisioningService`)
+seeds the ledger accounts immediately after the migration run, on the same tenant-scoped
+connection (skipped for empty migration lists — the backfill gate's bare-schema simulation), so
+every provisioned tenant gets its chart of accounts exactly as before. The test harness seeds the
+packages catalog unconditionally (`tenants.packageCode` has `DEFAULT 'basic' REFERENCES
+packages(code)`, so any tenant-row insert needs the rows). `seed-all` now runs migrate →
+seed-rbac → seed-packages → seed-initial-setup → seed-ledger-accounts; `seed-ledger-accounts`
+(the `apps/api/src/database/seed-ledger-accounts.ts` runner) mirrors `migrate-tenants` for
+already-provisioned schemas. Fresh platform DB: `seed-all`. Existing tenants: `migrate-tenants` +
+`seed-ledger-accounts`.

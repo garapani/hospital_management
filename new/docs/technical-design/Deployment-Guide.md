@@ -107,6 +107,27 @@ pnpm exec nx run api:migrate
 pnpm exec nx run api:migrate-tenants
 ```
 
+**Seeds are separate from migrations.** Since the 2026-08-27 squash (Development-Standards.md
+§108), migrations are schema-only — every fixed catalog row (RBAC roles/permissions, the SaaS
+packages, the per-tenant system ledger accounts) is an idempotent seed script. A fresh platform
+DB needs `seed-all`; a platform that only ever runs `migrate` has an empty catalog and cannot
+provision tenants (`tenants.packageCode` references `packages`):
+
+```bash
+# Everything: migrate + seed-rbac + seed-packages + seed-initial-setup + seed-ledger-accounts
+pnpm exec nx run api:seed-all
+# Or the individual steps
+pnpm exec nx run api:seed-rbac
+pnpm exec nx run api:seed-packages
+pnpm exec nx run api:seed-initial-setup
+# Backfill the system ledger accounts into already-provisioned tenant schemas
+pnpm exec nx run api:seed-ledger-accounts
+```
+
+Tenant provisioning seeds the ledger accounts automatically for NEW tenants (inside
+`provisionTenantSchema`), so the `seed-ledger-accounts` target is only needed for schemas that
+predate the squash.
+
 The same two scripts are what the containerized `migrate` service runs. See
 `Development-Standards.md` §26 for why the runners must exit explicitly (the swc-node loader's IPC
 pipes and data-source.ts's pool-monitor `setInterval` keep the event loop alive otherwise).
