@@ -18,6 +18,8 @@ node_modules.corrupted-*/
 # out of the working tree entirely; do not rely on this list to catch them.
 *credentail*
 *secret*
+!*.ts
+!*.js
 *.pem
 *.key
 *.p12
