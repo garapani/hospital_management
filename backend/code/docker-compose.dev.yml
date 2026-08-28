@@ -66,8 +66,11 @@ services:
       DB_DATABASE: hospital_db
       REDIS_HOST: api-redis
       REDIS_PORT: 6379
-      MINIO_ENDPOINT: api-minio
-      MINIO_PORT: 9000
+      OBJECT_STORAGE_ENDPOINT: api-minio
+      OBJECT_STORAGE_PORT: 9000
+      OBJECT_STORAGE_ACCESS_KEY: hospital_dev
+      OBJECT_STORAGE_SECRET_KEY: hospital_dev_password
+      JWT_SECRET: dev-secret-key-at-least-32-chars-long-12345
     ports:
       - '3000:3000'
     volumes:
