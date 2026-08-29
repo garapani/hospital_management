@@ -83,6 +83,80 @@ services:
         node --import @swc-node/register/esm-register apps/api/src/database/migrate.ts &&
         node --import @swc-node/register/esm-register apps/api/src/database/migrate-tenants.ts
 
+  seed-rbac:
+    profiles: ['seed']
+    image: hospital-api:latest
+    container_name: hospital-api-seed-rbac
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: hospital_db_user
+      DB_PASSWORD: hospital_db_pwd
+      DB_DATABASE: hospital_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hospital-network
+    command:
+      - sh
+      - -c
+      - node --import @swc-node/register/esm-register apps/api/src/database/seed-rbac-catalog-runner.ts
+
+  seed-initial-setup:
+    profiles: ['seed']
+    image: hospital-api:latest
+    container_name: hospital-api-seed-initial-setup
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: hospital_db_user
+      DB_PASSWORD: hospital_db_pwd
+      DB_DATABASE: hospital_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hospital-network
+    command:
+      - sh
+      - -c
+      - node --import @swc-node/register/esm-register apps/api/src/database/seed-initial-setup-runner.ts
+
+  seed-all:
+    profiles: ['seed']
+    image: hospital-api:latest
+    container_name: hospital-api-seed-all
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: hospital_db_user
+      DB_PASSWORD: hospital_db_pwd
+      DB_DATABASE: hospital_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      OBJECT_STORAGE_ENDPOINT: minio
+      OBJECT_STORAGE_PORT: 9000
+      OBJECT_STORAGE_ACCESS_KEY: hospital_dev
+      OBJECT_STORAGE_SECRET_KEY: hospital_dev_password
+      JWT_SECRET: dev-secret-key-at-least-32-chars-long-12345
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - hospital-network
+    command:
+      - sh
+      - -c
+      - node --import @swc-node/register/esm-register apps/api/src/database/migrate.ts && node --import @swc-node/register/esm-register apps/api/src/database/seed-rbac-catalog-runner.ts && node --import @swc-node/register/esm-register apps/api/src/database/seed-packages-catalog-runner.ts && node --import @swc-node/register/esm-register apps/api/src/database/seed-initial-setup-runner.ts && node --import @swc-node/register/esm-register apps/api/src/database/seed-ledger-accounts.ts
+
   prometheus:
     image: prom/prometheus:v2.55.1
     container_name: hospital-prometheus
