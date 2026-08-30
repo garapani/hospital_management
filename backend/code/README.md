@@ -121,6 +121,9 @@ npx nx migrate-tenants api
 
 # Seed RBAC catalog and create master admin account
 npx nx seed-all api
+
+# Populate the demo hospital with staff accounts and realistic sample data
+npx nx seed-demo-data api
 ```
 
 ### Default Credentials
@@ -144,6 +147,15 @@ data only:
 - **Display Name:** `Demo Hospital Administrator`
 
 ⚠️ **IMPORTANT:** Change both default passwords immediately after first login!
+
+The demo-data seed also creates these tenant-scoped staff accounts:
+
+| Role | Username |
+| --- | --- |
+| Nurse | `nurseuser` |
+| Doctor | `doctoruser` |
+| Receptionist / Front Desk | `receptionist` |
+| Billing/Accounts Staff | `accountuser` |
 
 In local dev, the tenant is taken from the subdomain:
 

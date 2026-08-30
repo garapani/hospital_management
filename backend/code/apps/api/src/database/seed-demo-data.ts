@@ -46,7 +46,36 @@ const logger = new Logger('SeedDemoData');
  */
 
 /** Demo staff accounts: one per operational role so every Basic feature has a working login. */
-const DEMO_STAFF: Array<{ username: string; roleName: string; displayName: string }> = [
+const DEMO_STAFF: Array<{
+  username: string;
+  roleName: string;
+  displayName: string;
+  password?: string;
+}> = [
+  {
+    username: 'nurseuser',
+    roleName: 'Nurse',
+    displayName: 'Demo Nurse',
+    password: process.env['DEMO_NURSE_PASSWORD'] ?? 'Nurseuser@123!',
+  },
+  {
+    username: 'doctoruser',
+    roleName: 'Doctor',
+    displayName: 'Demo Doctor',
+    password: process.env['DEMO_DOCTOR_PASSWORD'] ?? 'Doctoruser@123!',
+  },
+  {
+    username: 'receptionist',
+    roleName: 'Receptionist / Front Desk',
+    displayName: 'Demo Receptionist',
+    password: process.env['DEMO_RECEPTIONIST_PASSWORD'] ?? 'Receptionist@123!',
+  },
+  {
+    username: 'accountuser',
+    roleName: 'Billing/Accounts Staff',
+    displayName: 'Demo Accounts Staff',
+    password: process.env['DEMO_ACCOUNT_PASSWORD'] ?? 'Accountuser@123!',
+  },
   { username: 'demo.doctor', roleName: 'Doctor', displayName: 'Demo Doctor' },
   { username: 'demo.lab', roleName: 'Lab Technician', displayName: 'Demo Lab Technician' },
   { username: 'demo.radiology', roleName: 'Radiology Technician', displayName: 'Demo Radiology Technician' },
@@ -93,7 +122,7 @@ export async function seedDemoData(): Promise<void> {
             username: staff.username,
             email: `${staff.username}@hospital.local`,
             displayName: staff.displayName,
-            password: demoStaffPassword(),
+            password: staff.password ?? demoStaffPassword(),
             roleName: staff.roleName,
             needsPasswordUpdate: false,
           });
