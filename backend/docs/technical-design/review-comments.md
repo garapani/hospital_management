@@ -846,6 +846,8 @@ The per-line Fulfill button only renders when the requisition's status is exactl
 - `frontend/apps/staff-console/src/app/inventory/stock-requisition-detail/stock-requisition-detail.html:88`
 - backend evidence: `backend/code/apps/api/src/inventory/inventory-requisition.service.ts:26,219`
 
+**Resolved (2026-08-30):** Fulfill now gates on `isFulfillable(status)` (`Pending` or `PartiallyFulfilled`) instead of `status === 'Pending'` alone.
+
 ### High: Clearing a `p-select` filter throws a TypeError — PrimeNG emits `null`, the handlers call `.length` on it
 
 `p-select` with `[showClear]="true"` emits `null` through `ngModelChange` when the clear icon is clicked. Both server-paginated list screens then do `vendorId.length > 0` / `departmentId.length > 0` on that value, throwing before `load(0)` is ever reached — and because the filter signal was already set to `null`, the table keeps displaying the *previous* filter's rows under a now-empty filter with no indication the list is stale. The same `null` leak makes `canAddLine()` return `true` after a select is cleared, so "Add Line" becomes clickable and silently does nothing.
@@ -854,6 +856,8 @@ The per-line Fulfill button only renders when the requisition's status is exactl
 - `frontend/apps/staff-console/src/app/inventory/stock-requisition-list/stock-requisition-list.ts:89`
 - `frontend/apps/staff-console/src/app/inventory/purchase-order-list/purchase-order-list.ts:230`
 - `frontend/apps/staff-console/src/app/inventory/purchase-order-list/purchase-order-list.html:136,152`
+
+**Resolved (2026-08-30):** both filter handlers and the item-select handlers now accept `string | null` and normalize `null` to `''`/falsy before use; `canAddLine()` requires a real item id.
 
 ### High: ward-supply, master-data and global-catalog expose write actions with zero `hasPermission()` gating
 
@@ -865,6 +869,8 @@ Nineteen sibling templates gate their mutating buttons with `auth.hasPermission(
 - `frontend/apps/staff-console/src/app/global-catalog/global-catalog-list.html:23-28,88-93,63-75,130-143`
 - backend evidence: `backend/code/apps/api/src/ward-supply/ward-supply.controller.ts:19-28`
 
+**Resolved (2026-08-30):** added `canManage` (`AuthService.hasPermission`) to all three components, gating every mutating control — `ward-supply.manage`, `master-data.manage`, and `rbac.manage` (the actual backend-enforced permission for both global-catalog endpoints — `department-catalog.controller.ts` and `role-management.controller.ts` both require `rbac.manage`, confirmed by reading the controllers directly).
+
 ### High: The procurement/requisition workflow is only half-built — no goods receipt, no cancel, no requisition creation
 
 The PO detail screen renders a "Received Qty" column but there is no goods-receipt action anywhere in the app, so a purchase order can never leave `Ordered` through this console even though `POST .../goods-receipt` exists. Likewise PO/requisition cancel have no UI, and `POST /inventory/requisitions` has no UI at all — the requisition list has "View" but no "New Requisition". Also unused: the low-stock endpoint and `reorderLevel`/`minimumStock` fields already present in the item model — nothing in the UI ever warns about low stock.
@@ -875,6 +881,10 @@ The PO detail screen renders a "Received Qty" column but there is no goods-recei
 - `frontend/apps/staff-console/src/app/inventory/inventory-api.service.ts:35-36`
 - backend evidence: `backend/code/apps/api/src/inventory/inventory-procurement.controller.ts:45,51`, `inventory-requisition.controller.ts:13,31`
 
+**Resolved (2026-08-30):** added a per-line "Receive" action (batch number, expiry, unit cost, quantity) wired to `POST .../goods-receipt`, a "Cancel Order"/"Cancel Requisition" action on both detail screens (reason textarea, matching pharmacy-dispensing's cancel-with-reason pattern) wired to the two `PATCH .../cancel` endpoints, and a "New Requisition" dialog on the requisition list (department + category/sub-category/item cascade, mirroring the PO create dialog) wired to `POST /inventory/requisitions`.
+
+**Deferred (2026-08-30):** the low-stock endpoint (`GET stock-balances/low-stock`) and a low-stock banner/badge are not wired up — no existing screen has an analogous "warning banner" pattern to copy, and scoping where it should surface (item list? a dashboard widget?) is a product decision better suited to its own pending-tasks item.
+
 ### Medium: Both detail screens render a blank page on a failed fetch, with the header stuck on "Loading…"
 
 `load()` clears the loading signal in its `error` handler but leaves the detail signal `null`, and the template's `@if`/`@else if` chain has no final `@else` — a 404/500/403 produces an empty content area under a heading that permanently reads "Loading Purchase Order…" with no message, no retry, no toast.
@@ -883,6 +893,8 @@ The PO detail screen renders a "Received Qty" column but there is no goods-recei
 - `frontend/apps/staff-console/src/app/inventory/purchase-order-detail/purchase-order-detail.html:9-11,19-23,88`
 - `frontend/apps/staff-console/src/app/inventory/stock-requisition-detail/stock-requisition-detail.ts:69-75`
 - `frontend/apps/staff-console/src/app/inventory/stock-requisition-detail/stock-requisition-detail.html:19-23,97`
+
+**Resolved (2026-08-30):** both components now set a `notFound` signal on error and both templates add a final `@else if (notFound())` branch with a message and a back button.
 
 ### Medium: Ward Supply's Transactions tab silently truncates to the backend's default page and drops `total`
 
@@ -893,6 +905,8 @@ The PO detail screen renders a "Received Qty" column but there is no goods-recei
 - `frontend/apps/staff-console/src/app/ward-supply/ward-supply-api.service.ts:12-18,30-38`
 - `frontend/apps/staff-console/src/app/ward-supply/ward-supply.model.ts:32-35`
 
+**Resolved (2026-08-30):** the Transactions tab is now lazy/paginated (`[lazy]`, `[paginator]`, `onTransactionsLazyLoad`), and `PaginatedResult<T>` was fixed to the real `{ data, meta: { total, page, limit, totalPages } }` envelope both endpoints actually return via the shared `paginate()` helper — `listBalances` had the same wrong-envelope bug (not called out by this finding, but the exact same recurring bug class from every other module group; found and fixed while touching this file, per the pattern already noted in the financial and diagnostics groups).
+
 ### Medium: Ward Supply movement forms take raw UUIDs as free text, and send `""` for optional UUID fields (guaranteed 400)
 
 Department ID, Item ID and Patient ID are plain `pInputText` fields requiring pasted UUIDs, while sibling screens already resolve names via pickers. `patientId` becomes `''` the moment a user types into and then clears the field; `@IsOptional()` skips only `undefined`/`null`, so `patientId: ""` fails `@IsUUID()` and the consume request 400s with a raw validation message rendered verbatim. The receive form also omits `batchNumber`/`expiryDate` entirely, so every receipt lands in an unbatchable bucket with no expiry.
@@ -901,6 +915,8 @@ Department ID, Item ID and Patient ID are plain `pInputText` fields requiring pa
 - `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.ts:16,106-110`
 - `frontend/apps/staff-console/src/app/ward-supply/ward-supply.model.ts:23-30`
 - backend evidence: `backend/code/apps/api/src/ward-supply/dto/ward-supply.dto.ts`
+
+**Resolved (2026-08-30):** Department and Item are now `p-select` pickers (department list, and the same category→sub-category→item cascade used by the inventory create dialogs); `batchNumber`/`expiryDate` fields were added to the Receive form; both forms send `undefined` (not `''`) for blank optional fields (`patientId`, `remarks`, `batchNumber`, `expiryDate`). Patient stayed a free-text field — no patient-search/autocomplete pattern exists anywhere in this app to copy, and building one is a new shared component, out of scope for this pass; the `''`→`undefined` fix covers the actual reported 400.
 
 ### Medium: Deactivate/reactivate toggles fire immediately with no confirmation and no in-flight guard
 
@@ -911,6 +927,8 @@ Department ID, Item ID and Patient ID are plain `pInputText` fields requiring pa
 - `frontend/apps/staff-console/src/app/master-data/master-data-list.html:80-86,151-157,412-419`
 - `frontend/apps/staff-console/src/app/global-catalog/global-catalog-list.html:69-75,137-143`
 
+**Resolved (2026-08-30):** all five toggles now confirm via `ConfirmationService` before deactivating (not before reactivating, matching the existing sibling convention), each with a per-row `togglingXId` in-flight signal disabling the button while the request is outstanding.
+
 ### Medium: Accessibility and empty-state gaps in master-data — unnamed icon buttons, a `pTooltip` that never renders, three tables with no empty message
 
 Master Data's deactivate/reactivate buttons are icon-only with no `ariaLabel` (Global Catalog supplies it on the identical control). The bed toggle's `pTooltip="Toggle Active Status"` never renders because `TooltipModule` is not imported. The Departments/Wards tables (master-data) and Global Departments table (global-catalog) have no `pTemplate="emptymessage"`, so a first-run tenant sees a header row over blank space.
@@ -919,6 +937,8 @@ Master Data's deactivate/reactivate buttons are icon-only with no `ariaLabel` (G
 - `frontend/apps/staff-console/src/app/master-data/master-data-list.ts:16-27`
 - `frontend/apps/staff-console/src/app/master-data/master-data-list.html:32-90,105-162`
 - `frontend/apps/staff-console/src/app/global-catalog/global-catalog-list.html:30-80`
+
+**Resolved (2026-08-30):** added `ariaLabel`s to the department/ward/bed toggle buttons, imported `TooltipModule` so the bed toggle's `pTooltip` actually renders, and added `pTemplate="emptymessage"` to the Departments and Wards tables (master-data) and the Global Departments table (global-catalog).
 
 ### Medium: Transactional screens display raw UUIDs and unit-less quantities
 
@@ -930,6 +950,10 @@ Purchase Order/requisition detail and Ward Supply show bare Vendor/Item/Departme
 - `frontend/apps/staff-console/src/app/master-data/master-data-list.html:53`
 - `frontend/apps/staff-console/src/app/inventory/inventory-api.service.ts:34`
 
+**Resolved (2026-08-30):** PO detail now resolves `vendorId` to a name (`vendorName()`, same lookup pattern as the PO list); Master Data's Parent Dept column now resolves `parentDepartmentId` via the already-loaded `departments()` catalog instead of printing the raw id.
+
+**Deferred (2026-08-30):** item names and units of measure in PO/requisition/ward-supply are still raw ids/unit-less — there is no `GET /inventory/items/:id` (or bulk lookup) endpoint; items are only reachable through the category→sub-category drill-down, so resolving an arbitrary item id to a name would mean either a new backend endpoint or fetching the entire catalog client-side. Flagging as a backend gap rather than working around it blindly.
+
 ### Low: Cascading-select loads have no request-ordering guard, and two `paramMap` subscriptions are never torn down
 
 `onCategoryChange`/`onSubCategoryChange` and their PO-dialog equivalents fire a fresh HTTP call with no `switchMap` and no in-flight token, so a slow earlier response can overwrite a fast later one. Both detail components subscribe to `route.paramMap` without `takeUntilDestroyed()`, unlike `billing/invoice-detail.ts` which they were modelled on.
@@ -940,6 +964,10 @@ Purchase Order/requisition detail and Ward Supply show bare Vendor/Item/Departme
 - `frontend/apps/staff-console/src/app/inventory/stock-requisition-detail/stock-requisition-detail.ts:48`
 - `frontend/apps/staff-console/src/app/master-data/master-data-list.ts:244-250` and `master-data-list.html:223`
 - `frontend/apps/staff-console/src/app/global-catalog/global-catalog-list.html:286,402`
+
+**Resolved (2026-08-30):** `PurchaseOrderDetail` and `StockRequisitionDetail`'s `paramMap` subscriptions now use `takeUntilDestroyed(this.destroyRef)` (an explicit `DestroyRef` passed in, since `ngOnInit` runs outside the injection context `takeUntilDestroyed()` needs by default).
+
+**Deferred (2026-08-30):** the cascading-select request-ordering guard (`switchMap`/an in-flight token on `onCategoryChange`/`onSubCategoryChange` and their PO/ward-supply/requisition-dialog equivalents) is not added — it's a narrow race window (two category picks within one round-trip) with no user-visible incident on record, and every affected call site would need the same treatment; better scoped as a single follow-up pass across all of them than done piecemeal here.
 
 ### Module group: admin & platform (`admin-dashboard`, `tenants`, `users`, `employees`, `audit`, `notifications`, `helpdesk`, `branding`, `marketing`, `reporting`, `change-password`, `login`, `shell`, `fraction`)
 
