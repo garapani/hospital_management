@@ -302,6 +302,666 @@ Lab/Radiology/Pharmacy order item onto the patient's open invoice (see `Developm
 the 2026-08-14 pass, is replaced by a working implementation with 8 integration tests; the
 `pending-tasks.md` item is checked off.
 
+## Frontend Review — 2026-08-30 (staff-console, all modules)
+
+Module-by-module review of `frontend/apps/staff-console` for bugs, improvements, and UI/UX gaps (backend/tenant-isolation findings above are unaffected). Six passes, one per module cluster; each pass first swept for known recurrence patterns documented in `frontend/CLAUDE.md`'s "Screen-building conventions" section (missing `.subscribe` error handlers, `route.snapshot.paramMap` reads, `undefined` spread into query params, `p-table` lazy double-fetch, missing `runGuardsAndResolvers: 'always'`, undefined `glass-*`/`gradient-*` utility classes, hand-rolled `HttpClient` bypassing `ApiClientService`) before looking for new issues. Findings below are new (the known-pattern sweep came back clean everywhere except one recurrence, noted in Admin & Platform).
+
+### Module group: registration & clinical encounters (`admissions`, `appointments`, `encounters`, `triage`, `vitals`, `patients`, `orders`)
+
+### High: Patient chart tabs silently show only the first 20 records — and appointments are sorted oldest-first
+
+**Resolved (2026-08-30):** each tab now fetches with an explicit `limit: 200` (`patient-detail.ts`'s `PATIENT_CHART_TAB_LIMIT`). The oldest-first backend sort for appointments is unchanged — that's a backend ordering choice, out of scope for this frontend pass.
+
+`PatientDetail` loads appointments, admissions, orders and invoices with no `page`/`limit`, so the backend's `paginate()` default of `limit: 20` applies (`backend/code/libs/pagination/src/utils/paginate.ts:14`). The component then stores only `result.data` and renders it in a `p-table` with a **client-side** paginator (`[paginator]="true" [rows]="10"`), so the UI confidently reports "1–10 of 20" for a patient who has 60 appointments. Worse, the backend orders appointments `appointmentDate ASC`, so the 20 rows kept are the *oldest* — a long-standing patient's chart shows visits from years ago and hides every recent one, with no truncation indicator anywhere. For a clinical chart this is silent data loss at the point of care, not a cosmetic paging bug.
+
+- `frontend/apps/staff-console/src/app/patients/patient-detail.ts:430`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.ts:446`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.ts:462`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.ts:478`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.html:114`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.html:363`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.html:392`
+
+### High: "Record Vitals" pre-fills the new reading with the previous reading's values
+
+**Resolved (2026-08-30):** product decision made — `openVitalModal()` now only carries forward height/weight; point-in-time measurements and `triageNotes` start blank. `patient-detail.spec.ts`'s pinned test updated to match the new intent.
+
+`openVitalModal()` copies temperature, pulse, BP, respiratory rate, SpO₂, pain score and the previous `triageNotes` from `this.vitals()[0]` into the blank create form. A nurse who opens the dialog to record only a new temperature and presses Save writes a fresh, now-timestamped vitals row asserting a BP and SpO₂ that were never measured — fabricated clinical observations that then drive triage/deterioration decisions and are indistinguishable from real ones. Carry-forward is defensible for height/weight; it is not for point-in-time measurements or free-text notes. Note this behaviour is deliberate and locked in by a test (`patient-detail.spec.ts:255`), so it needs a product decision, not just a code fix — and the sibling standalone Vitals screen does *not* pre-fill (`vital-list.ts:98`), so the two entry points disagree.
+
+- `frontend/apps/staff-console/src/app/patients/patient-detail.ts:257`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.spec.ts:255`
+- `frontend/apps/staff-console/src/app/vitals/vital-list.ts:93`
+
+### High: Clinical records are deleted/voided on a single click with no confirmation, and several failures are swallowed silently
+
+**Resolved (2026-08-30):** added a shared `ConfirmationService`/`<p-confirmDialog>` (app-wide, mirroring the existing `MessageService`/`<p-toast>` pattern — nothing like it existed before) and wired it into diagnosis/prescription delete and vitals void, in both `patient-detail.ts` and `encounter-list.ts`/`vital-list.ts`; all three now also toast on error.
+
+Deleting a diagnosis or prescription and voiding a vitals record all fire the API call straight from the click handler — no `p-confirmDialog`, no "are you sure", and in three of the five cases no error feedback at all (`error: () => undefined`). One stray click on an icon-only trash button in a dense table permanently removes a diagnosis from a patient's record; if the delete then fails server-side the user sees nothing and assumes it worked, while the row is still there after reload. This is also inconsistent within the same app: `AppointmentDetail.confirmCancel` and `AdmissionDetail.confirmDischarge` both gate their destructive action behind a modal, and `PatientDetail`'s delete handlers at least surface an error toast.
+
+- `frontend/apps/staff-console/src/app/patients/patient-detail.ts:369`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.ts:416`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.html:297`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.html:342`
+- `frontend/apps/staff-console/src/app/encounters/encounter-list.ts:224`
+- `frontend/apps/staff-console/src/app/encounters/encounter-list.ts:269`
+- `frontend/apps/staff-console/src/app/vitals/vital-list.ts:114`
+- `frontend/apps/staff-console/src/app/vitals/vital-list.html:124`
+
+### High: The duplicate-patient guard can itself create duplicate patients (double-submit) and dead-ends on failure
+
+**Resolved (2026-08-30):** `submitRegistration()`'s double-submit guard moved to fire for both call sites; `proceedWithDuplicate()` now guards re-entry and binds `[loading]` on its button; a failed create now resets `showDuplicateWarning` so the user returns to their still-populated form instead of a dead end; `.toPromise()` replaced with `firstValueFrom`.
+
+`proceedWithDuplicate()` calls `submitRegistration()` without setting `isSaving` back to `true`, and the "Register as New Patient Anyway" button has no `[loading]`/`[disabled]` binding — so two fast clicks issue two `POST /patients` calls, both with `allowDuplicate: true`, producing exactly the duplicate MRN the whole flow exists to prevent. Separately, if the create fails from the duplicate panel, `showDuplicateWarning` stays `true`, the panel replaces the form, and the footer `Register` button is disabled by `showDuplicateWarning()` — the user cannot get back to their typed data and must Cancel and re-key the whole registration. The `.toPromise()` on the duplicate check is also deprecated (removed in RxJS 8) and is the only place in these seven modules that doesn't use the codebase's `subscribe({next, error})` convention.
+
+- `frontend/apps/staff-console/src/app/patients/patient-list.ts:210`
+- `frontend/apps/staff-console/src/app/patients/patient-list.ts:184`
+- `frontend/apps/staff-console/src/app/patients/patient-list.ts:156`
+- `frontend/apps/staff-console/src/app/patients/patient-list.html:140`
+- `frontend/apps/staff-console/src/app/patients/patient-list.html:272`
+
+### Medium: Admissions "Active" view pagination is fictional — every page shows the whole list
+
+**Resolved (2026-08-30):** `admissions` is now a `computed()` slice over a dedicated `activeAdmissionsAll` signal for the Active view; `onLazyLoad` no longer refetches on a page change in that view, it just re-slices client-side.
+
+The code comment claims "pagination is client-side over that array", but no slicing exists: `listActive()` puts the full array into `admissions` and `data.length` into `totalRecords`, while the `p-table` is in `[lazy]="true"` mode, which renders `value` verbatim without paging it. With 35 active inpatients the table renders all 35 rows at once, the paginator claims 4 pages, and clicking page 2 re-fetches the identical full list and re-renders the same 35 rows — the `first` offset is accepted by `load()` and then ignored on this branch.
+
+- `frontend/apps/staff-console/src/app/admissions/admission-list.ts:76`
+- `frontend/apps/staff-console/src/app/admissions/admission-list.ts:90`
+- `frontend/apps/staff-console/src/app/admissions/admission-list.html:48`
+
+### Medium: Appointment / order / triage detail screens have no not-found or error state — they hang on "Loading…" forever
+
+**Resolved (2026-08-30):** all three siblings (`appointment-detail.ts`, `order-detail.ts`, `triage-detail.ts`) now match `AdmissionDetail`'s pattern (`notFound` signal + 404 branch + back affordance).
+
+`AdmissionDetail` handles this correctly (`notFound` signal, 404 branch, "Back to Admissions" affordance). Its three siblings don't: on any non-2xx from `getById` they clear `loading` but leave the entity signal `null`, and the templates have no `@else` for that case. The result is a header stuck at "Loading Appointment..." / "Loading Triage Entry..." above a completely blank page, with no message and no way back except the browser.
+
+- `frontend/apps/staff-console/src/app/appointments/appointment-detail.ts:65`
+- `frontend/apps/staff-console/src/app/appointments/appointment-detail.html:9`
+- `frontend/apps/staff-console/src/app/orders/order-detail.ts:45`
+- `frontend/apps/staff-console/src/app/triage/triage-detail.ts:63`
+- `frontend/apps/staff-console/src/app/admissions/admission-detail.ts:80`
+
+### Medium: Triage assessment overwrites `triagedAt`/`triagedBy` on every save, destroying the time-to-triage record
+
+**Resolved (2026-08-30):** `saveAssessment()` now only sends `triagedAt`/`triagedBy` when `entry.triagedAt` is not already set (i.e. the first triage transition); later edits (discharge remarks, status changes) no longer touch either field.
+
+`saveAssessment()` unconditionally sends `triagedAt: new Date().toISOString()` and `triagedBy: currentUser().sub` on *every* update, including edits that only change discharge remarks or move the status to "Discharged" hours later. The original triage timestamp — the field an ER uses to measure door-to-triage time and to attribute the acuity assignment — is silently replaced by whoever last touched the form.
+
+- `frontend/apps/staff-console/src/app/triage/triage-detail.ts:76`
+
+### Medium: Orders are a dead end — line items can be created but never completed or cancelled
+
+**Resolved (2026-08-30):** `OrdersApiService` gained `completeItem`/`cancelItem`; `order-detail.ts`/`.html` now render Complete/Cancel actions per pending line item, gated on `order.manage`, with a confirm step for Complete and a mandatory-reason modal for Cancel (mirroring the appointment-cancel pattern).
+
+The backend exposes `PATCH /orders/:id/items/:itemId/complete` and `.../cancel` (`backend/code/apps/api/src/orders/orders.controller.ts:32,38`), but `OrdersApiService` has only `create`/`list`/`getById`, and `order-detail.html` renders the item table read-only with a "Cancel Reason" column that can never be populated from this UI. Every order therefore sits at `Pending` forever. `OrderDetail` also injects no `AuthService` and does no `order.manage` gating.
+
+- `frontend/apps/staff-console/src/app/orders/orders-api.service.ts:65`
+- `frontend/apps/staff-console/src/app/orders/order-detail.ts:17`
+- `frontend/apps/staff-console/src/app/orders/order-detail.html:76`
+
+### Medium: Encounters screen renders a false "no records" empty state while data is still loading
+
+**Resolved (2026-08-30):** the Notes tab now shows a spinner while `loading()` is true instead of falling into `@empty`; the Diagnoses/Prescriptions `p-table`s now bind `[loading]="loading()"`.
+
+`EncounterList` sets and clears a `loading` signal in `reloadAll()`, but `encounter-list.html` never reads it. Between clicking "Open Encounter" and the three parallel responses landing, the tabs render `@empty` blocks showing "No clinical notes for this patient." etc. — a clinician on a slow link sees an authoritative-looking empty chart for a patient who has records. The sibling Vitals screen binds the same signal correctly.
+
+- `frontend/apps/staff-console/src/app/encounters/encounter-list.ts:107`
+- `frontend/apps/staff-console/src/app/encounters/encounter-list.html:127`
+- `frontend/apps/staff-console/src/app/encounters/encounter-list.html:179`
+- `frontend/apps/staff-console/src/app/vitals/vital-list.html:90`
+
+### Medium: `today()` is computed in UTC, so the appointment day-list is wrong before 05:30 IST
+
+**Resolved (2026-08-30):** added a shared `frontend/apps/staff-console/src/app/shared/date.util.ts` (`todayLocal()`); `appointment-list.ts` now imports it in place of its local UTC-based `today()`. The same pattern in employees/vaccination/maternity/accounting is deferred to those modules' own review groups, which will reuse this helper.
+
+`new Date().toISOString().slice(0, 10)` yields the *UTC* calendar date. In IST (UTC+5:30) every local time from 00:00 to 05:29 resolves to the previous day, so the night-shift front desk opens Appointments and gets yesterday's clinic list as the default filter, and the New Appointment dialog defaults to yesterday's date. The same pattern recurs at `employees/employee-list.ts:20`, `vaccination/vaccination-list.ts:62`, `maternity/maternity-list.ts:97`, `accounting/accounting-console.ts:31,255,312` — a shared `todayLocal()` helper is the right fix workspace-wide.
+
+- `frontend/apps/staff-console/src/app/appointments/appointment-list.ts:16`
+- `frontend/apps/staff-console/src/app/appointments/appointment-list.ts:47`
+- `frontend/apps/staff-console/src/app/appointments/appointment-list.ts:124`
+
+### Medium: Accessibility gaps — unlabelled form fields, unnamed icon-only buttons, and a tooltip directive that isn't imported
+
+**Resolved (2026-08-30):** added `for`/`id`/`inputId` pairs to every cited field (Vitals dialog, Encounters note/diagnosis/prescription dialogs, Orders line-item rows), `ariaLabel` to every cited icon-only button, and imported `TooltipModule` into `TriageList`.
+
+(1) Every field in the Vitals dialog, the Encounters note/diagnosis/prescription dialogs and the Orders line-item rows uses a bare `<label>` with no `for` and an input with no `id` — the admissions/appointments/triage dialogs in the same app do `for`/`inputId` correctly, so this is inconsistency, not house style. (2) Icon-only `p-button`s (row-navigation chevrons, delete-item trash, back arrows) have no `aria-label`. (3) `triage-list.html:41` uses `pTooltip` but `TooltipModule` is not in the component's `imports`, so the directive never instantiates — the link icon carries no hover text and no accessible name.
+
+- `frontend/apps/staff-console/src/app/vitals/vital-list.html:155`
+- `frontend/apps/staff-console/src/app/encounters/encounter-list.html:254`
+- `frontend/apps/staff-console/src/app/orders/order-list.html:110`
+- `frontend/apps/staff-console/src/app/orders/order-list.html:105`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.html:133`
+- `frontend/apps/staff-console/src/app/triage/triage-list.html:41`
+- `frontend/apps/staff-console/src/app/triage/triage-list.ts:20`
+
+### Low: Two divergent copies each of `VitalsApiService` and `EncountersApiService`
+
+**Deferred (2026-08-30):** not fixed in this pass — cosmetic duplication, not a bug, and collapsing the pair requires reconciling divergent method names/nullability across two active consumer sets. Left open for a dedicated follow-up.
+
+`patients/vitals-api.service.ts` and `vitals/vitals-api.service.ts` are competing definitions of the same endpoints with different method names, model shapes and nullability; the same is true of `patients/encounters-api.service.ts` vs `encounters/encounters-api.service.ts`. Both pairs are in active use, so any backend contract change has to be applied twice.
+
+- `frontend/apps/staff-console/src/app/patients/vitals-api.service.ts:42`
+- `frontend/apps/staff-console/src/app/vitals/vitals-api.service.ts:37`
+- `frontend/apps/staff-console/src/app/patients/encounters-api.service.ts:85`
+- `frontend/apps/staff-console/src/app/encounters/encounters-api.service.ts:76`
+
+### Module group: specialty care (`nursing`, `maternity`, `ot`, `ssu`, `cssd`, `vaccination`)
+
+### High: Write actions in nursing, OT, maternity, vaccination and CSSD are never permission-gated
+
+All five routes are guarded only by their `*_READ` permission, yet every mutating control on the screen renders unconditionally — a user holding just `nursing.read` sees Start/Complete/Cancel/Administer/Skip, `ot.read` sees Start/Complete/Cancel Surgery, `cssd.read` sees Deactivate Instrument and Mark Cycle Failed. `NURSING_MANAGE`/`OT_MANAGE`/`MATERNITY_MANAGE`/`VACCINATION_MANAGE`/`CSSD_MANAGE` all exist in `libs/auth/src/lib/permissions.ts`, and SSU already does this correctly (`canManage` gate, plus a "View only" affordance) — so does every sibling outside this review (admissions, triage, vitals, encounters, payroll, employees). Concrete failure: a read-only ward clerk clicks "Cancel" on a scheduled surgery, the backend `PermissionGuard` returns 403, and the user gets a generic "Action failed" toast for a button that should never have been on screen. This is the highest-leverage fix in the whole frontend review — five modules, one established pattern to copy from `ssu-list.ts:109`.
+
+- `frontend/apps/staff-console/src/app/app.routes.ts:88` (and `:93`, `:98`, `:103`, `:108`)
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.html:33`, `:58`, `:61`, `:62`, `:79`, `:106`, `:107`
+- `frontend/apps/staff-console/src/app/ot/ot-list.html:8`, `:73`, `:74`, `:77`
+- `frontend/apps/staff-console/src/app/maternity/maternity-list.html:8`, `:66`
+- `frontend/apps/staff-console/src/app/vaccination/vaccination-list.html:8`
+- `frontend/apps/staff-console/src/app/cssd/cssd-console.html:18`, `:45`, `:62`, `:89`, `:90`
+- correct pattern: `frontend/apps/staff-console/src/app/ssu/ssu-list.ts:109`, `frontend/apps/staff-console/src/app/ssu/ssu-list.html:9`, `:93`
+
+### High: Irreversible clinical transitions fire on a single click with no confirmation step
+
+Cancel Surgery, Complete Surgery, Cancel Task, Administer Dose, Skip Dose, Mark Cycle Failed and Deactivate Instrument all POST immediately from the row's `(onClick)`. There is no `ConfirmationService`/`p-confirmDialog` anywhere in the app; SSU establishes the house pattern instead — a `p-dialog` naming the record and requiring an explicit second click (and, for reject, a mandatory reason). Two are worse than a mis-click: "Skip" writes a missed-dose entry to the MAR and the API accepts a `notes` reason the UI never collects, so every skipped dose is recorded with a null justification; "Mark Cycle Failed" invalidates a sterilization batch.
+
+- `frontend/apps/staff-console/src/app/ot/ot-list.ts:131` (cancel), `:127` (complete)
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.ts:108` (cancel task), `:181` (skip)
+- `frontend/apps/staff-console/src/app/nursing/nursing-api.service.ts:52` — `notes?` accepted, never passed
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.html:106-107` (adjacent Administer / Skip)
+- `frontend/apps/staff-console/src/app/cssd/cssd-console.ts:117` (deactivate), `frontend/apps/staff-console/src/app/cssd/cssd-console.html:45`
+- house pattern: `frontend/apps/staff-console/src/app/ssu/ssu-list.html:280-389`
+
+### High: Recording a maternity delivery is one-shot, unvalidated and unconfirmed
+
+The Record Delivery dialog's Save button carries no `[disabled]` expression at all — unique among the ~10 submit buttons in these six modules. Baby Count comes from a `p-inputNumber` that emits `null` when cleared, and `deliveryForm` is posted verbatim, so a cleared field sends `babyCount: null`. Once `deliveryDate` is set the action disappears from the row and no edit or detail screen exists — a delivery recorded with the wrong type, date or baby count is permanently uncorrectable from this UI.
+
+- `frontend/apps/staff-console/src/app/maternity/maternity-list.html:154` (no `[disabled]`)
+- `frontend/apps/staff-console/src/app/maternity/maternity-list.html:144` (`babyCount` can go null), `:65`
+- `frontend/apps/staff-console/src/app/maternity/maternity-list.ts:107`
+
+### High: Nursing MAR and CSSD cycle lists silently show only the server's first page
+
+`NursingApiService.listTasks`/`listAdministrations` send no `page`/`limit`, `CssdApiService.listCycles` is called with no params, and all three responses' `total` field is discarded — the templates use a plain `p-table` with no `[paginator]`, unlike maternity/OT/SSU/vaccination which all paginate properly. A busy ward whose admission has more open tasks or scheduled doses than the backend's default cap will have doses that simply do not appear on the medication administration record, with no hint that rows are missing. Silent truncation of a MAR is a patient-safety-grade omission; CSSD has the same problem for sterilization history.
+
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.ts:67`, `:134` (`result.total` dropped)
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.html:35`, `:81` (no `[paginator]`)
+- `frontend/apps/staff-console/src/app/cssd/cssd-console.ts:138`, `:140`
+- `frontend/apps/staff-console/src/app/cssd/cssd-console.html:20`, `:64`
+- contrast: `frontend/apps/staff-console/src/app/maternity/maternity-list.html:28-40`
+
+### High: Five of the six modules require staff to hand-type a raw patient/admission UUID
+
+Nursing, OT, maternity and vaccination expose the patient/admission as a bare `pInputText` in both the filter bar and the create dialog, and their tables render the same raw UUID back with no patient name anywhere on screen. SSU already solves this with a search-by-name/number picker backed by `PatientsApiService` plus a "or enter Patient ID directly" escape hatch. A transposed UUID that happens to resolve creates a clinical record against the wrong person, and nothing in the UI would reveal it.
+
+- `frontend/apps/staff-console/src/app/ot/ot-list.html:59`, `:102`
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.html:10-17`, `:136`, `:171`
+- `frontend/apps/staff-console/src/app/maternity/maternity-list.html:53-54`, `:91`, `:95`
+- `frontend/apps/staff-console/src/app/vaccination/vaccination-list.html:52`, `:79`
+- pattern to reuse: `frontend/apps/staff-console/src/app/ssu/ssu-list.ts:162-186`, `frontend/apps/staff-console/src/app/ssu/ssu-list.html:153-215`
+
+### Medium: The scheduling screens cannot actually set a schedule
+
+`CreateSurgeryDto`/`CreateAdministrationDto` accept `scheduledAt` and `CreateTaskDto` accepts `dueAt`, but none of the three dialogs render an input for them. Every surgery scheduled through this screen lands with `scheduledAt: null`, and the list's "Scheduled"/"Due" columns permanently render `—` for anything created in-app.
+
+- `frontend/apps/staff-console/src/app/ot/ot-list.html:100-111` vs `frontend/apps/staff-console/src/app/ot/ot.model.ts:24`
+- `frontend/apps/staff-console/src/app/ot/ot-list.html:51`, `:62`
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.html:169-184` vs `frontend/apps/staff-console/src/app/nursing/nursing.model.ts:43`
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.html:134-145` vs `frontend/apps/staff-console/src/app/nursing/nursing.model.ts:19`
+
+### Medium: CSSD "Complete Cycle" posts `sterileHours: 0` when the field is cleared
+
+`submitComplete` coerces the signal with `this.sterileHours() ?? 0`, and the Complete button has no `[disabled]` guard. A user who clears the box and clicks Complete sends `sterileHours: 0`, which the backend turns into a sterile-expiry equal to the completion timestamp — the instrument is marked completed and simultaneously expired, silently (success toast, "Sterile Until" shows a past time).
+
+- `frontend/apps/staff-console/src/app/cssd/cssd-console.ts:183`
+- `frontend/apps/staff-console/src/app/cssd/cssd-console.html:178`, `:184`
+
+### Medium: List-load failures are invisible in OT, maternity and vaccination, and the OT detail dialog goes blank on error
+
+Those three `load()` methods use `error: () => this.loading.set(false)` with no toast, so a 500 or a network drop presents as "No surgeries found." — indistinguishable from a genuinely empty result. Nursing, CSSD and SSU all toast on the same failure. Separately, `viewSurgery` opens the detail dialog before the request resolves and on error only clears `detailLoading`, leaving a modal with a header and an entirely empty body (no final `@else`).
+
+- `frontend/apps/staff-console/src/app/ot/ot-list.ts:80`
+- `frontend/apps/staff-console/src/app/maternity/maternity-list.ts:68`
+- `frontend/apps/staff-console/src/app/vaccination/vaccination-list.ts:57`
+- `frontend/apps/staff-console/src/app/ot/ot-list.ts:108-120`, `frontend/apps/staff-console/src/app/ot/ot-list.html:128-149`
+- contrast: `frontend/apps/staff-console/src/app/nursing/nursing-console.ts:70-73`, `frontend/apps/staff-console/src/app/ssu/ssu-list.ts:141-148`
+
+### Medium: Paginator advances before the response lands, and superseded page requests are never cancelled
+
+All four lazy tables call `this.firstRecord.set((page - 1) * limit)` before the HTTP call resolves, and none cancel an in-flight request when a new one starts (plain `.subscribe`, no `switchMap`). A failed page-3 request leaves the paginator highlighting page 3 while the table still shows page 2's rows; out-of-order responses under rapid filtering can let a stale response win. Post-action reloads compound this: every successful approve/cancel/complete calls `load(1, pageSize)`, silently yanking the user back to page 1.
+
+- `frontend/apps/staff-console/src/app/ot/ot-list.ts:66`, `:140`
+- `frontend/apps/staff-console/src/app/maternity/maternity-list.ts:61`, `:85`, `:111`
+- `frontend/apps/staff-console/src/app/vaccination/vaccination-list.ts:50`, `:74`
+- `frontend/apps/staff-console/src/app/ssu/ssu-list.ts:127`, `:216`, `:247`, `:289`, `:318`
+
+### Medium: Default dates are derived in UTC, so they are wrong for the first 5½ hours of every IST day
+
+Both `openDeliveryModal` and `openModal` seed today's date with `new Date().toISOString().slice(0, 10)` (UTC calendar date). A delivery at 02:15 IST or a night-shift vaccination is pre-filled with the wrong day, and neither field is re-checked on submit.
+
+- `frontend/apps/staff-console/src/app/maternity/maternity-list.ts:97`
+- `frontend/apps/staff-console/src/app/vaccination/vaccination-list.ts:62`
+
+### Medium: Accessibility — dialog labels are not associated with their inputs, and SSU's patient results are click-only divs
+
+Every field label inside every modal in all six modules is a bare `<label>` sibling of an input with no `id`/`for`. In SSU the patient search results are `<div (click)>` rows with no `role`/`tabindex`/key handler — unreachable by keyboard — and each row nests a `p-button` whose click bubbles to the parent div, firing `selectPatient` twice per click.
+
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.html:135`, `:139`, `:143`, `:170`, `:174`, `:178`, `:182`
+- `frontend/apps/staff-console/src/app/ot/ot-list.html:101`, `:105`, `:109`
+- `frontend/apps/staff-console/src/app/maternity/maternity-list.html:99`, `:103`, `:108`, `:135`, `:139`, `:143`, `:147`
+- `frontend/apps/staff-console/src/app/vaccination/vaccination-list.html:78`, `:82`, `:87`, `:91`, `:96`
+- `frontend/apps/staff-console/src/app/cssd/cssd-console.html:118`, `:122`, `:126`, `:130`, `:157`, `:161`, `:177`, `:193`
+- `frontend/apps/staff-console/src/app/ssu/ssu-list.html:190-199`
+
+### Low: Per-row action locks share one signal; CSSD's instrument toggle has none; `cycleActionId` is dead code
+
+OT and nursing guard concurrent row actions with a single shared signal, which one row's response can clear while another row's action is still in flight, re-enabling a double-post. `toggleInstrumentActive` has no in-flight state at all. CSSD declares `cycleActionId` and never reads it. `instrumentOptions` is a getter that should be a `computed()`.
+
+- `frontend/apps/staff-console/src/app/ot/ot-list.ts:136`, `:139`
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.ts:113`, `:116`, `:167`, `:170`
+- `frontend/apps/staff-console/src/app/cssd/cssd-console.ts:117-132`, `:50` (unused), `:62` (getter)
+
+### Module group: diagnostics & pharmacy (`lab`, `radiology`, `pharmacy`)
+
+### High: Entered lab result values are never displayed anywhere — verification is a blind sign-off
+
+`LabRequisitionDetail` renders only a "Requisition Details" panel and a "Workflow" panel; there is no results table, and `LabApiService` has no method to read results back (only `enterResult`). The backend exposes `GET /lab/requisitions/:id/report.pdf` for exactly this, and it is never called from the frontend. A lab supervisor holding `lab.result.verify` opens a `ResultsEntered` requisition, sees no values, no units, no abnormal flags, and clicks "Verify Results" — an irreversible clinical sign-off performed on data they cannot see. This is the single most serious gap in the three modules; Radiology by contrast does render `reportText` before its verify button.
+
+- `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:69-95`
+- `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:79-81`
+- `frontend/apps/staff-console/src/app/lab/lab-api.service.ts:112-114`
+
+### High: Pharmacy console can dispense a drug but can never cancel or reverse one
+
+The backend `PharmacyDispensingController` exposes `PATCH :id/cancel` and `PATCH :id/reverse`, but `PharmacyDispensingApiService` implements only `list`/`getById`/`create`/`dispense`. The detail template even renders a "Cancel Reason" field that nothing in this UI can ever populate. A pharmacist dispenses 30 tablets against the wrong `inventoryItemId`, inventory is decremented, and there is no path in the console to reverse it — the correction requires a direct API call or a DB fix. For the one module in this review that mutates physical drug stock, the compensating actions are the ones that must ship.
+
+- `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-api.service.ts:52-55`
+- `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-detail.ts:56-69`
+- `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-detail.html:55-60`
+
+### High: Lab requisition list is unusable as a worklist, based on an incorrect comment about the backend
+
+`LabRequisitionsList.load()` short-circuits to an empty table unless the user types an Order Item UUID, justified by the comment "The backend rejects GET /lab/requisitions without orderItemId (400)". That is false: `SearchLabRequisitionsDto.orderItemId` is `@IsOptional() @IsUUID()` and `LabWorkflowService.listByOrderItem` only adds the `andWhere` when the value is present — an unfiltered paginated listing works today. A lab technician cannot see the Pending-sample queue at all and must obtain an order-item UUID out of band for every single requisition. The DTO also supports a `status` filter that the UI does not offer, even though both Radiology and Pharmacy expose exactly that filter.
+
+- `frontend/apps/staff-console/src/app/lab/lab-requisitions-list/lab-requisitions-list.ts:36-45`
+- `frontend/apps/staff-console/src/app/lab/lab-requisitions-list/lab-requisitions-list.html:9-19`
+- `frontend/apps/staff-console/src/app/lab/lab-api.service.ts:75-79`
+
+### High: Every API failure in all three modules fails silently — no toast, inconsistent with 15+ sibling modules
+
+All 16 `error:` handlers across lab/radiology/pharmacy do nothing but reset a loading flag; none of the three modules imports `MessageService`, even though the app already provides it globally and 15+ other modules use it for both success and error feedback. "Verify Results" hits the backend's `ConflictException` for an already-verified requisition; the spinner stops, the status tag does not change, nothing is said, and the user clicks again. Every mutation in these modules has this behaviour.
+
+- `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.ts:58,76,127-130,144`
+- `frontend/apps/staff-console/src/app/radiology/radiology-requisition-detail.ts:60,78,107,121,141`
+- `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-detail.ts:48,67`
+- `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-list.ts:76,109-111`
+- `frontend/apps/staff-console/src/app/lab/lab-requisitions-list/lab-requisitions-list.ts:57`
+- `frontend/apps/staff-console/src/app/radiology/radiology-requisitions-list.ts:80`
+
+### Medium: Irreversible clinical sign-off and stock-decrementing actions fire on a single unguarded click
+
+"Verify Results" (lab), "Verify Report" (radiology) and "Dispense" (pharmacy) all call the API directly from `(onClick)` with no confirmation step, though all three are one-way. Radiology's own "Cancel Requisition" correctly routes through a modal that captures a reason, so the pattern exists in-module and is simply not applied to the higher-stakes actions.
+
+- `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:79-81`
+- `frontend/apps/staff-console/src/app/radiology/radiology-requisition-detail.html:70-72`
+- `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-detail.html:63-67`
+
+### Medium: Lab result entry accepts arbitrary free text; the displayed reference range is purely decorative
+
+The result inputs are plain `pInputText` with no `type`, no `inputmode`, no numeric parsing and no comparison against `referenceRangeLow`/`referenceRangeHigh`. `EnterResultDto.isAbnormal` exists on the client but is never populated. A potassium value fat-fingered as `55` against a `3.5–5.0` range saves without any warning; units are shown but not enforced or appended.
+
+- `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:110-123`
+- `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.ts:105-114`
+- `frontend/apps/staff-console/src/app/lab/lab-api.service.ts:81-86`
+
+### Medium: `submitResults()` fires N parallel POSTs via `forkJoin`, so a partial failure is unattributable
+
+Each component is a separate POST, all issued concurrently; `forkJoin` errors on the first failure, so if component 3 of 6 is rejected the other five have already persisted, but the dialog shows one blanket failure message with no indication which value failed. `LabWorkflowService.enterResult` also takes a `pessimistic_write` lock on the requisition row, so N concurrent requests serialize on one lock and a large panel risks lock-wait timeouts.
+
+- `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.ts:116-132`
+
+### Medium: A radiology report cannot be corrected once entered, though the backend allows it
+
+The "Enter Report" button is gated on `r.status === 'Scanned'` only. `RadiologyWorkflowService.enterReport` rejects only `Verified`, `Cancelled` and `Pending` — a requisition in `ReportEntered` is explicitly editable server-side. A radiographer who notices a typo in an unverified report has no way to fix it from this UI. Lab gets this right (its "Enter Results" button shows for `SampleCollected || ResultsEntered`).
+
+- `frontend/apps/staff-console/src/app/radiology/radiology-requisition-detail.html:67-69`
+- `frontend/apps/staff-console/src/app/radiology/radiology-requisition-detail.ts:82-87`
+
+### Medium: `RadiologyRequisitionsList` applies `?orderItemId=` only on the first emission, leaving stale rows
+
+The constructor subscribes to `queryParamMap`, sets the filter, and calls `load(0)` once outside the subscription. On a later emission (navigating between two `?orderItemId=` values while the component instance is reused, which is exactly what Angular's default reuse strategy does), the filter input updates but no request is issued — the query-param twin of the `route.snapshot.paramMap` pattern already documented in `CLAUDE.md`.
+
+- `frontend/apps/staff-console/src/app/radiology/radiology-requisitions-list.ts:48-61`
+
+### Medium: `LabTests` and `RadiologyCatalog` are fully built but unreachable — no route, no nav entry
+
+Both components (plus specs/templates, ~330 lines) have zero references anywhere in `src/app` outside their own files: no route, no `routerLink`. The `lab.catalog.manage` and `radiology.catalog.manage` permissions exist in the backend RBAC catalog with no UI behind them.
+
+- `frontend/apps/staff-console/src/app/lab/lab-tests/lab-tests.ts:15`
+- `frontend/apps/staff-console/src/app/radiology/radiology-catalog.ts:17`
+- `frontend/apps/staff-console/src/app/app.routes.ts:211-240`
+
+### Low: Icon-only back buttons have no accessible name, result inputs have no associated label, and catalog type-switching can race
+
+(a) All three detail screens use icon-only back buttons with no `ariaLabel`. (b) Lab result inputs are labelled by a sibling `<span>` rather than `<label for>`/`aria-label` — the one place in these modules where mislabelling has clinical consequences. (c) `RadiologyCatalog.onTypeChange` has no in-flight cancellation, so rapidly switching imaging types can let a slow first response overwrite a fast second one.
+
+- `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:3`
+- `frontend/apps/staff-console/src/app/radiology/radiology-requisition-detail.html:3`
+- `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-detail.html:3`
+- `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:110-123`
+- `frontend/apps/staff-console/src/app/radiology/radiology-catalog.ts:44-57`
+
+### Module group: financial (`billing`, `accounting`, `payroll`, `fixed-assets`, `insurance`)
+
+### High: Invoice list pagination is dead — the frontend reads `result.total` but the API returns `{ data, meta: { total } }`
+
+`/billing/invoices` goes through the backend's shared `paginate()` helper, which returns `{ data, meta: { total, page, limit, totalPages } }`. The frontend's `InvoiceListResult` declares a flat `{ data, total, page, limit }`, so `this.totalRecords.set(result.total)` sets `undefined`; PrimeNG then computes `pageCount = NaN` and renders no page links. A tenant with 500 invoices sees exactly the first 20 with no way to reach the rest. The unit tests mock the flat shape the frontend invented rather than the shape the API actually sends. `accounting.model.ts`'s `JournalListResult` and `fixed-assets.model.ts`'s `PaginatedResult` carry the same wrong envelope — currently harmless only because neither component reads `.total` yet.
+
+- `frontend/apps/staff-console/src/app/billing/invoice.model.ts:21`
+- `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.ts:48`
+- `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.spec.ts:10`
+- `frontend/apps/staff-console/src/app/billing/invoices-api.service.spec.ts:43`
+- `frontend/apps/staff-console/src/app/accounting/accounting.model.ts:65`
+- `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets.model.ts:50`
+
+### High: `toIsoDate()` uses `toISOString()`, so every accounting date is booked one day early in IST
+
+`toIsoDate` formats a `p-datepicker` value with `value.toISOString().slice(0, 10)`. PrimeNG hands back a `Date` at local midnight; in IST local midnight is 18:30 UTC of the *previous* day, so the sliced string is always one day behind what the user picked — not an edge case, 100% of picks. A journal entry keyed 2026-04-01 (start of the financial year) posts as 2026-03-31, landing in the prior FY; period-range reports never tie out to the ledger. The same `toISOString().slice(0, 10)` pattern recurs in appointments, vaccination, maternity and employees (see those groups above) — worth a workspace-wide fix with one shared local-date helper.
+
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:31`
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:255`
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:312`
+
+### High: Journal "balanced" gate uses exact float equality, so legitimate entries can be permanently un-saveable
+
+`journalIsBalanced` is `debitTotal > 0 && debitTotal === creditTotal` over IEEE-754 doubles accumulated with `reduce`. Debits 0.10 + 0.20 against a credit of 0.30 sum to `0.30000000000000004` vs `0.3`: the "must balance" hint stays lit and Save stays disabled with no way to fix it — real-world paise-level splits hit this regularly. Two related gaps in the same block: nothing stops a single line carrying both a debit and a credit, and lines with a null `accountId` are dropped by `submitJournal` *after* being counted by the balance check, so a filled-in amount on an account-less row can make the UI look balanced while the payload isn't.
+
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:229`
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:237`
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:242`
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.html:344`
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.html:352`
+
+### High: Payroll "Mark Paid" can be double-submitted and swallows its own failure
+
+`markPaid()` fires the POST with no in-flight signal (double-click sends two requests), and its error handler is literally `error: () => undefined` — no toast, no message, no state change. This is the most consequential money action in the module and the only mutation in these five modules with no user-visible error path; every sibling (`insurance.markClaimPaid`, `accounting.postJournal`) sets a per-row loading signal and raises an error toast. Payroll doesn't inject `MessageService` at all.
+
+- `frontend/apps/staff-console/src/app/payroll/payroll-list.ts:157`
+- `frontend/apps/staff-console/src/app/payroll/payroll-list.html:86`
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.ts:539`
+
+### Medium: No confirmation dialog anywhere before an irreversible financial action
+
+Posting a journal entry, marking a payslip paid, and deactivating a ledger account/asset category/payer all execute on a single click with no `p-confirmDialog` — and for the deactivate toggles in accounting and fixed-assets, no in-flight guard either. Insurance at least guards its toggle; accounting and fixed-assets guard nothing.
+
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:289`
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:171`
+- `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets-console.ts:94`
+- `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets-console.ts:150`
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.ts:271`
+
+### Medium: Journal list and asset register silently truncate at the server's default 20 rows
+
+`loadJournals()`/`loadAssets()` send no `page`/`limit`, and the backend's `paginate()` defaults to `limit: 20`. Neither `p-table` has `[paginator]`, and neither component reads `meta.total`, so both registers render "the 20 most recent rows" while presenting as the complete list — a user scanning for an unposted draft from last month will conclude it doesn't exist.
+
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:190`
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.html:74`
+- `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets-console.ts:113`
+- `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets-console.html:20`
+
+### Medium: Payroll table never binds `[first]`, so the paginator desyncs from the data after filtering
+
+`PayrollList` resets `firstRecord` in `applyFilters()` but the `p-table` never binds `[first]`. PrimeNG keeps its own internal `first`, so filtering while on page 3 fetches page 1 from the API while the paginator still highlights page 3 — clicking "next" then skips pages 2 and 3 entirely. Both sibling lazy tables (invoice list, insurance) bind `[first]` correctly; payroll is the outlier.
+
+- `frontend/apps/staff-console/src/app/payroll/payroll-list.html:42`
+- `frontend/apps/staff-console/src/app/payroll/payroll-list.ts:122`
+- `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.html:36`
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:109`
+
+### Medium: Accounting and fixed-assets show every mutating action to read-only users
+
+Both routes are guarded by `.read` permissions, but the consoles render "Add Account", "Post", "Deactivate/Reactivate", "Register Asset" unconditionally — neither component injects `AuthService`. A `.read`-only user sees a fully-functional-looking screen and gets a 403 toast on every click; for `Post` that's after they've already committed to posting a journal. Insurance and payroll gate correctly and are the pattern to copy.
+
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.html:20`
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.html:95`
+- `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets-console.html:18`
+- `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets-console.html:49`
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:23`
+- `frontend/apps/staff-console/src/app/payroll/payroll-list.ts:91`
+
+### Medium: Four different money-rendering conventions across five financial modules, one of which can crash the row
+
+Billing/accounting print bare `{{ x | number: '1.2-2' }}` with no currency symbol; insurance prints `₹{{ x | number }}` with the default `1.0-3` digit spec (₹1234.5 → "₹1,234.5"); the insurance approve toast interpolates a raw number with no formatting; payroll calls `slip.netAmount.toLocaleString('en-IN')` directly in the template, dropping paise and throwing a `TypeError` that blanks the whole table if the API returns `null` for a decimal column.
+
+- `frontend/apps/staff-console/src/app/payroll/payroll-list.html:73`
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:131`
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:225`
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.ts:506`
+- `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.html:79`
+
+### Medium: Claim approval accepts any amount, including more than was claimed and `null`
+
+`openApproveModal` seeds the draft with `claim.amountClaimed`, but the `p-inputNumber` only sets `[min]="0"` — no `[max]`, and `confirmApprove()` validates nothing before POSTing. A fat-fingered extra zero approves a claim for 10× the claimed amount with no warning; clearing the field sends `{ amountApproved: null }`. The adjacent Reject dialog already guards its input — the pattern to copy is in the same file.
+
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.ts:497`
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:457`
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:476`
+
+### Low: Accessibility and dead-code cleanups across the financial screens
+
+Every `<label>` in the accounting and fixed-assets modals is an orphan (no `for`/`id`) — insurance's dialogs do this correctly. Icon-only edit/ban/check buttons in insurance and the journal-line delete button have no `aria-label`. `InvoicesApiService.listByPage` has no callers and should be deleted; the billing invoice detail screen exposes none of the backend's `cancel`/`recordPayment`/`createReturn` actions and shows no balance-due figure.
+
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.html:261`
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.html:336`
+- `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets-console.html:123`
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:56`
+- `frontend/apps/staff-console/src/app/billing/invoices-api.service.ts:34`
+- `frontend/apps/staff-console/src/app/billing/invoice-detail/invoice-detail.html:96`
+
+### Module group: supply chain & master data (`inventory`, `ward-supply`, `global-catalog`, `master-data`)
+
+### High: Partially-fulfilled requisitions can never be finished — Fulfill button is gated on `status === 'Pending'`
+
+The per-line Fulfill button only renders when the requisition's status is exactly `Pending`. The backend flips the requisition to `PartiallyFulfilled` as soon as any one line is fulfilled short of its requested quantity and explicitly keeps fulfilling legal in that state (`NON_TERMINAL_REQUISITION_STATUSES = ['Pending', 'PartiallyFulfilled']`). A storekeeper fulfills line 1 of a 3-line requisition, the component reloads, the status is now `PartiallyFulfilled`, and every remaining Fulfill button disappears — the requisition is permanently stranded with no UI path to completion. The screen's own explanatory copy contradicts the guard.
+
+- `frontend/apps/staff-console/src/app/inventory/stock-requisition-detail/stock-requisition-detail.html:74`
+- `frontend/apps/staff-console/src/app/inventory/stock-requisition-detail/stock-requisition-detail.html:88`
+- backend evidence: `backend/code/apps/api/src/inventory/inventory-requisition.service.ts:26,219`
+
+### High: Clearing a `p-select` filter throws a TypeError — PrimeNG emits `null`, the handlers call `.length` on it
+
+`p-select` with `[showClear]="true"` emits `null` through `ngModelChange` when the clear icon is clicked. Both server-paginated list screens then do `vendorId.length > 0` / `departmentId.length > 0` on that value, throwing before `load(0)` is ever reached — and because the filter signal was already set to `null`, the table keeps displaying the *previous* filter's rows under a now-empty filter with no indication the list is stale. The same `null` leak makes `canAddLine()` return `true` after a select is cleared, so "Add Line" becomes clickable and silently does nothing.
+
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-list/purchase-order-list.ts:133`
+- `frontend/apps/staff-console/src/app/inventory/stock-requisition-list/stock-requisition-list.ts:89`
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-list/purchase-order-list.ts:230`
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-list/purchase-order-list.html:136,152`
+
+### High: ward-supply, master-data and global-catalog expose write actions with zero `hasPermission()` gating
+
+Nineteen sibling templates gate their mutating buttons with `auth.hasPermission(...)`; these three screens gate nothing. Ward Supply's route only requires `ward-supply.read`, but the backend requires `ward-supply.manage` on `/stock/receive` and `/stock/consume` — a read-only ward clerk fills in a receive/consume form, submits, and gets a raw 403 rendered in the dialog's error box. Master Data and Global Catalog (tenant-wide blast radius) have the same shape.
+
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.html:8-9`
+- `frontend/apps/staff-console/src/app/app.routes.ts:113-116`
+- `frontend/apps/staff-console/src/app/master-data/master-data-list.html:25-30,98-103,80-86,144-157`
+- `frontend/apps/staff-console/src/app/global-catalog/global-catalog-list.html:23-28,88-93,63-75,130-143`
+- backend evidence: `backend/code/apps/api/src/ward-supply/ward-supply.controller.ts:19-28`
+
+### High: The procurement/requisition workflow is only half-built — no goods receipt, no cancel, no requisition creation
+
+The PO detail screen renders a "Received Qty" column but there is no goods-receipt action anywhere in the app, so a purchase order can never leave `Ordered` through this console even though `POST .../goods-receipt` exists. Likewise PO/requisition cancel have no UI, and `POST /inventory/requisitions` has no UI at all — the requisition list has "View" but no "New Requisition". Also unused: the low-stock endpoint and `reorderLevel`/`minimumStock` fields already present in the item model — nothing in the UI ever warns about low stock.
+
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-detail/purchase-order-detail.html:66,74`
+- `frontend/apps/staff-console/src/app/inventory/stock-requisition-list/stock-requisition-list.html:1-5`
+- `frontend/apps/staff-console/src/app/inventory/inventory-api.service.ts:147-214`
+- `frontend/apps/staff-console/src/app/inventory/inventory-api.service.ts:35-36`
+- backend evidence: `backend/code/apps/api/src/inventory/inventory-procurement.controller.ts:45,51`, `inventory-requisition.controller.ts:13,31`
+
+### Medium: Both detail screens render a blank page on a failed fetch, with the header stuck on "Loading…"
+
+`load()` clears the loading signal in its `error` handler but leaves the detail signal `null`, and the template's `@if`/`@else if` chain has no final `@else` — a 404/500/403 produces an empty content area under a heading that permanently reads "Loading Purchase Order…" with no message, no retry, no toast.
+
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-detail/purchase-order-detail.ts:41-47`
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-detail/purchase-order-detail.html:9-11,19-23,88`
+- `frontend/apps/staff-console/src/app/inventory/stock-requisition-detail/stock-requisition-detail.ts:69-75`
+- `frontend/apps/staff-console/src/app/inventory/stock-requisition-detail/stock-requisition-detail.html:19-23,97`
+
+### Medium: Ward Supply's Transactions tab silently truncates to the backend's default page and drops `total`
+
+`loadTransactions()` sends only `departmentId` (no `page`/`limit`), the response's `total` is discarded, and the table has no `[paginator]`/`[lazy]`. For a stock audit trail, reconciling a balance against visible transactions will silently not add up. The service already supports `page`/`limit`/`itemId`/`transactionType`; none of it is wired to the UI.
+
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.ts:69-81`
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.html:64`
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply-api.service.ts:12-18,30-38`
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply.model.ts:32-35`
+
+### Medium: Ward Supply movement forms take raw UUIDs as free text, and send `""` for optional UUID fields (guaranteed 400)
+
+Department ID, Item ID and Patient ID are plain `pInputText` fields requiring pasted UUIDs, while sibling screens already resolve names via pickers. `patientId` becomes `''` the moment a user types into and then clears the field; `@IsOptional()` skips only `undefined`/`null`, so `patientId: ""` fails `@IsUUID()` and the consume request 400s with a raw validation message rendered verbatim. The receive form also omits `batchNumber`/`expiryDate` entirely, so every receipt lands in an unbatchable bucket with no expiry.
+
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.html:110-123,149-166`
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.ts:16,106-110`
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply.model.ts:23-30`
+- backend evidence: `backend/code/apps/api/src/ward-supply/dto/ward-supply.dto.ts`
+
+### Medium: Deactivate/reactivate toggles fire immediately with no confirmation and no in-flight guard
+
+`toggleDept`/`toggleWard`/`toggleBed`/`toggleRoleActive`/`toggleDeptActive` issue the PATCH on the first click of an icon-only button with no confirmation step and no row-disable while in flight — deactivating a *global* role or catalog department withdraws it from every tenant. A double-click sends deactivate twice, and the second call can race the reload into a wrong-looking UI.
+
+- `frontend/apps/staff-console/src/app/master-data/master-data-list.ts:162-241,300-312`
+- `frontend/apps/staff-console/src/app/global-catalog/global-catalog-list.ts:255-276,320-341`
+- `frontend/apps/staff-console/src/app/master-data/master-data-list.html:80-86,151-157,412-419`
+- `frontend/apps/staff-console/src/app/global-catalog/global-catalog-list.html:69-75,137-143`
+
+### Medium: Accessibility and empty-state gaps in master-data — unnamed icon buttons, a `pTooltip` that never renders, three tables with no empty message
+
+Master Data's deactivate/reactivate buttons are icon-only with no `ariaLabel` (Global Catalog supplies it on the identical control). The bed toggle's `pTooltip="Toggle Active Status"` never renders because `TooltipModule` is not imported. The Departments/Wards tables (master-data) and Global Departments table (global-catalog) have no `pTemplate="emptymessage"`, so a first-run tenant sees a header row over blank space.
+
+- `frontend/apps/staff-console/src/app/master-data/master-data-list.html:80-86,151-157,412-419`
+- `frontend/apps/staff-console/src/app/master-data/master-data-list.ts:16-27`
+- `frontend/apps/staff-console/src/app/master-data/master-data-list.html:32-90,105-162`
+- `frontend/apps/staff-console/src/app/global-catalog/global-catalog-list.html:30-80`
+
+### Medium: Transactional screens display raw UUIDs and unit-less quantities
+
+Purchase Order/requisition detail and Ward Supply show bare Vendor/Item/Department UUIDs instead of resolved names, and Master Data's "Parent Dept" column prints `parentDepartmentId` even though resolved names already exist in `departments()`. Every quantity (ordered/received/requested/fulfilled/available) renders with no unit of measure despite `InventoryItem.unitOfMeasure` existing — "12" could be 12 boxes or 12 tablets, in a screen where the operator is deciding how much to dispatch.
+
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-detail/purchase-order-detail.html:30,73-77`
+- `frontend/apps/staff-console/src/app/inventory/stock-requisition-detail/stock-requisition-detail.html:69-72,112,117-121`
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.html:48-50,77-82`
+- `frontend/apps/staff-console/src/app/master-data/master-data-list.html:53`
+- `frontend/apps/staff-console/src/app/inventory/inventory-api.service.ts:34`
+
+### Low: Cascading-select loads have no request-ordering guard, and two `paramMap` subscriptions are never torn down
+
+`onCategoryChange`/`onSubCategoryChange` and their PO-dialog equivalents fire a fresh HTTP call with no `switchMap` and no in-flight token, so a slow earlier response can overwrite a fast later one. Both detail components subscribe to `route.paramMap` without `takeUntilDestroyed()`, unlike `billing/invoice-detail.ts` which they were modelled on.
+
+- `frontend/apps/staff-console/src/app/inventory/inventory-item-list/inventory-item-list.ts:51-84`
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-list/purchase-order-list.ts:160-190,237`
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-detail/purchase-order-detail.ts:31`
+- `frontend/apps/staff-console/src/app/inventory/stock-requisition-detail/stock-requisition-detail.ts:48`
+- `frontend/apps/staff-console/src/app/master-data/master-data-list.ts:244-250` and `master-data-list.html:223`
+- `frontend/apps/staff-console/src/app/global-catalog/global-catalog-list.html:286,402`
+
+### Module group: admin & platform (`admin-dashboard`, `tenants`, `users`, `employees`, `audit`, `notifications`, `helpdesk`, `branding`, `marketing`, `reporting`, `change-password`, `login`, `shell`, `fraction`)
+
+### High: Tenant detail's package selector races the tenant load and can pre-select the wrong edition
+
+`ngOnInit` fires `loadTenant(id)` and `loadPackages()` concurrently, but the Package `p-select`'s draft value is seeded only inside `loadPackages()`'s handler, from `tenant()?.packageCode ?? packages[0]?.code`. `loadTenant()` never re-syncs it. Whenever `GET /packages` resolves first (the common case), `tenant()` is still `null`, so the draft falls back to the first package option — the screen shows an Enterprise hospital as "Basic" with "Save package" live, one click from silently downgrading a paying tenant. A params-only navigation from tenant A to tenant B has the same problem in reverse (draft keeps A's code).
+
+- `frontend/apps/staff-console/src/app/tenants/tenant-detail/tenant-detail.ts:143`
+- `frontend/apps/staff-console/src/app/tenants/tenant-detail/tenant-detail.ts:320`
+- `frontend/apps/staff-console/src/app/tenants/tenant-detail/tenant-detail.ts:468`
+- `frontend/apps/staff-console/src/app/tenants/tenant-detail/tenant-detail.html:139`
+
+### High: Audit trail's default date range is off by the local UTC offset, hiding recent events
+
+The filter defaults are built with `.toISOString().slice(0, 16)` fed into `<input type="datetime-local">`, but `datetime-local` values are local wall-clock, not UTC, and are re-parsed as local time on submit. For an IST (+5:30) operator, the End Date sent is 5.5 hours in the past. The audit trail — a compliance and incident-investigation screen — silently omits the most recent five and a half hours of events by default with no visual cue anything is missing; the same offset error applies to Start Date.
+
+- `frontend/apps/staff-console/src/app/audit/audit-list.ts:38`
+- `frontend/apps/staff-console/src/app/audit/audit-list.ts:92`
+- `frontend/apps/staff-console/src/app/audit/audit-list.html:18`
+
+### High: Employee join date binds a `string` to `p-datepicker`, breaking edit prefill and shifting the saved date a day earlier
+
+`editForm.joinDate` is typed `string`, but the control is a `p-datepicker` whose `writeValue` expects a `Date` — editing an existing employee opens with an empty or mis-rendered date field. Once the user picks a date, `ngModelChange` writes a `Date` into the `string`-typed field (the template's `$event` is `any`), and `JSON.stringify` serialises it to a full UTC ISO timestamp — for any timezone ahead of UTC, including India, local midnight serialises to the previous day's evening UTC, so every employee saved through this form gets a join date one day earlier than selected. Join date feeds payroll seniority calculations.
+
+- `frontend/apps/staff-console/src/app/employees/employee-list.html:165`
+- `frontend/apps/staff-console/src/app/employees/employee-list.ts:19`
+- `frontend/apps/staff-console/src/app/employees/employee-list.ts:53`
+- `frontend/apps/staff-console/src/app/employees/employee-list.ts:128`
+
+### High: `EmployeesApiService.list` spreads a possibly-`undefined` filter into `{ params }` — `q=undefined` reaches the backend
+
+Recurrence of the `PayrollApiService.listPayslips` bug already documented in `frontend/CLAUDE.md` (fixed there 2026-08-22). `EmployeeList.load` passes `q: this.q() || undefined` straight to `ApiClientService.get('/employees', { params })` without building the query conditionally; `ApiClientService` does no `undefined` stripping and Angular's `HttpParams` stringifies `undefined` to the literal string `"undefined"`. Every unfiltered employee list request sends `?q=undefined`. Every sibling service in these modules already builds the query conditionally; only this one does not.
+
+- `frontend/apps/staff-console/src/app/employees/employees-api.service.ts:57`
+- `frontend/apps/staff-console/src/app/employees/employee-list.ts:84`
+- `frontend/libs/api-client/src/lib/api-client.service.ts:18`
+
+### Medium: Notification-type icon in the shell header is malformed markup — duplicate `class` attribute with an `@switch` block inside an attribute value
+
+The `<i>` element rendering a notification's type icon carries two `class` attributes: the first holds an Angular `@switch` control-flow block written inside a quoted attribute value (which Angular's block syntax cannot parse there), the second holds a static class string. The per-type icon and severity colour therefore never reach the rendered element — every notification in the header dropdown renders with no glyph and no colour, so a user cannot distinguish an error alert from an informational one at a glance.
+
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.html:96`
+
+### Medium: Notification dropdown refetches on close instead of on open, so it always shows page-load-stale data
+
+`toggleNotifications()` flips the signal first, then guards the refetch with `if (!this.notificationsOpen())` — i.e. the reload runs on the transition to *closed*. Opening the panel never triggers a fetch, so the list and unread badge show whatever `ngOnInit` loaded when the shell was first constructed; since the shell persists across all in-app navigation and the access token lives in memory (no reload), a user signed in for a shift sees the same notification list all day.
+
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.ts:177`
+
+### Medium: The "Quick Actions" button in the header is a no-op
+
+`quickActionsOpen` is declared, toggled, and reset, but no template anywhere in the app reads it — the header renders a "Quick Actions" button that visibly does nothing when clicked, on every screen of both consoles, and trains users to distrust the chrome. It is also icon-only with no `aria-label` (a `pTooltip` is not an accessible name).
+
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.ts:45`
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.ts:131`
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.html:129`
+
+### Medium: Destructive account and employee actions fire immediately with no confirmation, and some fail silently
+
+Deactivate on a staff account, removing a role assignment, and deactivate/reactivate on an employee all invoke the API directly from the click handler with no confirmation dialog — inconsistent with the sibling `tenants` module, which gates archive/purge/cancel-subscription/package-change behind an explicit confirm step. `EmployeeList.toggleActive` compounds this by swallowing the failure case entirely (`error: () => undefined`), so a rejected deactivation looks identical to a successful one.
+
+- `frontend/apps/staff-console/src/app/users/user-detail.html:47`
+- `frontend/apps/staff-console/src/app/users/user-detail.html:129`
+- `frontend/apps/staff-console/src/app/users/user-detail.ts:100`
+- `frontend/apps/staff-console/src/app/users/user-detail.ts:189`
+- `frontend/apps/staff-console/src/app/employees/employee-list.ts:161`
+
+### Medium: Platform dashboard is all-or-nothing — one failing endpoint blanks the entire screen
+
+`loadDashboard` wraps three independent calls in `Promise.all([...toPromise()])`, which rejects on the first failure — if `/audit` (the most failure-prone) returns non-2xx, stat cards, recent tenants and the status chart are all discarded even though the other two calls succeeded. The operator gets one generic error toast and an empty page with no partial data and no retry. `ReportingDashboard.loadDashboard` already uses the more resilient pattern this should copy. `.toPromise()` is also deprecated in RxJS 7 and removed in 8.
+
+- `frontend/apps/staff-console/src/app/admin-dashboard/admin-dashboard.ts:60`
+- `frontend/apps/staff-console/src/app/admin-dashboard/admin-dashboard.ts:162`
+- `frontend/apps/staff-console/src/app/reporting/reporting-dashboard/reporting-dashboard.ts:73`
+
+### Medium: Paginator desyncs from the data after search/filter on three tables
+
+Of ~20 lazy `p-table`s in the app, `employees` and `notifications` never bind `[first]`, and `audit` binds it but never updates it in `onLazyLoad`. A user on page 3 of Employees who searches sees page-1 results while the paginator still highlights page 3; clicking "next" then skips pages 2 and 3 of the new filtered set entirely.
+
+- `frontend/apps/staff-console/src/app/employees/employee-list.html:40`
+- `frontend/apps/staff-console/src/app/notifications/notification-list.html:18`
+- `frontend/apps/staff-console/src/app/audit/audit-list.ts:63`
+- `frontend/apps/staff-console/src/app/audit/audit-list.html:104`
+
+### Low: Shell chrome ships mock placeholder identity, a hardcoded page title, and inaccessible dropdowns
+
+(1) The user menu falls back to literal mock strings `'Admin User'`/`'admin@medicare.os'` when JWT claims are absent. (2) `userInitials` derives from `roles[0]`, not the user's name, so every Hospital Admin in a tenant shows the identical avatar. (3) The header title is the hardcoded string `Dashboard` regardless of the active route. (4) The three header dropdowns close only via their own toggle — no outside-click handler, no `Escape`, no `aria-expanded`/`aria-haspopup` — and the notification rows are `<a [href]>` rather than `routerLink`, so an internal notification link triggers a full document navigation that discards the in-memory access token.
+
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.html:54`
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.html:61`
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.html:91`
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.html:153`
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.ts:58`
+
+### Low: Dead code and hygiene — orphaned `marketing/` module, stray generator directories, self-defeating purge confirmation
+
+(1) `marketing/` contains only an API service and model — no component, no route, zero references anywhere else in `src/app`. (2) `frontend/apps/staff-console/src/app/apps/staff-console/` is a nested tree of empty directories left over from a generator run against the wrong `cwd`. (3) `TenantDetail.purge()` validates the typed hospital ID client-side and then sends `current.hospitalId` — not the user's typed confirmation string — as the `confirmHospitalId` body field, so the backend's server-side typed-confirmation check for an irreversible schema drop is auto-satisfied by the client and provides no independent protection.
+
+- `frontend/apps/staff-console/src/app/marketing/marketing-api.service.ts:1`
+- `frontend/apps/staff-console/src/app/apps/staff-console/`
+- `frontend/apps/staff-console/src/app/tenants/tenant-detail/tenant-detail.ts:607`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
