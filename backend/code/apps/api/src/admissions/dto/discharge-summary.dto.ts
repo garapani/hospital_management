@@ -1,10 +1,11 @@
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsDateString, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateDischargeSummaryDto {
-  @IsString()
+  // uuid/timestamptz columns — plain strings would 500 on the FK/date casts (§107 rule).
+  @IsUUID()
   admissionId!: string;
 
-  @IsString()
+  @IsUUID()
   patientId!: string;
 
   @IsOptional()
@@ -42,11 +43,11 @@ export class CreateDischargeSummaryDto {
   activityRestrictions?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   followUpAppointmentDate?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   followUpDoctorId?: string;
 
   @IsOptional()
@@ -98,11 +99,11 @@ export class UpdateDischargeSummaryDto {
   activityRestrictions?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   followUpAppointmentDate?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   followUpDoctorId?: string;
 
   @IsOptional()

@@ -1,23 +1,25 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateAdmissionDto {
-  @IsString()
+  // uuid columns — plain strings would pass validation and turn a bad id into a raw 500 on the
+  // FK (the §107 write-path-uuid rule; admissions was one of the modules the sweep missed).
+  @IsUUID()
   patientId!: string;
 
   @IsString()
   admissionSource!: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   sourceAppointmentId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   sourceTriageEntryId?: string;
 
-  @IsString()
+  @IsUUID()
   admittingDoctorId!: string;
 
-  @IsString()
+  @IsUUID()
   bedId!: string;
 }
