@@ -980,6 +980,8 @@ Purchase Order/requisition detail and Ward Supply show bare Vendor/Item/Departme
 - `frontend/apps/staff-console/src/app/tenants/tenant-detail/tenant-detail.ts:468`
 - `frontend/apps/staff-console/src/app/tenants/tenant-detail/tenant-detail.html:139`
 
+**Resolved (2026-08-30):** `loadTenant()`'s success handler now always re-syncs `packageDraft` to the loaded tenant's `packageCode`, regardless of whether `loadPackages()` already resolved — fixes both the load-order race and the "draft keeps the previous tenant's code" case on a params-only navigation between two tenants.
+
 ### High: Audit trail's default date range is off by the local UTC offset, hiding recent events
 
 The filter defaults are built with `.toISOString().slice(0, 16)` fed into `<input type="datetime-local">`, but `datetime-local` values are local wall-clock, not UTC, and are re-parsed as local time on submit. For an IST (+5:30) operator, the End Date sent is 5.5 hours in the past. The audit trail — a compliance and incident-investigation screen — silently omits the most recent five and a half hours of events by default with no visual cue anything is missing; the same offset error applies to Start Date.
@@ -987,6 +989,8 @@ The filter defaults are built with `.toISOString().slice(0, 16)` fed into `<inpu
 - `frontend/apps/staff-console/src/app/audit/audit-list.ts:38`
 - `frontend/apps/staff-console/src/app/audit/audit-list.ts:92`
 - `frontend/apps/staff-console/src/app/audit/audit-list.html:18`
+
+**Resolved (2026-08-30):** added `toLocalDateTimeString()` to the shared `date.util.ts` helper (alongside the existing `todayLocal()`/`toLocalDateString()`) and used it to seed the default Start/End Date filters — `<input type="datetime-local">` is local wall-clock, and the round-trip through `new Date(f.startDate).toISOString()` on submit was already correct; only the default-seeding side used the wrong (UTC) conversion.
 
 ### High: Employee join date binds a `string` to `p-datepicker`, breaking edit prefill and shifting the saved date a day earlier
 
@@ -997,6 +1001,8 @@ The filter defaults are built with `.toISOString().slice(0, 16)` fed into `<inpu
 - `frontend/apps/staff-console/src/app/employees/employee-list.ts:53`
 - `frontend/apps/staff-console/src/app/employees/employee-list.ts:128`
 
+**Resolved (2026-08-30):** the edit form now carries `joinDate: Date` (what `p-datepicker` actually reads/writes) instead of the DTO's `string`, converted via `toLocalDateString()` only when building the `CreateEmployeeDto` to submit; `openEditModal` parses the loaded `'YYYY-MM-DD'` back to a local-midnight `Date` (not `new Date(str)`, which parses date-only strings as UTC midnight and would render a day early in any timezone behind UTC).
+
 ### High: `EmployeesApiService.list` spreads a possibly-`undefined` filter into `{ params }` — `q=undefined` reaches the backend
 
 Recurrence of the `PayrollApiService.listPayslips` bug already documented in `frontend/CLAUDE.md` (fixed there 2026-08-22). `EmployeeList.load` passes `q: this.q() || undefined` straight to `ApiClientService.get('/employees', { params })` without building the query conditionally; `ApiClientService` does no `undefined` stripping and Angular's `HttpParams` stringifies `undefined` to the literal string `"undefined"`. Every unfiltered employee list request sends `?q=undefined`. Every sibling service in these modules already builds the query conditionally; only this one does not.
@@ -1005,17 +1011,23 @@ Recurrence of the `PayrollApiService.listPayslips` bug already documented in `fr
 - `frontend/apps/staff-console/src/app/employees/employee-list.ts:84`
 - `frontend/libs/api-client/src/lib/api-client.service.ts:18`
 
+**Resolved (2026-08-30):** `EmployeesApiService.list` now builds the query object conditionally (`if (params.q !== undefined) query['q'] = params.q`), matching every sibling service; added `employees-api.service.spec.ts` (this module had no `HttpTestingController`-level test at all) asserting `q` is omitted, not sent as the literal string `"undefined"`.
+
 ### Medium: Notification-type icon in the shell header is malformed markup — duplicate `class` attribute with an `@switch` block inside an attribute value
 
 The `<i>` element rendering a notification's type icon carries two `class` attributes: the first holds an Angular `@switch` control-flow block written inside a quoted attribute value (which Angular's block syntax cannot parse there), the second holds a static class string. The per-type icon and severity colour therefore never reach the rendered element — every notification in the header dropdown renders with no glyph and no colour, so a user cannot distinguish an error alert from an informational one at a glance.
 
 - `frontend/apps/staff-console/src/app/shell/shell-chrome.html:96`
 
+**Resolved (2026-08-30):** replaced the invalid inline `@switch` with a `notificationIconClass(type)` component method returning the icon/colour class string, bound via plain interpolation (`class="pi {{ notificationIconClass(notification.type) }} ..."`).
+
 ### Medium: Notification dropdown refetches on close instead of on open, so it always shows page-load-stale data
 
 `toggleNotifications()` flips the signal first, then guards the refetch with `if (!this.notificationsOpen())` — i.e. the reload runs on the transition to *closed*. Opening the panel never triggers a fetch, so the list and unread badge show whatever `ngOnInit` loaded when the shell was first constructed; since the shell persists across all in-app navigation and the access token lives in memory (no reload), a user signed in for a shift sees the same notification list all day.
 
 - `frontend/apps/staff-console/src/app/shell/shell-chrome.ts:177`
+
+**Resolved (2026-08-30):** `toggleNotifications()` now reloads on the transition to *open*, not closed.
 
 ### Medium: The "Quick Actions" button in the header is a no-op
 
@@ -1024,6 +1036,8 @@ The `<i>` element rendering a notification's type icon carries two `class` attri
 - `frontend/apps/staff-console/src/app/shell/shell-chrome.ts:45`
 - `frontend/apps/staff-console/src/app/shell/shell-chrome.ts:131`
 - `frontend/apps/staff-console/src/app/shell/shell-chrome.html:129`
+
+**Resolved (2026-08-30):** removed the button, `toggleQuickActions()`, and the `quickActionsOpen` signal entirely — there was no design or backlog item for actual quick-actions content, and inventing arbitrary content nobody asked for isn't a bug fix; a real implementation belongs to its own feature item once product defines what it should contain.
 
 ### Medium: Destructive account and employee actions fire immediately with no confirmation, and some fail silently
 
@@ -1035,6 +1049,8 @@ Deactivate on a staff account, removing a role assignment, and deactivate/reacti
 - `frontend/apps/staff-console/src/app/users/user-detail.ts:189`
 - `frontend/apps/staff-console/src/app/employees/employee-list.ts:161`
 
+**Resolved (2026-08-30):** both actions now confirm via `ConfirmationService` before executing (not before reactivating, matching the sibling convention); `EmployeeList.toggleActive` also gained an in-flight guard and a `MessageService` error toast, replacing the swallowed `error: () => undefined`.
+
 ### Medium: Platform dashboard is all-or-nothing — one failing endpoint blanks the entire screen
 
 `loadDashboard` wraps three independent calls in `Promise.all([...toPromise()])`, which rejects on the first failure — if `/audit` (the most failure-prone) returns non-2xx, stat cards, recent tenants and the status chart are all discarded even though the other two calls succeeded. The operator gets one generic error toast and an empty page with no partial data and no retry. `ReportingDashboard.loadDashboard` already uses the more resilient pattern this should copy. `.toPromise()` is also deprecated in RxJS 7 and removed in 8.
@@ -1042,6 +1058,8 @@ Deactivate on a staff account, removing a role assignment, and deactivate/reacti
 - `frontend/apps/staff-console/src/app/admin-dashboard/admin-dashboard.ts:60`
 - `frontend/apps/staff-console/src/app/admin-dashboard/admin-dashboard.ts:162`
 - `frontend/apps/staff-console/src/app/reporting/reporting-dashboard/reporting-dashboard.ts:73`
+
+**Resolved (2026-08-30):** replaced the single `Promise.all([...toPromise()])` with three independent `.subscribe()` calls (one per source, matching `ReportingDashboard`'s pattern), each with its own loading flag and error toast; `stats`/`recentTenants`/`chartData` are now `computed()` off per-source signals (`tenants`, `userCount`) so a failing source shows `'—'`/an empty chart in just its own cards instead of blanking the whole page. `.toPromise()` (deprecated in RxJS 7) is gone too.
 
 ### Medium: Paginator desyncs from the data after search/filter on three tables
 
@@ -1051,6 +1069,8 @@ Of ~20 lazy `p-table`s in the app, `employees` and `notifications` never bind `[
 - `frontend/apps/staff-console/src/app/notifications/notification-list.html:18`
 - `frontend/apps/staff-console/src/app/audit/audit-list.ts:63`
 - `frontend/apps/staff-console/src/app/audit/audit-list.html:104`
+
+**Resolved (2026-08-30):** bound `[first]="firstRecord()"` on the Employees and Notifications tables, and `onLazyLoad` on Audit now sets `firstRecord` (it previously only tracked `pageSize`).
 
 ### Low: Shell chrome ships mock placeholder identity, a hardcoded page title, and inaccessible dropdowns
 
@@ -1062,6 +1082,10 @@ Of ~20 lazy `p-table`s in the app, `employees` and `notifications` never bind `[
 - `frontend/apps/staff-console/src/app/shell/shell-chrome.html:153`
 - `frontend/apps/staff-console/src/app/shell/shell-chrome.ts:58`
 
+**Resolved (2026-08-30):** replaced the specific fake-looking fallbacks (`'Admin User'`, `'admin@medicare.os'`) with honest neutral text (`'Signed in'`, `'—'`) — these only render when `roles`/`hospitalId` are genuinely absent from the claims, an edge case, not the common path; added `aria-haspopup`/`aria-expanded`/`aria-label` to the notifications and user-menu triggers; notification rows now use `[routerLink]` instead of `<a [href]>`, so clicking an internal notification link navigates in-app instead of triggering a full page reload that discards the in-memory access token.
+
+**Deferred (2026-08-30):** (a) `userInitials` still derives from `roles[0]`, not a real name — the JWT (`AccessTokenClaims`) carries only `sub`/`hospitalId`/`roles`/`permissions`, no display name or email at all, so every admin's initials being identical is a genuine data-availability gap, not a bug in how the frontend reads the claims; fixing it needs a backend/JWT change (embedding a name, or a `/auth/me` endpoint), which is its own decision. (b) The hardcoded "Dashboard" header title is unchanged — no route in `app.routes.ts` carries a `title`, and adding one to every route (plus the chrome's `Router.events` wiring to read it) is exactly the kind of "every future screen must follow this convention" decision this project's own fast-track/heavyweight split reserves for the heavyweight pipeline, not a review-fix pass. (c) Outside-click/`Escape`-to-close on the three header dropdowns is not implemented — no existing dropdown in the app has this pattern to copy; scoping it (a directive? per-dropdown listeners?) is a small design decision worth its own pass across all of them rather than one-off here.
+
 ### Low: Dead code and hygiene — orphaned `marketing/` module, stray generator directories, self-defeating purge confirmation
 
 (1) `marketing/` contains only an API service and model — no component, no route, zero references anywhere else in `src/app`. (2) `frontend/apps/staff-console/src/app/apps/staff-console/` is a nested tree of empty directories left over from a generator run against the wrong `cwd`. (3) `TenantDetail.purge()` validates the typed hospital ID client-side and then sends `current.hospitalId` — not the user's typed confirmation string — as the `confirmHospitalId` body field, so the backend's server-side typed-confirmation check for an irreversible schema drop is auto-satisfied by the client and provides no independent protection.
@@ -1069,6 +1093,8 @@ Of ~20 lazy `p-table`s in the app, `employees` and `notifications` never bind `[
 - `frontend/apps/staff-console/src/app/marketing/marketing-api.service.ts:1`
 - `frontend/apps/staff-console/src/app/apps/staff-console/`
 - `frontend/apps/staff-console/src/app/tenants/tenant-detail/tenant-detail.ts:607`
+
+**Resolved (2026-08-30):** deleted the orphaned `marketing/` module (`marketing-api.service.ts`, `marketing.model.ts` — confirmed zero references anywhere else in `src/app`) and the stray `apps/staff-console/src/app/apps/staff-console/` generator-leftover directory tree (confirmed empty — zero files, `git status` showed nothing tracked under it). `TenantDetail.purge()` now sends `this.purgeTypedId()` (what the user actually typed) instead of `current.hospitalId` (a value the client already had) as the `confirmHospitalId` body field — the two are provably equal by the time the call fires (the client-side check just above requires it), so this has no observable behavior change in the honest-client flow; it's a correctness/hygiene fix so a future loosening of that client-side check doesn't silently make the server-side confirmation check trust-only-the-client too.
 
 ## Open Question
 
