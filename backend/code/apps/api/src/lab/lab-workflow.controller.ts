@@ -65,6 +65,12 @@ export class LabWorkflowController {
     return this.labWorkflowService.enterResult(id, dto);
   }
 
+  @Get(':id/results')
+  @RequirePermission('lab.read')
+  async listResults(@Param('id') id: string) {
+    return this.labWorkflowService.listResultsByRequisition(id);
+  }
+
   @Patch(':id/verify')
   @RequirePermission('lab.result.verify')
   async verify(@Param('id') id: string, @Body() dto: VerifyRequisitionDto) {

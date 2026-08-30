@@ -134,6 +134,35 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
     expect(result.meta.total).toBe(1);
   });
 
+  it('listResultsByRequisition returns the entered results for a requisition (frontend review 2026-08-30: verification was previously blind — no read path for entered values existed)', async () => {
+    const test = await makeTest('list-results');
+    const component = await ctx.inTenant(() => catalogService.listComponentsByTest(test.id));
+    const orderItem = await makeOrderItem('4450000098');
+    const requisition = await ctx.inTenant(() =>
+      labWorkflowService.createRequisition({ orderItemId: orderItem.id, testId: test.id, specimenType: 'Blood' }),
+    );
+    await ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-4000-8000-0000000000e5'));
+    await ctx.inTenant(() =>
+      labWorkflowService.enterResult(requisition.id, {
+        componentId: component[0].id,
+        value: '4.5',
+        enteredBy: '00000000-0000-4000-8000-0000000000e5',
+      }),
+    );
+
+    const results = await ctx.inTenant(() => labWorkflowService.listResultsByRequisition(requisition.id));
+
+    expect(results).toHaveLength(1);
+    expect(results[0].componentId).toBe(component[0].id);
+    expect(results[0].value).toBe('4.5');
+  });
+
+  it('listResultsByRequisition 404s for a non-existent requisition', async () => {
+    await expect(
+      ctx.inTenant(() => labWorkflowService.listResultsByRequisition('00000000-0000-4000-8000-000000000abc')),
+    ).rejects.toThrow('not found');
+  });
+
   describe('actor fields derive from the authenticated principal, never the caller-supplied value', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The

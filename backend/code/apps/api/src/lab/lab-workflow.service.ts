@@ -275,6 +275,18 @@ export class LabWorkflowService {
     });
   }
 
+  /** Entered results were previously only readable via the Verified-only PDF export — a verifier
+   * had no way to see what they were signing off on before that status transition. */
+  async listResultsByRequisition(requisitionId: string): Promise<LabResult[]> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const requisition = await manager.getRepository(LabRequisition).findOne({ where: { id: requisitionId } });
+      if (!requisition) {
+        throw new NotFoundException(`Lab requisition ${requisitionId} not found`);
+      }
+      return manager.getRepository(LabResult).find({ where: { requisitionId } });
+    });
+  }
+
   async verify(id: string, verifiedBy?: string): Promise<LabRequisition> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(LabRequisition);
