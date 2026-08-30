@@ -718,6 +718,8 @@ Not investigated further — out of scope for the frontend review this file othe
 - `frontend/apps/staff-console/src/app/accounting/accounting.model.ts:65`
 - `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets.model.ts:50`
 
+**Resolved (2026-08-30):** all three models now declare the real `{ data, meta: { total, page, limit, totalPages } }` envelope; invoice list, journal list, and asset register all read `.meta.total` and paginate correctly.
+
 ### High: `toIsoDate()` uses `toISOString()`, so every accounting date is booked one day early in IST
 
 `toIsoDate` formats a `p-datepicker` value with `value.toISOString().slice(0, 10)`. PrimeNG hands back a `Date` at local midnight; in IST local midnight is 18:30 UTC of the *previous* day, so the sliced string is always one day behind what the user picked — not an edge case, 100% of picks. A journal entry keyed 2026-04-01 (start of the financial year) posts as 2026-03-31, landing in the prior FY; period-range reports never tie out to the ledger. The same `toISOString().slice(0, 10)` pattern recurs in appointments, vaccination, maternity and employees (see those groups above) — worth a workspace-wide fix with one shared local-date helper.
@@ -725,6 +727,8 @@ Not investigated further — out of scope for the frontend review this file othe
 - `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:31`
 - `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:255`
 - `frontend/apps/staff-console/src/app/accounting/accounting-console.ts:312`
+
+**Resolved (2026-08-30):** `toIsoDate()` now builds the string from the `Date`'s local `getFullYear`/`getMonth`/`getDate` instead of `toISOString()`. Not extracted into the shared `date.util.ts` helper from the registration/clinical group — that helper is `todayLocal()`-shaped (today's date), not a formatter for an arbitrary picked `Date`; a workspace-wide unification of the two helpers is worth a follow-up but out of scope here.
 
 ### High: Journal "balanced" gate uses exact float equality, so legitimate entries can be permanently un-saveable
 
@@ -736,6 +740,8 @@ Not investigated further — out of scope for the frontend review this file othe
 - `frontend/apps/staff-console/src/app/accounting/accounting-console.html:344`
 - `frontend/apps/staff-console/src/app/accounting/accounting-console.html:352`
 
+**Resolved (2026-08-30):** balance check now compares integer paise (`toPaise()`, `Math.round(amount * 100)`) instead of raw floats. Added `journalHasLineWithBothDebitAndCredit` and `journalHasAmountWithoutAccount` getters that both disable Save, closing the single-line-both-sides and amount-without-account gaps in the same pass.
+
 ### High: Payroll "Mark Paid" can be double-submitted and swallows its own failure
 
 `markPaid()` fires the POST with no in-flight signal (double-click sends two requests), and its error handler is literally `error: () => undefined` — no toast, no message, no state change. This is the most consequential money action in the module and the only mutation in these five modules with no user-visible error path; every sibling (`insurance.markClaimPaid`, `accounting.postJournal`) sets a per-row loading signal and raises an error toast. Payroll doesn't inject `MessageService` at all.
@@ -743,6 +749,8 @@ Not investigated further — out of scope for the frontend review this file othe
 - `frontend/apps/staff-console/src/app/payroll/payroll-list.ts:157`
 - `frontend/apps/staff-console/src/app/payroll/payroll-list.html:86`
 - `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.ts:539`
+
+**Resolved (2026-08-30):** added a `markingPaidId` in-flight guard (blocks a second click while the first request is outstanding) and wired `MessageService` for both success and error toasts, matching the insurance/accounting pattern.
 
 ### Medium: No confirmation dialog anywhere before an irreversible financial action
 
@@ -754,6 +762,8 @@ Posting a journal entry, marking a payslip paid, and deactivating a ledger accou
 - `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets-console.ts:150`
 - `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.ts:271`
 
+**Resolved (2026-08-30):** `postJournal`, payroll's `markPaid`, the accounting account toggle, and the fixed-assets category/asset toggles all now confirm via `ConfirmationService` before executing, each with its own in-flight guard where one was missing.
+
 ### Medium: Journal list and asset register silently truncate at the server's default 20 rows
 
 `loadJournals()`/`loadAssets()` send no `page`/`limit`, and the backend's `paginate()` defaults to `limit: 20`. Neither `p-table` has `[paginator]`, and neither component reads `meta.total`, so both registers render "the 20 most recent rows" while presenting as the complete list — a user scanning for an unposted draft from last month will conclude it doesn't exist.
@@ -763,6 +773,8 @@ Posting a journal entry, marking a payslip paid, and deactivating a ledger accou
 - `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets-console.ts:113`
 - `frontend/apps/staff-console/src/app/fixed-assets/fixed-assets-console.html:20`
 
+**Resolved (2026-08-30):** both consoles now use lazy server-side pagination (`journalsTotalRecords`/`journalsPageSize`/`journalsFirstRecord`/`onJournalsLazyLoad` and the `assets*` equivalents), with `[paginator]="true"` and `[first]` bound in the templates.
+
 ### Medium: Payroll table never binds `[first]`, so the paginator desyncs from the data after filtering
 
 `PayrollList` resets `firstRecord` in `applyFilters()` but the `p-table` never binds `[first]`. PrimeNG keeps its own internal `first`, so filtering while on page 3 fetches page 1 from the API while the paginator still highlights page 3 — clicking "next" then skips pages 2 and 3 entirely. Both sibling lazy tables (invoice list, insurance) bind `[first]` correctly; payroll is the outlier.
@@ -771,6 +783,8 @@ Posting a journal entry, marking a payslip paid, and deactivating a ledger accou
 - `frontend/apps/staff-console/src/app/payroll/payroll-list.ts:122`
 - `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.html:36`
 - `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:109`
+
+**Resolved (2026-08-30):** `[first]="firstRecord()"` bound on the payroll table.
 
 ### Medium: Accounting and fixed-assets show every mutating action to read-only users
 
@@ -783,6 +797,8 @@ Both routes are guarded by `.read` permissions, but the consoles render "Add Acc
 - `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:23`
 - `frontend/apps/staff-console/src/app/payroll/payroll-list.ts:91`
 
+**Resolved (2026-08-30):** both consoles now inject `AuthService`, gate on `.manage` permissions via a `canManage` getter, and hide every mutating control (`@if (canManage)`) for read-only users.
+
 ### Medium: Four different money-rendering conventions across five financial modules, one of which can crash the row
 
 Billing/accounting print bare `{{ x | number: '1.2-2' }}` with no currency symbol; insurance prints `₹{{ x | number }}` with the default `1.0-3` digit spec (₹1234.5 → "₹1,234.5"); the insurance approve toast interpolates a raw number with no formatting; payroll calls `slip.netAmount.toLocaleString('en-IN')` directly in the template, dropping paise and throwing a `TypeError` that blanks the whole table if the API returns `null` for a decimal column.
@@ -793,6 +809,8 @@ Billing/accounting print bare `{{ x | number: '1.2-2' }}` with no currency symbo
 - `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.ts:506`
 - `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.html:79`
 
+**Resolved (2026-08-30):** standardized on Angular's `CurrencyPipe` (`currency: 'INR' : 'symbol-narrow' : '1.2-2'`) across billing, accounting, payroll, fixed-assets, and insurance — renders `₹1,234.50` consistently and handles `null` without throwing.
+
 ### Medium: Claim approval accepts any amount, including more than was claimed and `null`
 
 `openApproveModal` seeds the draft with `claim.amountClaimed`, but the `p-inputNumber` only sets `[min]="0"` — no `[max]`, and `confirmApprove()` validates nothing before POSTing. A fat-fingered extra zero approves a claim for 10× the claimed amount with no warning; clearing the field sends `{ amountApproved: null }`. The adjacent Reject dialog already guards its input — the pattern to copy is in the same file.
@@ -800,6 +818,8 @@ Billing/accounting print bare `{{ x | number: '1.2-2' }}` with no currency symbo
 - `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.ts:497`
 - `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:457`
 - `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:476`
+
+**Resolved (2026-08-30):** added `approveAmountClaimed`/`approveAmountInvalid` (rejects `null`, `<= 0`, and anything over the claimed amount) and bound `[max]` on the input plus `[disabled]="approveAmountInvalid"` on the Approve button, mirroring the Reject dialog's existing guard.
 
 ### Low: Accessibility and dead-code cleanups across the financial screens
 
@@ -811,6 +831,10 @@ Every `<label>` in the accounting and fixed-assets modals is an orphan (no `for`
 - `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/insurance-dashboard.html:56`
 - `frontend/apps/staff-console/src/app/billing/invoices-api.service.ts:34`
 - `frontend/apps/staff-console/src/app/billing/invoice-detail/invoice-detail.html:96`
+
+**Resolved (2026-08-30):** accounting/fixed-assets modal labels now carry `for`/`id` (and `p-select` an `inputId`), the journal-line delete button and insurance's icon-only edit/toggle buttons have `aria-label`/`ariaLabel`, and `InvoicesApiService.listByPage` (no callers) was deleted.
+
+**Deferred (2026-08-30):** the invoice detail screen still exposes none of the backend's `cancel`/`recordPayment`/`createReturn` actions and shows no balance-due figure — that's a feature addition (new buttons, confirm flows, a payment-recording form), not a bug fix, and sized for its own item in `pending-tasks.md` rather than folding into this review-implementation pass.
 
 ### Module group: supply chain & master data (`inventory`, `ward-supply`, `global-catalog`, `master-data`)
 
