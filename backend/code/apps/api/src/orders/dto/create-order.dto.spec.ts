@@ -9,7 +9,9 @@ import { CreateOrderDto } from './create-order.dto.js';
 describe('CreateOrderDto validation', () => {
   function dtoWith(itemType: string) {
     return plainToInstance(CreateOrderDto, {
-      patientId: '00000000-0000-0000-0000-000000000001',
+      // v4-valid uuid — patientId is now @IsUUID (the §107 sweep), and version-0 fixtures like
+      // ...000000000001 fail class-validator's uuid check.
+      patientId: '00000000-0000-4000-8000-000000000001',
       items: [{ itemType, itemDescription: 'Something' }],
     });
   }

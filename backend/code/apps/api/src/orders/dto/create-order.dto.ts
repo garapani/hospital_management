@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
 
 // The only itemType values any downstream workflow module (Lab/Radiology/Pharmacy) recognizes —
 // anything else is accepted today, saved, and then silently orphaned (never requisitioned,
@@ -19,7 +19,9 @@ export class CreateOrderItemDto {
 }
 
 export class CreateOrderDto {
-  @IsString()
+  // uuid columns — a malformed id 500s on the uuid WHERE before the service's not-found path
+  // (the §107 write-path-uuid rule; orders was another module the sweep missed).
+  @IsUUID()
   patientId!: string;
 
   /** Deprecated — ignored when a tenant context with an accountId is active. */
@@ -28,11 +30,11 @@ export class CreateOrderDto {
   orderedBy?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   sourceAppointmentId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   sourceAdmissionId?: string;
 
   @IsOptional()
