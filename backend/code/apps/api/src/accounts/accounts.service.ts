@@ -410,10 +410,18 @@ export class AccountsService {
     });
   }
 
-  async listAccounts(limit: number, offset: number): Promise<Account[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Account).find({ take: limit, skip: offset, order: { createdAt: 'ASC' } }),
-    );
+  async listAccounts(
+    limit: number,
+    offset: number,
+  ): Promise<{ items: Account[]; total: number }> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const [items, total] = await Promise.all([
+        repository.find({ take: limit, skip: offset, order: { createdAt: 'ASC' } }),
+        repository.count(),
+      ]);
+      return { items, total };
+    });
   }
 
   async listRoles(): Promise<Role[]> {

@@ -111,9 +111,10 @@ describe('AccountsService (integration)', () => {
     );
 
     const firstPage = await ctx.inTenant(() => ctx.accountsService.listAccounts(1, 0));
-    expect(firstPage).toHaveLength(1);
+    expect(firstPage.items).toHaveLength(1);
+    expect(typeof firstPage.total).toBe('number');
     const allAccounts = await ctx.inTenant(() => ctx.accountsService.listAccounts(50, 0));
-    expect(allAccounts.map((a) => a.username)).toEqual(
+    expect(allAccounts.items.map((a) => a.username)).toEqual(
       expect.arrayContaining(['list.user.1', 'list.user.2']),
     );
   });
@@ -593,7 +594,7 @@ describe('AccountsService (integration)', () => {
 
   describe('createPatientAccount', () => {
     it('creates a login-capable account linked to the given patient, with no role assignment', async () => {
-      const patientId = '00000000-0000-0000-0000-0000000000f1';
+      const patientId = '00000000-0000-4000-8000-0000000000f1';
       const account = await ctx.inTenant(() =>
         ctx.accountsService.createPatientAccount({
           patientId,
@@ -616,7 +617,7 @@ describe('AccountsService (integration)', () => {
     });
 
     it('rejects a second invite for a patient that already has a portal account', async () => {
-      const patientId = '00000000-0000-0000-0000-0000000000f2';
+      const patientId = '00000000-0000-4000-8000-0000000000f2';
       await ctx.inTenant(() =>
         ctx.accountsService.createPatientAccount({
           patientId,

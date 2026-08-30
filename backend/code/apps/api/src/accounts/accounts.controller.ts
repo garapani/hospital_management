@@ -66,8 +66,11 @@ export class AccountsController {
   async list(@Query('limit') limit?: string, @Query('offset') offset?: string) {
     const parsedLimit = limit && !isNaN(Number(limit)) ? Math.max(1, Math.min(100, Number(limit))) : 50;
     const parsedOffset = offset && !isNaN(Number(offset)) ? Math.max(0, Number(offset)) : 0;
-    const accounts = await this.accountsService.listAccounts(parsedLimit, parsedOffset);
-    return accounts.map(toAccountResponse);
+    // { items, total } so the frontend can paginate server-side — a hospital with >100 staff
+    // previously had no way to see past the first (uncapped-at-100) page (MVP module pass,
+    // 2026-08-30; same shape as the reporting list endpoints).
+    const { items, total } = await this.accountsService.listAccounts(parsedLimit, parsedOffset);
+    return { items: items.map(toAccountResponse), total };
   }
 
   @Get(':id')

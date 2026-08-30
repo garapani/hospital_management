@@ -216,10 +216,12 @@ describe('AccountsController (integration)', () => {
     });
   });
 
-  it('lists accounts in the tenant', async () => {
+  it('lists accounts in the tenant with { items, total } pagination shape', async () => {
     const response = await request(app.getHttpServer()).get('/accounts').set('Authorization', `Bearer ${adminToken}`);
     expect(response.status).toBe(200);
-    expect(response.body.some((a: { username: string }) => a.username === 'ctrl.create.user')).toBe(true);
+    expect(Array.isArray(response.body.items)).toBe(true);
+    expect(typeof response.body.total).toBe('number');
+    expect(response.body.items.some((a: { username: string }) => a.username === 'ctrl.create.user')).toBe(true);
   });
 
   it('gets, deactivates, reactivates, and unlocks a single account', async () => {
