@@ -273,6 +273,17 @@ describe('AccountsController (integration)', () => {
     expect(response.status).toBe(404);
   });
 
+  it('rejects a non-date string in role startDate/endDate with 400 (not a 500)', async () => {
+    // The DTO must reject malformed dates at validation time — `new Date('not-a-date')` is
+    // Invalid Date, which TypeORM would send to a timestamptz column as a raw Postgres error
+    // (500) if it ever reached the service.
+    const response = await request(app.getHttpServer())
+      .post('/accounts/00000000-0000-0000-0000-000000000000/roles')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ roleName: 'Doctor', startDate: 'not-a-date' });
+    expect(response.status).toBe(400);
+  });
+
   it('assigns and revokes a role assignment', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/accounts')

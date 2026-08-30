@@ -1,13 +1,16 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateAccountDto {
   @IsString()
+  @MaxLength(255)
   username!: string;
 
-  @IsString()
+  @IsEmail()
+  @MaxLength(255)
   email!: string;
 
   @IsString()
+  @MaxLength(255)
   displayName!: string;
 
   // @IsNotEmpty (not just @IsString): createStaffAccount's `input.password ?? generatedPassword`
@@ -17,6 +20,7 @@ export class CreateAccountDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @MaxLength(72) // bcrypt's byte limit — longer values silently truncate on verify (auth P3 rule)
   password?: string;
 
   @IsString()
@@ -25,9 +29,11 @@ export class CreateAccountDto {
 
 export class ChangeOwnPasswordDto {
   @IsString()
+  @MaxLength(72)
   currentPassword!: string;
 
   @IsString()
+  @MaxLength(72)
   newPassword!: string;
 }
 
@@ -38,5 +44,6 @@ export class ResetPasswordDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @MaxLength(72)
   password?: string;
 }
