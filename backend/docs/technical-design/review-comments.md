@@ -449,6 +449,8 @@ The backend exposes `PATCH /orders/:id/items/:itemId/complete` and `.../cancel` 
 
 ### High: Write actions in nursing, OT, maternity, vaccination and CSSD are never permission-gated
 
+**Resolved (2026-08-30):** each module now reads `auth.hasPermission('<module>.manage')` into a `canManage` flag and gates every mutating control on it (copying SSU's `canManage` + "View only" pattern), including the module-level create/add buttons (New Task, Schedule Surgery, Record Delivery, Record Vaccination, Add Instrument, Start Cycle).
+
 All five routes are guarded only by their `*_READ` permission, yet every mutating control on the screen renders unconditionally — a user holding just `nursing.read` sees Start/Complete/Cancel/Administer/Skip, `ot.read` sees Start/Complete/Cancel Surgery, `cssd.read` sees Deactivate Instrument and Mark Cycle Failed. `NURSING_MANAGE`/`OT_MANAGE`/`MATERNITY_MANAGE`/`VACCINATION_MANAGE`/`CSSD_MANAGE` all exist in `libs/auth/src/lib/permissions.ts`, and SSU already does this correctly (`canManage` gate, plus a "View only" affordance) — so does every sibling outside this review (admissions, triage, vitals, encounters, payroll, employees). Concrete failure: a read-only ward clerk clicks "Cancel" on a scheduled surgery, the backend `PermissionGuard` returns 403, and the user gets a generic "Action failed" toast for a button that should never have been on screen. This is the highest-leverage fix in the whole frontend review — five modules, one established pattern to copy from `ssu-list.ts:109`.
 
 - `frontend/apps/staff-console/src/app/app.routes.ts:88` (and `:93`, `:98`, `:103`, `:108`)
@@ -461,6 +463,8 @@ All five routes are guarded only by their `*_READ` permission, yet every mutatin
 
 ### High: Irreversible clinical transitions fire on a single click with no confirmation step
 
+**Resolved (2026-08-30):** wired the `ConfirmationService` built for the clinical/registration group into Cancel Surgery, Complete Surgery, Cancel Task, Administer Dose, and Deactivate Instrument. Skip Dose now opens a modal that requires a mandatory reason (previously the API accepted a `notes` field the UI never collected — it now does). CSSD's Complete/Fail cycle actions already routed through a two-step modal and needed no change.
+
 Cancel Surgery, Complete Surgery, Cancel Task, Administer Dose, Skip Dose, Mark Cycle Failed and Deactivate Instrument all POST immediately from the row's `(onClick)`. There is no `ConfirmationService`/`p-confirmDialog` anywhere in the app; SSU establishes the house pattern instead — a `p-dialog` naming the record and requiring an explicit second click (and, for reject, a mandatory reason). Two are worse than a mis-click: "Skip" writes a missed-dose entry to the MAR and the API accepts a `notes` reason the UI never collects, so every skipped dose is recorded with a null justification; "Mark Cycle Failed" invalidates a sterilization batch.
 
 - `frontend/apps/staff-console/src/app/ot/ot-list.ts:131` (cancel), `:127` (complete)
@@ -472,6 +476,8 @@ Cancel Surgery, Complete Surgery, Cancel Task, Administer Dose, Skip Dose, Mark 
 
 ### High: Recording a maternity delivery is one-shot, unvalidated and unconfirmed
 
+**Resolved (2026-08-30):** `submitDelivery()` now validates delivery date and a baby count ≥ 1 before proceeding (rejecting a cleared/null count instead of posting it), the Save button is disabled until both are valid, and a `ConfirmationService` step ("this cannot be undone") gates the actual submit.
+
 The Record Delivery dialog's Save button carries no `[disabled]` expression at all — unique among the ~10 submit buttons in these six modules. Baby Count comes from a `p-inputNumber` that emits `null` when cleared, and `deliveryForm` is posted verbatim, so a cleared field sends `babyCount: null`. Once `deliveryDate` is set the action disappears from the row and no edit or detail screen exists — a delivery recorded with the wrong type, date or baby count is permanently uncorrectable from this UI.
 
 - `frontend/apps/staff-console/src/app/maternity/maternity-list.html:154` (no `[disabled]`)
@@ -479,6 +485,8 @@ The Record Delivery dialog's Save button carries no `[disabled]` expression at a
 - `frontend/apps/staff-console/src/app/maternity/maternity-list.ts:107`
 
 ### High: Nursing MAR and CSSD cycle lists silently show only the server's first page
+
+**Resolved (2026-08-30):** both nursing tables now use the standard lazy `p-table` pattern (page/limit params, `totalRecords`, `[paginator]`) copied from OT/maternity; `NursingApiService.listTasks`/`listAdministrations` and `CssdApiService.listCycles`'s call sites now pass page/limit and read `result.meta.total`. While fixing this, found and fixed the same wrong-envelope bug independently latent in OT, maternity, and vaccination: their list-result types declared a flat `{data, total}` instead of the backend's actual `{data, meta: {total, page, limit, totalPages}}`, so `totalRecords` was `undefined` in all three paginators the whole time — the original review's "clean" verdict on their pagination markup didn't catch that the type behind it was wrong. All four model files (`nursing.model.ts`, `ot.model.ts`, `maternity.model.ts`, `vaccination.model.ts`, `cssd.model.ts`) now declare the correct envelope shape.
 
 `NursingApiService.listTasks`/`listAdministrations` send no `page`/`limit`, `CssdApiService.listCycles` is called with no params, and all three responses' `total` field is discarded — the templates use a plain `p-table` with no `[paginator]`, unlike maternity/OT/SSU/vaccination which all paginate properly. A busy ward whose admission has more open tasks or scheduled doses than the backend's default cap will have doses that simply do not appear on the medication administration record, with no hint that rows are missing. Silent truncation of a MAR is a patient-safety-grade omission; CSSD has the same problem for sterilization history.
 
@@ -490,6 +498,8 @@ The Record Delivery dialog's Save button carries no `[disabled]` expression at a
 
 ### High: Five of the six modules require staff to hand-type a raw patient/admission UUID
 
+**Deferred (2026-08-30):** not fixed in this pass. SSU's picker pattern is the correct fix to copy, but reproducing it across nursing (admission-scoped, needs an admission search, not patient search), OT, maternity, and vaccination is substantial repetitive UI work — 4 modules × search state + picker markup + escape hatch. Scoped as a dedicated follow-up rather than folded into this pass.
+
 Nursing, OT, maternity and vaccination expose the patient/admission as a bare `pInputText` in both the filter bar and the create dialog, and their tables render the same raw UUID back with no patient name anywhere on screen. SSU already solves this with a search-by-name/number picker backed by `PatientsApiService` plus a "or enter Patient ID directly" escape hatch. A transposed UUID that happens to resolve creates a clinical record against the wrong person, and nothing in the UI would reveal it.
 
 - `frontend/apps/staff-console/src/app/ot/ot-list.html:59`, `:102`
@@ -500,6 +510,8 @@ Nursing, OT, maternity and vaccination expose the patient/admission as a bare `p
 
 ### Medium: The scheduling screens cannot actually set a schedule
 
+**Resolved (2026-08-30):** added `dueAt`/`scheduledAt` `datetime-local` inputs to the OT schedule-surgery and nursing task/administration dialogs, wired to the existing DTO fields.
+
 `CreateSurgeryDto`/`CreateAdministrationDto` accept `scheduledAt` and `CreateTaskDto` accepts `dueAt`, but none of the three dialogs render an input for them. Every surgery scheduled through this screen lands with `scheduledAt: null`, and the list's "Scheduled"/"Due" columns permanently render `—` for anything created in-app.
 
 - `frontend/apps/staff-console/src/app/ot/ot-list.html:100-111` vs `frontend/apps/staff-console/src/app/ot/ot.model.ts:24`
@@ -509,12 +521,16 @@ Nursing, OT, maternity and vaccination expose the patient/admission as a bare `p
 
 ### Medium: CSSD "Complete Cycle" posts `sterileHours: 0` when the field is cleared
 
+**Resolved (2026-08-30):** `submitComplete()` now rejects a null/zero sterile-hours value instead of coercing it, and the Complete button is disabled until a valid value is entered.
+
 `submitComplete` coerces the signal with `this.sterileHours() ?? 0`, and the Complete button has no `[disabled]` guard. A user who clears the box and clicks Complete sends `sterileHours: 0`, which the backend turns into a sterile-expiry equal to the completion timestamp — the instrument is marked completed and simultaneously expired, silently (success toast, "Sterile Until" shows a past time).
 
 - `frontend/apps/staff-console/src/app/cssd/cssd-console.ts:183`
 - `frontend/apps/staff-console/src/app/cssd/cssd-console.html:178`, `:184`
 
 ### Medium: List-load failures are invisible in OT, maternity and vaccination, and the OT detail dialog goes blank on error
+
+**Resolved (2026-08-30):** all three `load()` error handlers now toast; `OtList.viewSurgery`'s detail dialog gained a `detailError` signal and an explicit error branch instead of falling through to a blank body.
 
 Those three `load()` methods use `error: () => this.loading.set(false)` with no toast, so a 500 or a network drop presents as "No surgeries found." — indistinguishable from a genuinely empty result. Nursing, CSSD and SSU all toast on the same failure. Separately, `viewSurgery` opens the detail dialog before the request resolves and on error only clears `detailLoading`, leaving a modal with a header and an entirely empty body (no final `@else`).
 
@@ -526,6 +542,8 @@ Those three `load()` methods use `error: () => this.loading.set(false)` with no 
 
 ### Medium: Paginator advances before the response lands, and superseded page requests are never cancelled
 
+**Deferred (2026-08-30):** not fixed in this pass — the fix (an RxJS `switchMap`-based cancellation stream, or moving the `firstRecord` update to the success handler) touches the same `load()` shape across all four affected files and changes paginator UX subtly; scoped as a dedicated follow-up rather than a quick copy-paste fix.
+
 All four lazy tables call `this.firstRecord.set((page - 1) * limit)` before the HTTP call resolves, and none cancel an in-flight request when a new one starts (plain `.subscribe`, no `switchMap`). A failed page-3 request leaves the paginator highlighting page 3 while the table still shows page 2's rows; out-of-order responses under rapid filtering can let a stale response win. Post-action reloads compound this: every successful approve/cancel/complete calls `load(1, pageSize)`, silently yanking the user back to page 1.
 
 - `frontend/apps/staff-console/src/app/ot/ot-list.ts:66`, `:140`
@@ -535,12 +553,16 @@ All four lazy tables call `this.firstRecord.set((page - 1) * limit)` before the 
 
 ### Medium: Default dates are derived in UTC, so they are wrong for the first 5½ hours of every IST day
 
+**Resolved (2026-08-30):** both call sites now use the shared `todayLocal()` helper (added in the clinical/registration group's fix for the same bug class) instead of `toISOString().slice(0, 10)`.
+
 Both `openDeliveryModal` and `openModal` seed today's date with `new Date().toISOString().slice(0, 10)` (UTC calendar date). A delivery at 02:15 IST or a night-shift vaccination is pre-filled with the wrong day, and neither field is re-checked on submit.
 
 - `frontend/apps/staff-console/src/app/maternity/maternity-list.ts:97`
 - `frontend/apps/staff-console/src/app/vaccination/vaccination-list.ts:62`
 
 ### Medium: Accessibility — dialog labels are not associated with their inputs, and SSU's patient results are click-only divs
+
+**Resolved (2026-08-30):** added `for`/`id`/`inputId` pairs to every modal field across all six modules; SSU's patient-result rows dropped the parent-div `(click)` (which double-fired `selectPatient` alongside the nested button's own click) in favor of `role="button"`/`tabindex`/`keydown.enter`/`keydown.space`, making them keyboard-reachable and single-fire.
 
 Every field label inside every modal in all six modules is a bare `<label>` sibling of an input with no `id`/`for`. In SSU the patient search results are `<div (click)>` rows with no `role`/`tabindex`/key handler — unreachable by keyboard — and each row nests a `p-button` whose click bubbles to the parent div, firing `selectPatient` twice per click.
 
@@ -552,6 +574,8 @@ Every field label inside every modal in all six modules is a bare `<label>` sibl
 - `frontend/apps/staff-console/src/app/ssu/ssu-list.html:190-199`
 
 ### Low: Per-row action locks share one signal; CSSD's instrument toggle has none; `cycleActionId` is dead code
+
+**Partially resolved (2026-08-30):** CSSD's `toggleInstrumentActive` now has an in-flight guard (`instrumentActionId`), the dead `cycleActionId` signal is removed, and `instrumentOptions` is now a `computed()` instead of a getter. The OT/nursing cross-row race (one row's response clearing the shared action-id signal while another row's action is in flight) is unchanged — deferred as lower-value than the other findings in this group.
 
 OT and nursing guard concurrent row actions with a single shared signal, which one row's response can clear while another row's action is still in flight, re-enabling a double-post. `toggleInstrumentActive` has no in-flight state at all. CSSD declares `cycleActionId` and never reads it. `instrumentOptions` is a getter that should be a `computed()`.
 
