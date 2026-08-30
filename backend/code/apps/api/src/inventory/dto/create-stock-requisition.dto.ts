@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsNumber, IsOptional, IsString, ValidateNested, IsUUID} from 'class-validator';
 
 export class CreateStockRequisitionItemDto {
   @IsUUID()
