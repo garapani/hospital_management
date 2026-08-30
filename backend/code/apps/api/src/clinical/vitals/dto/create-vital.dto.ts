@@ -1,11 +1,12 @@
-import { IsDate, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateVitalDto {
-  @IsString()
+  // uuid columns — the §107 write-path-uuid rule.
+  @IsUUID()
   patientId!: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   appointmentId?: string;
 
   // decimal(5,2) columns (vital.entity.ts) cap out at 999.99 — these bounds are chosen well
@@ -71,6 +72,6 @@ export class CreateVitalDto {
   triageNotes?: string;
 
   @IsOptional()
-  @IsDate()
+  @IsDateString()
   recordedAt?: Date;
 }

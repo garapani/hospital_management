@@ -1,4 +1,4 @@
-import { IsDate, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class UpdateVitalDto {
   // Bounds mirror CreateVitalDto — see its comment for why these specific ranges.
@@ -61,6 +61,6 @@ export class UpdateVitalDto {
   triageNotes?: string;
 
   @IsOptional()
-  @IsDate()
+  @IsDateString()
   recordedAt?: Date;
 }
