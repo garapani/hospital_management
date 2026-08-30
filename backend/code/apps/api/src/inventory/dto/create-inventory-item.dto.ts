@@ -1,7 +1,7 @@
 import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateInventoryItemDto {
-  @IsString()
+  @IsUUID()
   subCategoryId!: string;
 
   @IsString()

@@ -2,7 +2,7 @@ import { Type } from 'class-transformer';
 import { IsArray, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 
 export class CreateStockRequisitionItemDto {
-  @IsString()
+  @IsUUID()
   itemId!: string;
 
   @IsNumber()
@@ -10,7 +10,7 @@ export class CreateStockRequisitionItemDto {
 }
 
 export class CreateStockRequisitionDto {
-  @IsString()
+  @IsUUID()
   departmentId!: string;
 
   /** Deprecated — ignored when a tenant context with an accountId is active. */
