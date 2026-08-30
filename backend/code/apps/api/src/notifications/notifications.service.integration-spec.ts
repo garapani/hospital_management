@@ -110,7 +110,7 @@ describe('NotificationsService (integration)', () => {
 
   it('drops the notification and returns null when the recipient account does not exist', async () => {
     await ctx.inTenant(async () => {
-      const bogusAccountId = '00000000-0000-0000-0000-0000000000ff';
+      const bogusAccountId = '00000000-0000-4000-8000-0000000000ff';
       const result = await notificationsService.create({
         recipientAccountId: bogusAccountId,
         title: 'Nobody home',

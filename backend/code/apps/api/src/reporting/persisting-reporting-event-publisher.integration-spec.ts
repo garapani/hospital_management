@@ -41,7 +41,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
   let depositsService: DepositsService;
   let reportingQueryService: ReportingQueryService;
 
-  const DOCTOR_ID = '00000000-0000-0000-0000-000000000001';
+  const DOCTOR_ID = '00000000-0000-4000-8000-000000000001';
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({

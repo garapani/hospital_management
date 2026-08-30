@@ -43,9 +43,9 @@ describe('RadiologyWorkflowService (integration)', () => {
 
   afterAll(() => teardownTenantTestContext(ctx));
 
-  const DOCTOR_ID = '00000000-0000-0000-0000-0000000000e4';
-  const TECH_ID = '00000000-0000-0000-0000-0000000000e6';
-  const RADIOLOGIST_ID = '00000000-0000-0000-0000-0000000000e7';
+  const DOCTOR_ID = '00000000-0000-4000-8000-0000000000e4';
+  const TECH_ID = '00000000-0000-4000-8000-0000000000e6';
+  const RADIOLOGIST_ID = '00000000-0000-4000-8000-0000000000e7';
 
   async function makeOrderItem(phoneNumber: string, itemType = 'Radiology') {
     return ctx.inTenant(async () => {
@@ -213,7 +213,7 @@ describe('RadiologyWorkflowService (integration)', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
     // service must record THIS account, ignoring the spoofed value passed to it.
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
     function withActor<T>(work: () => Promise<T>): Promise<T> {
       return ctx.tenantContext.run(
@@ -235,7 +235,7 @@ describe('RadiologyWorkflowService (integration)', () => {
 
     it('markScanned records the authenticated account as scannedBy, not the body value', async () => {
       const { requisition } = await makeRequisition();
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const scanned = await withActor(() => workflowService.markScanned(requisition.id, spoofed));
       expect(scanned.scannedBy).toBe(AUTHENTICATED_ACCOUNT);
@@ -245,7 +245,7 @@ describe('RadiologyWorkflowService (integration)', () => {
       const { requisition } = await makeRequisition();
       await withActor(() => workflowService.markScanned(requisition.id, 'ignored'));
 
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
       const reported = await withActor(() =>
         workflowService.enterReport(requisition.id, {
           reportText: 'Normal study',
@@ -265,7 +265,7 @@ describe('RadiologyWorkflowService (integration)', () => {
         }),
       );
 
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
       const verified = await withActor(() => workflowService.verify(requisition.id, spoofed));
       expect(verified.verifiedBy).toBe(AUTHENTICATED_ACCOUNT);
 

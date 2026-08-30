@@ -14,7 +14,7 @@ describe('NursingController (e2e)', () => {
   let app: INestApplication;
   let ctx: TenantTestContext;
   let token: string;
-  const staffId = '00000000-0000-0000-0000-0000000000a1';
+  const staffId = '00000000-0000-4000-8000-0000000000a1';
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'nursing_ctrl' });
@@ -55,7 +55,7 @@ describe('NursingController (e2e)', () => {
             `00000000-0000-0000-0000-d${String(seq).padStart(11, '0')}`,
             'OPD',
             staffId,
-            '00000000-0000-0000-0000-0000000000c2',
+            '00000000-0000-4000-8000-0000000000c2',
             `00000000-0000-0000-0000-c${String(seq).padStart(11, '0')}`,
           ],
         ),

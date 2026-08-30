@@ -86,7 +86,7 @@ describe('Lab report PDF export (integration)', () => {
     await app.close();
   });
 
-  const DOCTOR_ID = '00000000-0000-0000-0000-0000000000e3';
+  const DOCTOR_ID = '00000000-0000-4000-8000-0000000000e3';
   let phoneSeq = 0;
 
   /** Walks a lab requisition through collect → results → (optionally) verify. */

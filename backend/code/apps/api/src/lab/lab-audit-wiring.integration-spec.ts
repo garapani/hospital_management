@@ -49,7 +49,7 @@ describe('Lab result audit wiring (integration)', () => {
     const ordersService = moduleRef.get(OrdersService);
     const patientsService = moduleRef.get(PatientsService);
 
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
     const withActor = <T>(work: () => Promise<T>): Promise<T> =>
       ctx.tenantContext.run(
         { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'lab-audit-test' },
@@ -74,7 +74,7 @@ describe('Lab result audit wiring (integration)', () => {
       });
       const order = await ordersService.create({
         patientId: patient.id,
-        orderedBy: '00000000-0000-0000-0000-0000000000d1',
+        orderedBy: '00000000-0000-4000-8000-0000000000d1',
         items: [{ itemType: 'Lab', itemDescription: 'CBC' }],
       });
       const requisition = await labWorkflowService.createRequisition({

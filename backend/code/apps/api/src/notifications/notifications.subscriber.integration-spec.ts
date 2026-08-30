@@ -164,7 +164,7 @@ describe('NotificationsSubscriber (integration)', () => {
 
   it('does not create a reachable notification when admittingDoctorId has no matching account', async () => {
     await inTenant(async () => {
-      const bogusDoctorId = '00000000-0000-0000-0000-0000000000bb';
+      const bogusDoctorId = '00000000-0000-4000-8000-0000000000bb';
 
       const patient = await patientsService.create({
         firstName: 'Orphan',

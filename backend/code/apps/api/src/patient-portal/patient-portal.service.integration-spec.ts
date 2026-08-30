@@ -23,8 +23,8 @@ import {
   TenantTestContext,
 } from '../testing/tenant-test-context.js';
 
-const DOCTOR_ID = '00000000-0000-0000-0000-0000000000e3';
-const STAFF_ACCOUNT_ID = '00000000-0000-0000-0000-0000000000e4';
+const DOCTOR_ID = '00000000-0000-4000-8000-0000000000e3';
+const STAFF_ACCOUNT_ID = '00000000-0000-4000-8000-0000000000e4';
 
 describe('PatientPortalService (integration)', () => {
   let ctx: TenantTestContext;

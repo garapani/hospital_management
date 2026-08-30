@@ -15,8 +15,8 @@ describe('OtService (integration)', () => {
   let otService: OtService;
   let patientsService: PatientsService;
 
-  const STAFF_ID = '00000000-0000-0000-0000-0000000000e1';
-  const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+  const STAFF_ID = '00000000-0000-4000-8000-0000000000e1';
+  const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'ot' });
@@ -260,7 +260,7 @@ describe('OtService (integration)', () => {
       otService.scheduleSurgery({
         patientId: patient.id,
         procedureName: 'ACL Reconstruction',
-        scheduledBy: '00000000-0000-0000-0000-0000000000ff', // spoofed fallback must be ignored
+        scheduledBy: '00000000-0000-4000-8000-0000000000ff', // spoofed fallback must be ignored
       }),
     );
     expect(surgery.scheduledBy).toBe(AUTHENTICATED_ACCOUNT);

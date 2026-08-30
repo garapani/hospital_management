@@ -20,12 +20,12 @@ describe('InvoicesController (e2e)', () => {
     ctx = await setupTenantTestContext({ namePrefix: 'invoices_ctrl' });
 
     manageToken = await signTestToken({
-      sub: '00000000-0000-0000-0000-0000000000a1',
+      sub: '00000000-0000-4000-8000-0000000000a1',
       hospitalId: ctx.tenantId,
       permissions: ['billing.manage', 'patients.create'],
     });
     readToken = await signTestToken({
-      sub: '00000000-0000-0000-0000-0000000000a2',
+      sub: '00000000-0000-4000-8000-0000000000a2',
       hospitalId: ctx.tenantId,
       permissions: ['billing.read'],
     });
@@ -137,7 +137,7 @@ describe('InvoicesController (e2e)', () => {
 
     it('rejects a billing.manage-only caller (no billing.read) listing invoices', async () => {
       const manageOnlyToken = await signTestToken({
-        sub: '00000000-0000-0000-0000-0000000000a3',
+        sub: '00000000-0000-4000-8000-0000000000a3',
         hospitalId: ctx.tenantId,
         permissions: ['billing.manage'],
       });

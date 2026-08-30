@@ -10,8 +10,8 @@ describe('WardSupplyService (integration)', () => {
   let ctx: TenantTestContext;
   let wardSupplyService: WardSupplyService;
 
-  const STAFF_ID = '00000000-0000-0000-0000-0000000000e1';
-  const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+  const STAFF_ID = '00000000-0000-4000-8000-0000000000e1';
+  const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'ward_supply' });
@@ -52,7 +52,7 @@ describe('WardSupplyService (integration)', () => {
           `INSERT INTO inventory_items ("subCategoryId", name, code, "unitOfMeasure")
            VALUES ($1, $2, $3, $4)
            RETURNING id`,
-          ['00000000-0000-0000-0000-0000000000c1', name, `ITM-${seq}`, 'Tablet'],
+          ['00000000-0000-4000-8000-0000000000c1', name, `ITM-${seq}`, 'Tablet'],
         ),
       ),
     );
@@ -88,7 +88,7 @@ describe('WardSupplyService (integration)', () => {
             patientId,
             'OPD',
             STAFF_ID,
-            '00000000-0000-0000-0000-0000000000c2',
+            '00000000-0000-4000-8000-0000000000c2',
             `00000000-0000-0000-0000-${String(seq).padStart(12, '0')}`,
           ],
         ),
@@ -244,7 +244,7 @@ describe('WardSupplyService (integration)', () => {
     const item = await makeItem('IV Set');
     await expect(
       ctx.inTenant(() =>
-        wardSupplyService.receiveStock('00000000-0000-0000-0000-0000000000dd', item.id, 5, {
+        wardSupplyService.receiveStock('00000000-0000-4000-8000-0000000000dd', item.id, 5, {
           performedBy: STAFF_ID,
         }),
       ),
@@ -412,7 +412,7 @@ describe('WardSupplyService (integration)', () => {
     await expect(
       ctx.inTenant(() =>
         wardSupplyService.consumeStock(departmentId, item.id, 1, {
-          patientId: '00000000-0000-0000-0000-0000000000f0',
+          patientId: '00000000-0000-4000-8000-0000000000f0',
           performedBy: STAFF_ID,
         }),
       ),
@@ -420,7 +420,7 @@ describe('WardSupplyService (integration)', () => {
     await expect(
       ctx.inTenant(() =>
         wardSupplyService.consumeStock(departmentId, item.id, 1, {
-          admissionId: '00000000-0000-0000-0000-0000000000f1',
+          admissionId: '00000000-0000-4000-8000-0000000000f1',
           performedBy: STAFF_ID,
         }),
       ),

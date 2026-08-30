@@ -15,9 +15,9 @@ describe('PayrollService (integration)', () => {
   let ctx: TenantTestContext;
   let payrollService: PayrollService;
 
-  const STAFF_ID = '00000000-0000-0000-0000-0000000000e1';
-  const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
-  const SPOOFED_ACTOR = '00000000-0000-0000-0000-0000000000ff';
+  const STAFF_ID = '00000000-0000-4000-8000-0000000000e1';
+  const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
+  const SPOOFED_ACTOR = '00000000-0000-4000-8000-0000000000ff';
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'payroll' });

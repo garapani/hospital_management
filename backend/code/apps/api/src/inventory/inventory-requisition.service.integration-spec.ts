@@ -57,7 +57,7 @@ describe('InventoryRequisitionService.listByDepartment (integration)', () => {
     );
   }
 
-  const REQUESTED_BY = '00000000-0000-0000-0000-0000000000e2';
+  const REQUESTED_BY = '00000000-0000-4000-8000-0000000000e2';
 
   /** Seeds a stock batch + its balance directly, bypassing the procurement pipeline. */
   async function seedBatch(itemId: string, batchNumber: string, expiryDate: string | null, quantity: number) {
@@ -118,7 +118,7 @@ describe('InventoryRequisitionService.listByDepartment (integration)', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
     // service must record THIS account, ignoring the spoofed value passed to it.
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
     function withActor<T>(work: () => Promise<T>): Promise<T> {
       return ctx.tenantContext.run(
@@ -151,7 +151,7 @@ describe('InventoryRequisitionService.listByDepartment (integration)', () => {
     it('createRequisition records the authenticated account as requestedBy, not the caller-supplied value', async () => {
       const item = await makeItem('actor-requisition');
       const department = await makeDepartment('DEPT-ACTOR-REQ');
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const requisition = await withActor(() =>
         requisitionService.createRequisition({
@@ -169,7 +169,7 @@ describe('InventoryRequisitionService.listByDepartment (integration)', () => {
     it('fulfillRequisitionItem records the authenticated account as the stock transaction recordedBy, not the caller-supplied value', async () => {
       const requisition = await makeRequisitionWithStock();
       const reqItem = requisition.items[0];
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const fulfilled = await withActor(() =>
         requisitionService.fulfillRequisitionItem(reqItem.id, {

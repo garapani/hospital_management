@@ -44,7 +44,7 @@ describe('DepositsService (integration)', () => {
     );
   }
 
-  const STAFF_ID = '00000000-0000-0000-0000-0000000000f1';
+  const STAFF_ID = '00000000-0000-4000-8000-0000000000f1';
 
   it('creates a deposit with balance equal to the amount received', async () => {
     const patient = await makePatient(ctx, '6660000001');
@@ -296,7 +296,7 @@ describe('DepositsService (integration)', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
     // service must record THIS account, ignoring the spoofed value passed to it.
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
     function withActor<T>(work: () => Promise<T>): Promise<T> {
       return ctx.tenantContext.run(
@@ -319,7 +319,7 @@ describe('DepositsService (integration)', () => {
 
     it('create records the authenticated account as receivedBy, never the spoofed value', async () => {
       const { patient } = await makePatientWithDeposit(1000);
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const created = await withActor(() =>
         depositsService.create({ patientId: patient.id, amount: 500, receivedBy: spoofed }),
@@ -329,7 +329,7 @@ describe('DepositsService (integration)', () => {
 
     it('refund records the authenticated account as refundedBy, never the spoofed value', async () => {
       const { deposit } = await makePatientWithDeposit(1000);
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const refunded = await withActor(() =>
         depositsService.refund(deposit.id, { amount: 100, refundedBy: spoofed }),

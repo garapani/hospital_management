@@ -19,8 +19,8 @@ describe('FractionService (integration)', () => {
   let patientsService: PatientsService;
   let invoicesService: InvoicesService;
 
-  const STAFF_ID = '00000000-0000-0000-0000-0000000000e1';
-  const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+  const STAFF_ID = '00000000-0000-4000-8000-0000000000e1';
+  const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'fraction', seedRbac: true });
@@ -355,7 +355,7 @@ describe('FractionService (integration)', () => {
     const departmentRule = await ctx.inTenant(() =>
       fractionService.createRule({
         doctorId: doctor.id,
-        departmentId: '00000000-0000-0000-0000-0000000000d1',
+        departmentId: '00000000-0000-4000-8000-0000000000d1',
         fractionPercent: 25,
       }),
     );
@@ -488,7 +488,7 @@ describe('FractionService (integration)', () => {
       fractionService.recordEntry({
         invoiceId: invoice.id,
         doctorId: doctor.id,
-        recordedBy: '00000000-0000-0000-0000-0000000000ff',
+        recordedBy: '00000000-0000-4000-8000-0000000000ff',
       }),
     );
     expect(entry.recordedBy).toBe(AUTHENTICATED_ACCOUNT);

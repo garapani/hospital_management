@@ -19,7 +19,7 @@ describe('BillingSettingsController (e2e)', () => {
     ctx = await setupTenantTestContext({ namePrefix: 'billing_settings_ctrl' });
 
     token = await signTestToken({
-      sub: '00000000-0000-0000-0000-0000000000a1',
+      sub: '00000000-0000-4000-8000-0000000000a1',
       hospitalId: ctx.tenantId,
       permissions: ['master-data.manage'],
     });

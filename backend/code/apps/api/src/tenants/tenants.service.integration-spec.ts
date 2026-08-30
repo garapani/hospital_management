@@ -221,7 +221,7 @@ describe('TenantsService (integration)', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
     // service must record THIS account, ignoring the spoofed value passed to it.
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
     function withActor<T>(work: () => Promise<T>): Promise<T> {
       return ctx.tenantContext.run(
@@ -231,7 +231,7 @@ describe('TenantsService (integration)', () => {
     }
 
     it('provisionTenant records the authenticated account as createdBy, not the body value', async () => {
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const tenant = await withActor(() =>
         tenantsService.provisionTenant({

@@ -59,8 +59,8 @@ describe('reporting CSV export', () => {
     }
 
     it('exports the events archive as CSV with headers and escaped payloads', async () => {
-      await insertEvent('OrderPlaced', '00000000-0000-0000-0000-0000000000aa', { amount: 100, note: 'a,b' }, new Date('2025-01-02T03:04:05Z'));
-      await insertEvent('PaymentRecorded', '00000000-0000-0000-0000-0000000000bb', { amount: 250 }, new Date('2025-01-03T00:00:00Z'));
+      await insertEvent('OrderPlaced', '00000000-0000-4000-8000-0000000000aa', { amount: 100, note: 'a,b' }, new Date('2025-01-02T03:04:05Z'));
+      await insertEvent('PaymentRecorded', '00000000-0000-4000-8000-0000000000bb', { amount: 250 }, new Date('2025-01-03T00:00:00Z'));
 
       const csv = await ctx.inTenant(() =>
         reportingQueryService.exportEventsCsv({ from: '2025-01-01', to: '2025-12-31' }),
@@ -76,7 +76,7 @@ describe('reporting CSV export', () => {
     });
 
     it('exports the revenue aggregates as CSV', async () => {
-      await insertEvent('PaymentRecorded', '00000000-0000-0000-0000-0000000000cc', { amount: 300.5 }, new Date('2025-02-01T00:00:00Z'));
+      await insertEvent('PaymentRecorded', '00000000-0000-4000-8000-0000000000cc', { amount: 300.5 }, new Date('2025-02-01T00:00:00Z'));
 
       const csv = await ctx.inTenant(() => reportingQueryService.exportRevenueCsv({ from: '2025-01-01', to: '2025-12-31' }));
       expect(csv).toContain('date,totalAmount');

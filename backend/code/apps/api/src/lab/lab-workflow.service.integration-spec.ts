@@ -40,7 +40,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
 
   afterAll(() => teardownTenantTestContext(ctx));
 
-  const DOCTOR_ID = '00000000-0000-0000-0000-0000000000e3';
+  const DOCTOR_ID = '00000000-0000-4000-8000-0000000000e3';
 
   async function makeOrderItem(phoneNumber: string) {
     return ctx.inTenant(async () => {
@@ -88,7 +88,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
     const collectedReq = await ctx.inTenant(() =>
       labWorkflowService.createRequisition({ orderItemId: orderItemCollected.id, testId: test.id, specimenType: 'Blood' }),
     );
-    await ctx.inTenant(() => labWorkflowService.collectSample(collectedReq.id, '00000000-0000-0000-0000-0000000000e5'));
+    await ctx.inTenant(() => labWorkflowService.collectSample(collectedReq.id, '00000000-0000-4000-8000-0000000000e5'));
 
     const pendingWorklist = await ctx.inTenant(() =>
       labWorkflowService.listByOrderItem({ status: 'Pending' } as any),
@@ -138,7 +138,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
     // service must record THIS account, ignoring the spoofed value passed to it.
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
     function withActor<T>(work: () => Promise<T>): Promise<T> {
       return ctx.tenantContext.run(
@@ -164,7 +164,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
 
     it('collectSample records the authenticated account as sampleCollectedBy, not the body value', async () => {
       const { requisition } = await makeRequisition();
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const collected = await withActor(() => labWorkflowService.collectSample(requisition.id, spoofed));
       expect(collected.sampleCollectedBy).toBe(AUTHENTICATED_ACCOUNT);
@@ -175,7 +175,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
       await withActor(() => labWorkflowService.collectSample(requisition.id, 'ignored'));
       const component = await ctx.inTenant(() => catalogService.listComponentsByTest(test.id));
 
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
       const result = await withActor(() =>
         labWorkflowService.enterResult(requisition.id, {
           componentId: component[0].id,
@@ -216,7 +216,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
         }),
       );
 
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
       const verified = await withActor(() => labWorkflowService.verify(requisition.id, spoofed));
       expect(verified.verifiedBy).toBe(AUTHENTICATED_ACCOUNT);
 
@@ -253,7 +253,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
       const requisition = await ctx.inTenant(() =>
         labWorkflowService.createRequisition({ orderItemId: orderItem.id, testId: test.id, specimenType: 'Blood' }),
       );
-      await ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-0000-0000-0000000000e5'));
+      await ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-4000-8000-0000000000e5'));
 
       // In range, but operator explicitly (and wrongly) flags it abnormal — the range must win.
       const inRange = await ctx.inTenant(() =>
@@ -261,7 +261,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
           componentId: component.id,
           value: '7.0',
           isAbnormal: true,
-          enteredBy: '00000000-0000-0000-0000-0000000000e5',
+          enteredBy: '00000000-0000-4000-8000-0000000000e5',
         }),
       );
       expect(inRange.isAbnormal).toBe(false);
@@ -271,7 +271,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
         labWorkflowService.enterResult(requisition.id, {
           componentId: component.id,
           value: '15.0',
-          enteredBy: '00000000-0000-0000-0000-0000000000e5',
+          enteredBy: '00000000-0000-4000-8000-0000000000e5',
         }),
       );
       expect(outOfRange.isAbnormal).toBe(true);
@@ -283,14 +283,14 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
       const requisition = await ctx.inTenant(() =>
         labWorkflowService.createRequisition({ orderItemId: orderItem.id, testId: test.id, specimenType: 'Blood' }),
       );
-      await ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-0000-0000-0000000000e5'));
+      await ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-4000-8000-0000000000e5'));
 
       const result = await ctx.inTenant(() =>
         labWorkflowService.enterResult(requisition.id, {
           componentId: component.id,
           value: 'Hemolyzed',
           isAbnormal: true,
-          enteredBy: '00000000-0000-0000-0000-0000000000e5',
+          enteredBy: '00000000-0000-4000-8000-0000000000e5',
         }),
       );
       expect(result.isAbnormal).toBe(true);
@@ -327,29 +327,29 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
 
     it('rejects collectSample a second time (already SampleCollected)', async () => {
       const { requisition } = await makePendingRequisition();
-      await ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-0000-0000-0000000000e5'));
+      await ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-4000-8000-0000000000e5'));
       await expect(
-        ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-0000-0000-0000000000e5')),
+        ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-4000-8000-0000000000e5')),
       ).rejects.toThrow(ConflictException);
     });
 
     it('rejects verify while a component still has no entered result', async () => {
       const { requisition } = await makePendingRequisition();
-      await ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-0000-0000-0000000000e5'));
+      await ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-4000-8000-0000000000e5'));
       await expect(ctx.inTenant(() => labWorkflowService.verify(requisition.id))).rejects.toThrow(ConflictException);
     });
 
     it('rejects enterResult, verify, and cancel on an already-Verified requisition', async () => {
       const { requisition, component } = await makePendingRequisition();
-      await ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-0000-0000-0000000000e5'));
+      await ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-4000-8000-0000000000e5'));
       await ctx.inTenant(() =>
         labWorkflowService.enterResult(requisition.id, {
           componentId: component.id,
           value: '1',
-          enteredBy: '00000000-0000-0000-0000-0000000000e5',
+          enteredBy: '00000000-0000-4000-8000-0000000000e5',
         }),
       );
-      await ctx.inTenant(() => labWorkflowService.verify(requisition.id, '00000000-0000-0000-0000-0000000000e5'));
+      await ctx.inTenant(() => labWorkflowService.verify(requisition.id, '00000000-0000-4000-8000-0000000000e5'));
 
       await expect(
         ctx.inTenant(() => labWorkflowService.enterResult(requisition.id, { componentId: component.id, value: '2' })),
@@ -363,7 +363,7 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
       await ctx.inTenant(() => labWorkflowService.cancel(requisition.id, 'Ordered in error'));
 
       await expect(
-        ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-0000-0000-0000000000e5')),
+        ctx.inTenant(() => labWorkflowService.collectSample(requisition.id, '00000000-0000-4000-8000-0000000000e5')),
       ).rejects.toThrow(ConflictException);
       await expect(
         ctx.inTenant(() => labWorkflowService.enterResult(requisition.id, { componentId: component.id, value: '1' })),

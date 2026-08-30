@@ -19,8 +19,8 @@ describe('InsuranceClaimsService (integration)', () => {
   let patientsService: PatientsService;
   let invoicesService: InvoicesService;
 
-  const STAFF_ID = '00000000-0000-0000-0000-0000000000e1';
-  const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+  const STAFF_ID = '00000000-0000-4000-8000-0000000000e1';
+  const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'insurance' });

@@ -10,8 +10,8 @@ describe('NursingService (integration)', () => {
   let ctx: TenantTestContext;
   let nursingService: NursingService;
 
-  const STAFF_ID = '00000000-0000-0000-0000-0000000000e1';
-  const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+  const STAFF_ID = '00000000-0000-4000-8000-0000000000e1';
+  const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'nursing' });
@@ -44,7 +44,7 @@ describe('NursingService (integration)', () => {
             `00000000-0000-0000-0000-${String(seq).padStart(12, '0')}`,
             'OPD',
             STAFF_ID,
-            '00000000-0000-0000-0000-0000000000c2',
+            '00000000-0000-4000-8000-0000000000c2',
             `00000000-0000-0000-0000-b${String(seq).padStart(11, '0')}`,
           ],
         ),

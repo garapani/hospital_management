@@ -15,8 +15,8 @@ describe('SsuService (integration)', () => {
   let ssuService: SsuService;
   let patientsService: PatientsService;
 
-  const STAFF_ID = '00000000-0000-0000-0000-0000000000e1';
-  const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+  const STAFF_ID = '00000000-0000-4000-8000-0000000000e1';
+  const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'ssu' });
@@ -155,10 +155,10 @@ describe('SsuService (integration)', () => {
 
   it('derives appliedBy and approvedBy from the authenticated principal', async () => {
     const patient = await makePatient();
-    const spoofed = '00000000-0000-0000-0000-0000000000ff';
+    const spoofed = '00000000-0000-4000-8000-0000000000ff';
     // The maker/checker split (approveCase P2) requires the approver to differ from the opener,
     // so the case is opened under AUTHENTICATED_ACCOUNT and approved under a second actor.
-    const APPROVER_ACCOUNT = '00000000-0000-0000-0000-0000000000ab';
+    const APPROVER_ACCOUNT = '00000000-0000-4000-8000-0000000000ab';
     const ssuCase = await withActor(() =>
       ssuService.openCase({
         patientId: patient.id,
@@ -192,7 +192,7 @@ describe('SsuService (integration)', () => {
 
     // A different actor can.
     const approved = await ctx.tenantContext.run(
-      { tenantId: ctx.tenantId, accountId: '00000000-0000-0000-0000-0000000000ab', correlationId: 'ssu-test' },
+      { tenantId: ctx.tenantId, accountId: '00000000-0000-4000-8000-0000000000ab', correlationId: 'ssu-test' },
       () => ssuService.approveCase(ssuCase.id, { decisionNotes: 'approved by checker' }),
     );
     expect(approved.status).toBe('Approved');
@@ -210,7 +210,7 @@ describe('SsuService (integration)', () => {
 
     // Once the first case leaves Open, a new one may be opened.
     const approved = await ctx.inTenant(() =>
-      ssuService.approveCase(first.id, { decisionNotes: 'ok', approvedBy: '00000000-0000-0000-0000-0000000000ee' }),
+      ssuService.approveCase(first.id, { decisionNotes: 'ok', approvedBy: '00000000-0000-4000-8000-0000000000ee' }),
     );
     expect(approved.status).toBe('Approved');
     const second = await ctx.inTenant(() =>
@@ -223,7 +223,7 @@ describe('SsuService (integration)', () => {
     const patient = await makePatient();
     const ssuCase = await makeCase(patient.id);
     await ctx.inTenant(() =>
-      ssuService.approveCase(ssuCase.id, { decisionNotes: 'ok', approvedBy: '00000000-0000-0000-0000-0000000000ee' }),
+      ssuService.approveCase(ssuCase.id, { decisionNotes: 'ok', approvedBy: '00000000-0000-4000-8000-0000000000ee' }),
     );
 
     const closed = await ctx.inTenant(() => ssuService.closeCase(ssuCase.id, STAFF_ID));
@@ -236,7 +236,7 @@ describe('SsuService (integration)', () => {
     const patient = await makePatient();
     const first = await makeCase(patient.id);
     const approved = await ctx.inTenant(() =>
-      ssuService.approveCase(first.id, { decisionNotes: 'ok', approvedBy: '00000000-0000-0000-0000-0000000000ee' }),
+      ssuService.approveCase(first.id, { decisionNotes: 'ok', approvedBy: '00000000-0000-4000-8000-0000000000ee' }),
     );
     // Only one Open case may exist per patient, so the second case opens after the first is Approved.
     await makeCase(patient.id, { caseType: 'Medicine Only', subsidyPercent: 75 });

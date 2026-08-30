@@ -12,8 +12,8 @@ describe('HelpdeskService (integration)', () => {
   let ctx: TenantTestContext;
   let helpdeskService: HelpdeskService;
 
-  const STAFF_ID = '00000000-0000-0000-0000-0000000000e1';
-  const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+  const STAFF_ID = '00000000-0000-4000-8000-0000000000e1';
+  const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'helpdesk' });
@@ -157,7 +157,7 @@ describe('HelpdeskService (integration)', () => {
   });
 
   it('derives requesterAccountId and resolvedBy from the authenticated principal', async () => {
-    const spoofed = '00000000-0000-0000-0000-0000000000ff';
+    const spoofed = '00000000-0000-4000-8000-0000000000ff';
     const ticket = await withActor(() =>
       helpdeskService.createTicket({
         title: 'Actor derivation',

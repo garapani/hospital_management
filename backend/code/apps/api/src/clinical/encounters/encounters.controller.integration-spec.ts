@@ -24,19 +24,19 @@ describe('EncountersController (integration)', () => {
     ctx = await setupTenantTestContext({ namePrefix: 'encounters_ctrl' });
 
     readOnlyToken = await signTestToken({
-      sub: '00000000-0000-0000-0000-0000000000a1',
+      sub: '00000000-0000-4000-8000-0000000000a1',
       hospitalId: ctx.tenantId,
       permissions: ['encounter.read'],
     });
 
     manageOnlyToken = await signTestToken({
-      sub: '00000000-0000-0000-0000-0000000000a2',
+      sub: '00000000-0000-4000-8000-0000000000a2',
       hospitalId: ctx.tenantId,
       permissions: ['encounter.manage'],
     });
 
     fullPermToken = await signTestToken({
-      sub: '00000000-0000-0000-0000-0000000000a3',
+      sub: '00000000-0000-4000-8000-0000000000a3',
       hospitalId: ctx.tenantId,
       permissions: ['encounter.read', 'encounter.manage'],
     });
@@ -74,7 +74,7 @@ describe('EncountersController (integration)', () => {
       await request(app.getHttpServer())
         .post('/encounters/notes')
         .set('Authorization', `Bearer ${readOnlyToken}`)
-        .send({ patientId, doctorId: '00000000-0000-0000-0000-000000000002' })
+        .send({ patientId, doctorId: '00000000-0000-4000-8000-000000000002' })
         .expect(403);
     });
 
@@ -102,15 +102,15 @@ describe('EncountersController (integration)', () => {
         .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           patientId,
-          doctorId: '00000000-0000-0000-0000-000000000002',
+          doctorId: '00000000-0000-4000-8000-000000000002',
           chiefComplaint: 'Fever',
         })
         .expect(201);
 
       expect(res.body.id).toBeDefined();
       expect(res.body.status).toBe('Draft');
-      expect(res.body.doctorId).toBe('00000000-0000-0000-0000-0000000000a3');
-      expect(res.body.doctorId).not.toBe('00000000-0000-0000-0000-000000000002');
+      expect(res.body.doctorId).toBe('00000000-0000-4000-8000-0000000000a3');
+      expect(res.body.doctorId).not.toBe('00000000-0000-4000-8000-000000000002');
       noteId = res.body.id;
     });
 
@@ -132,7 +132,7 @@ describe('EncountersController (integration)', () => {
         .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           patientId,
-          doctorId: '00000000-0000-0000-0000-000000000002',
+          doctorId: '00000000-0000-4000-8000-000000000002',
           description: 'Viral fever',
         })
         .expect(201);
@@ -145,7 +145,7 @@ describe('EncountersController (integration)', () => {
         .set('Authorization', `Bearer ${fullPermToken}`)
         .send({
           patientId,
-          doctorId: '00000000-0000-0000-0000-000000000002',
+          doctorId: '00000000-0000-4000-8000-000000000002',
           medicationName: 'Paracetamol',
           dosage: '500mg',
           frequency: 'BID',

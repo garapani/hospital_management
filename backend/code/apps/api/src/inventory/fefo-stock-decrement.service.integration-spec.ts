@@ -23,7 +23,7 @@ describe('FefoStockDecrementService (integration)', () => {
 
   afterAll(() => teardownTenantTestContext(ctx));
 
-  const RECORDED_BY = '00000000-0000-0000-0000-0000000000e2';
+  const RECORDED_BY = '00000000-0000-4000-8000-0000000000e2';
 
   async function makeItem(suffix: string) {
     return ctx.inTenant(async () => {
@@ -87,9 +87,9 @@ describe('FefoStockDecrementService (integration)', () => {
     const expiredBatch = await seedBatch(item.id, 'EXPIRED-1', yesterday, 100);
     const validBatch = await seedBatch(item.id, 'VALID-1', nextYear, 50);
 
-    await decrement(item.id, 10, '00000000-0000-0000-0000-0000000000f1');
+    await decrement(item.id, 10, '00000000-0000-4000-8000-0000000000f1');
 
-    const transactions = await getTransactions(item.id, '00000000-0000-0000-0000-0000000000f1');
+    const transactions = await getTransactions(item.id, '00000000-0000-4000-8000-0000000000f1');
     expect(transactions).toHaveLength(1);
     expect(transactions[0].stockBatchId).toBe(validBatch.id);
     expect(transactions[0].stockBatchId).not.toBe(expiredBatch.id);
@@ -100,8 +100,8 @@ describe('FefoStockDecrementService (integration)', () => {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     await seedBatch(item.id, 'EXPIRED-2', yesterday, 100);
 
-    await expect(decrement(item.id, 1, '00000000-0000-0000-0000-0000000000f2')).rejects.toThrow(BadRequestException);
-    await expect(decrement(item.id, 1, '00000000-0000-0000-0000-0000000000f2')).rejects.toThrow(/available 0/);
+    await expect(decrement(item.id, 1, '00000000-0000-4000-8000-0000000000f2')).rejects.toThrow(BadRequestException);
+    await expect(decrement(item.id, 1, '00000000-0000-4000-8000-0000000000f2')).rejects.toThrow(/available 0/);
   });
 
   it('still applies FEFO ordering among non-expired batches', async () => {
@@ -111,9 +111,9 @@ describe('FefoStockDecrementService (integration)', () => {
     const soonBatch = await seedBatch(item.id, 'SOON-1', soon, 5);
     await seedBatch(item.id, 'LATER-1', later, 50);
 
-    await decrement(item.id, 5, '00000000-0000-0000-0000-0000000000f3');
+    await decrement(item.id, 5, '00000000-0000-4000-8000-0000000000f3');
 
-    const transactions = await getTransactions(item.id, '00000000-0000-0000-0000-0000000000f3');
+    const transactions = await getTransactions(item.id, '00000000-0000-4000-8000-0000000000f3');
     expect(transactions).toHaveLength(1);
     expect(transactions[0].stockBatchId).toBe(soonBatch.id);
   });
@@ -124,9 +124,9 @@ describe('FefoStockDecrementService (integration)', () => {
     const datedBatch = await seedBatch(item.id, 'DATED-1', soon, 5);
     const noExpiryBatch = await seedBatch(item.id, 'NO-EXPIRY-1', null, 50);
 
-    await decrement(item.id, 10, '00000000-0000-0000-0000-0000000000f4');
+    await decrement(item.id, 10, '00000000-0000-4000-8000-0000000000f4');
 
-    const transactions = await getTransactions(item.id, '00000000-0000-0000-0000-0000000000f4');
+    const transactions = await getTransactions(item.id, '00000000-0000-4000-8000-0000000000f4');
     const byBatch = new Map(transactions.map((t) => [t.stockBatchId, t]));
     expect(byBatch.has(datedBatch.id)).toBe(true);
     expect(byBatch.has(noExpiryBatch.id)).toBe(true);

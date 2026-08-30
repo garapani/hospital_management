@@ -38,7 +38,7 @@ describe('OrdersService (integration)', () => {
     );
   }
 
-  const DOCTOR_ID = '00000000-0000-0000-0000-0000000000d1';
+  const DOCTOR_ID = '00000000-0000-4000-8000-0000000000d1';
 
   it('creates an order with mixed-type items', async () => {
     const patient = await makePatient(ctx, '4440000001');
@@ -286,7 +286,7 @@ describe('OrdersService (integration)', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
     // service must record THIS account, ignoring the spoofed value passed to it.
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
     function withActor<T>(work: () => Promise<T>): Promise<T> {
       return ctx.tenantContext.run(
@@ -303,7 +303,7 @@ describe('OrdersService (integration)', () => {
 
     it('create records the authenticated account as orderedBy, not the body value', async () => {
       const patient = await makeActorPatient();
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const order = await withActor(() =>
         ordersService.create({
@@ -327,7 +327,7 @@ describe('OrdersService (integration)', () => {
           items: [{ itemType: 'Lab', itemDescription: 'CBC' }],
         }),
       );
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const completed = await withActor(() =>
         ordersService.completeItem(order.id, order.items[0].id, { completedBy: spoofed }),
@@ -347,7 +347,7 @@ describe('OrdersService (integration)', () => {
           items: [{ itemType: 'Lab', itemDescription: 'CBC' }],
         }),
       );
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const completed = await withActor(() =>
         ctx.tenantConnection.runInTenantSchema((manager) =>

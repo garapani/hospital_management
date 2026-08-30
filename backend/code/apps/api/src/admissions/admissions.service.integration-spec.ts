@@ -68,7 +68,7 @@ describe('AdmissionsService (integration)', () => {
     return tenantCtx.inTenant(() => masterDataService.createBed({ wardId: ward.id, bedNumber }));
   }
 
-  const DOCTOR_ID = '00000000-0000-0000-0000-0000000000d1';
+  const DOCTOR_ID = '00000000-0000-4000-8000-0000000000d1';
 
   it('admits a patient directly and occupies the bed', async () => {
     const patient = await makePatient(ctx, '3330000001');
@@ -549,7 +549,7 @@ describe('AdmissionsService (integration)', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
     // service must record THIS account, ignoring the spoofed value passed to it.
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
     function withActor<T>(work: () => Promise<T>): Promise<T> {
       return ctx.tenantContext.run(
@@ -577,7 +577,7 @@ describe('AdmissionsService (integration)', () => {
     it('transfer records the authenticated account as transferredBy on the bed transfer, not the body value', async () => {
       const { admission } = await makeAdmission();
       const bedB = await makeBed(ctx, `ACTB${actorSeq}`);
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       await withActor(() =>
         admissionsService.transfer(admission.id, { toBedId: bedB.id, transferredBy: spoofed }),
@@ -596,7 +596,7 @@ describe('AdmissionsService (integration)', () => {
 
     it('discharge records the authenticated account as dischargedBy, not the body value', async () => {
       const { admission } = await makeAdmission();
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const discharged = await withActor(() =>
         admissionsService.discharge(admission.id, { dischargedBy: spoofed }),
@@ -607,7 +607,7 @@ describe('AdmissionsService (integration)', () => {
     it('createDischargeSummary records the authenticated account as preparedBy, not the body value', async () => {
       const { patient, admission } = await makeAdmission();
       await withActor(() => admissionsService.discharge(admission.id, {}));
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const summary = await withActor(() =>
         admissionsService.createDischargeSummary({
@@ -631,7 +631,7 @@ describe('AdmissionsService (integration)', () => {
           preparedBy: 'ignored',
         }),
       );
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const reviewed = await withActor(() =>
         admissionsService.reviewDischargeSummary(summary.id, spoofed),

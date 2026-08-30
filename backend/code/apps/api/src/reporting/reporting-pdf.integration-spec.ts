@@ -35,8 +35,8 @@ describe('reporting PDF export (integration)', () => {
   }
 
   it('exports the events archive as a PDF starting with the PDF magic bytes', async () => {
-    await insertEvent('OrderPlaced', '00000000-0000-0000-0000-0000000000aa', { amount: 100 }, new Date('2025-01-02T03:04:05Z'));
-    await insertEvent('PaymentRecorded', '00000000-0000-0000-0000-0000000000bb', { amount: 250 }, new Date('2025-01-03T00:00:00Z'));
+    await insertEvent('OrderPlaced', '00000000-0000-4000-8000-0000000000aa', { amount: 100 }, new Date('2025-01-02T03:04:05Z'));
+    await insertEvent('PaymentRecorded', '00000000-0000-4000-8000-0000000000bb', { amount: 250 }, new Date('2025-01-03T00:00:00Z'));
 
     const buffer = await ctx.inTenant(() =>
       reportingQueryService.exportEventsPdf({ from: '2025-01-01', to: '2025-12-31' }),
@@ -45,8 +45,8 @@ describe('reporting PDF export (integration)', () => {
   });
 
   it('applies the eventType filter to the exported set', async () => {
-    await insertEvent('OrderPlaced', '00000000-0000-0000-0000-0000000000cc', { amount: 50 }, new Date('2025-03-01T00:00:00Z'));
-    await insertEvent('PaymentRecorded', '00000000-0000-0000-0000-0000000000dd', { amount: 75 }, new Date('2025-03-02T00:00:00Z'));
+    await insertEvent('OrderPlaced', '00000000-0000-4000-8000-0000000000cc', { amount: 50 }, new Date('2025-03-01T00:00:00Z'));
+    await insertEvent('PaymentRecorded', '00000000-0000-4000-8000-0000000000dd', { amount: 75 }, new Date('2025-03-02T00:00:00Z'));
 
     const buffer = await ctx.inTenant(() =>
       reportingQueryService.exportEventsPdf({

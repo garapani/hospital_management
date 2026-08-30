@@ -31,7 +31,7 @@ describe('FixedAssetsService (integration)', () => {
 
   afterAll(() => teardownTenantTestContext(ctx));
 
-  const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+  const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
   function withActor<T>(work: () => Promise<T>): Promise<T> {
     return ctx.tenantContext.run(
       { tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT, correlationId: 'fixed-assets-test' },

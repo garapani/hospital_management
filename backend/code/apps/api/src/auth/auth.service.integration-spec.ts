@@ -480,7 +480,7 @@ describe('AuthService (integration)', () => {
 
   describe('patient-portal accounts', () => {
     it('logs a patient account in with accountType/patientId claims and no permissions', async () => {
-      const patientId = '00000000-0000-0000-0000-0000000000f5';
+      const patientId = '00000000-0000-4000-8000-0000000000f5';
       const created = await ctx.inTenant(() =>
         ctx.accountsService.createPatientAccount({
           patientId,

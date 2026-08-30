@@ -161,7 +161,7 @@ describe('AppointmentsService (integration)', () => {
   });
 
   it('rejects creating an appointment in a slot the doctor already has scheduled', async () => {
-    const doctorId = '00000000-0000-0000-0000-0000000000d1';
+    const doctorId = '00000000-0000-4000-8000-0000000000d1';
     await ctx.inTenant(() => appointmentsService.create({
       firstName: 'First', lastName: 'Booking', contactNumber: '5550000010',
       appointmentDate: '2026-08-20', appointmentTime: '09:00', appointmentType: 'Consultation', doctorId,
@@ -213,7 +213,7 @@ describe('AppointmentsService (integration)', () => {
   });
 
   it('rejects rescheduling into a slot the doctor already has scheduled', async () => {
-    const doctorId = '00000000-0000-0000-0000-0000000000d2';
+    const doctorId = '00000000-0000-4000-8000-0000000000d2';
     await ctx.inTenant(() => appointmentsService.create({
       firstName: 'Existing', lastName: 'Booking', contactNumber: '5550000002',
       appointmentDate: '2026-08-08', appointmentTime: '09:00', appointmentType: 'Consultation', doctorId,
@@ -229,7 +229,7 @@ describe('AppointmentsService (integration)', () => {
   });
 
   it('allows re-saving an appointment at its own existing doctor/date/time (no self-conflict)', async () => {
-    const doctorId = '00000000-0000-0000-0000-0000000000d3';
+    const doctorId = '00000000-0000-4000-8000-0000000000d3';
     const created = await ctx.inTenant(() => appointmentsService.create({
       firstName: 'Steady', lastName: 'Slot', contactNumber: '5550000004',
       appointmentDate: '2026-08-09', appointmentTime: '11:00', appointmentType: 'Consultation', doctorId,

@@ -77,7 +77,7 @@ describe('TriageService (integration)', () => {
       const updated = await triageService.update(entry.id, {
         acuityLevel: 3,
         colorCode: 'Yellow',
-        triagedBy: '00000000-0000-0000-0000-000000000099',
+        triagedBy: '00000000-0000-4000-8000-000000000099',
         triagedAt,
         status: 'Triaged',
       });
@@ -209,7 +209,7 @@ describe('TriageService (integration)', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
     // service must record THIS account, ignoring the spoofed value passed to it.
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
     function withActor<T>(work: () => Promise<T>): Promise<T> {
       return ctx.tenantContext.run(
@@ -219,7 +219,7 @@ describe('TriageService (integration)', () => {
     }
 
     it('create records the authenticated account as triagedBy, never the body value', async () => {
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const entry = await withActor(() =>
         triageService.create({ chiefComplaint: 'Chest pain', triagedBy: spoofed }),
@@ -229,7 +229,7 @@ describe('TriageService (integration)', () => {
 
     it('update records the authenticated account as triagedBy, never the spoofed value', async () => {
       const entry = await ctx.inTenant(() => triageService.create({ chiefComplaint: 'Fever' }));
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const updated = await withActor(() =>
         triageService.update(entry.id, { status: 'Triaged', triagedBy: spoofed }),

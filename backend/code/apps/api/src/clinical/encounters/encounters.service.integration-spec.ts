@@ -60,7 +60,7 @@ describe('EncountersService (integration)', () => {
   it('creates, retrieves and updates clinical notes', async () => {
     const note = await service.createNote({
       patientId,
-      doctorId: '00000000-0000-0000-0000-000000000002',
+      doctorId: '00000000-0000-4000-8000-000000000002',
       chiefComplaint: 'Headache',
     });
     expect(note.id).toBeDefined();
@@ -80,7 +80,7 @@ describe('EncountersService (integration)', () => {
   it('creates, retrieves and deletes diagnoses', async () => {
     const dx = await service.createDiagnosis({
       patientId,
-      doctorId: '00000000-0000-0000-0000-000000000002',
+      doctorId: '00000000-0000-4000-8000-000000000002',
       description: 'Migraine',
       isPrimary: true,
     });
@@ -98,7 +98,7 @@ describe('EncountersService (integration)', () => {
   it('creates, retrieves and deletes prescriptions', async () => {
     const rx = await service.createPrescription({
       patientId,
-      doctorId: '00000000-0000-0000-0000-000000000002',
+      doctorId: '00000000-0000-4000-8000-000000000002',
       medicationName: 'Ibuprofen',
       dosage: '400mg',
       frequency: 'TID',
@@ -118,15 +118,15 @@ describe('EncountersService (integration)', () => {
   it('rejects creating a note, diagnosis, or prescription for a nonexistent patient', async () => {
     const fakePatientId = '11111111-1111-1111-1111-111111111111';
     await expect(
-      service.createNote({ patientId: fakePatientId, doctorId: '00000000-0000-0000-0000-000000000002', chiefComplaint: 'x' }),
+      service.createNote({ patientId: fakePatientId, doctorId: '00000000-0000-4000-8000-000000000002', chiefComplaint: 'x' }),
     ).rejects.toThrow(NotFoundException);
     await expect(
-      service.createDiagnosis({ patientId: fakePatientId, doctorId: '00000000-0000-0000-0000-000000000002', description: 'x', isPrimary: false }),
+      service.createDiagnosis({ patientId: fakePatientId, doctorId: '00000000-0000-4000-8000-000000000002', description: 'x', isPrimary: false }),
     ).rejects.toThrow(NotFoundException);
     await expect(
       service.createPrescription({
         patientId: fakePatientId,
-        doctorId: '00000000-0000-0000-0000-000000000002',
+        doctorId: '00000000-0000-4000-8000-000000000002',
         medicationName: 'x',
         dosage: 'x',
         frequency: 'x',
@@ -139,7 +139,7 @@ describe('EncountersService (integration)', () => {
   it('discontinues and completes a prescription, and rejects transitioning it twice', async () => {
     const rx = await service.createPrescription({
       patientId,
-      doctorId: '00000000-0000-0000-0000-000000000002',
+      doctorId: '00000000-0000-4000-8000-000000000002',
       medicationName: 'Amoxicillin',
       dosage: '500mg',
       frequency: 'TID',
@@ -155,7 +155,7 @@ describe('EncountersService (integration)', () => {
 
     const rx2 = await service.createPrescription({
       patientId,
-      doctorId: '00000000-0000-0000-0000-000000000002',
+      doctorId: '00000000-0000-4000-8000-000000000002',
       medicationName: 'Azithromycin',
       dosage: '250mg',
       frequency: 'OD',
@@ -167,8 +167,8 @@ describe('EncountersService (integration)', () => {
   });
 
   describe('doctorId derives from the authenticated principal, never the caller-supplied value', () => {
-    const AUTHENTICATED_ACCOUNT_ID = '00000000-0000-0000-0000-0000000000a1';
-    const SPOOFED_DOCTOR_ID = '00000000-0000-0000-0000-0000000000ee';
+    const AUTHENTICATED_ACCOUNT_ID = '00000000-0000-4000-8000-0000000000a1';
+    const SPOOFED_DOCTOR_ID = '00000000-0000-4000-8000-0000000000ee';
 
     const asAuthenticatedRequest = <T>(work: () => Promise<T>): Promise<T> =>
       ctx.tenantContext.run({ tenantId: ctx.tenantId, accountId: AUTHENTICATED_ACCOUNT_ID, correlationId: 'test' }, work);

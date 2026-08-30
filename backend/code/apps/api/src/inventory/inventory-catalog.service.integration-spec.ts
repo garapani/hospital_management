@@ -41,7 +41,7 @@ describe('InventoryCatalogService catalog update/deactivate (integration)', () =
 
   afterAll(() => teardownTenantTestContext(ctx));
 
-  const DOCTOR_ID = '00000000-0000-0000-0000-0000000000e5';
+  const DOCTOR_ID = '00000000-0000-4000-8000-0000000000e5';
 
   async function makeCategory(suffix: string) {
     return ctx.inTenant(() => inventoryCatalogService.createCategory({ name: `Category ${suffix}` }));

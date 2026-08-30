@@ -47,7 +47,7 @@ describe('InvoicesService (integration)', () => {
     );
   }
 
-  const STAFF_ID = '00000000-0000-0000-0000-0000000000f1';
+  const STAFF_ID = '00000000-0000-4000-8000-0000000000f1';
 
   it('creates an invoice with mixed taxable and exempt items, correctly split into CGST/SGST', async () => {
     const patient = await makePatient(ctx, '5550000001');
@@ -109,8 +109,8 @@ describe('InvoicesService (integration)', () => {
         invoicesService.create({
           patientId: patient.id,
           createdBy: STAFF_ID,
-          sourceAppointmentId: '00000000-0000-0000-0000-0000000000a1',
-          sourceAdmissionId: '00000000-0000-0000-0000-0000000000a2',
+          sourceAppointmentId: '00000000-0000-4000-8000-0000000000a1',
+          sourceAdmissionId: '00000000-0000-4000-8000-0000000000a2',
           items: [{ description: 'Consultation Fee', unitPrice: 500 }],
         }),
       ),
@@ -719,7 +719,7 @@ describe('InvoicesService (integration)', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
     // service must record THIS account, ignoring the spoofed value passed to it.
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
     function withActor<T>(work: () => Promise<T>): Promise<T> {
       return ctx.tenantContext.run(
@@ -728,7 +728,7 @@ describe('InvoicesService (integration)', () => {
       );
     }
 
-    const SPOOFED_ACTOR = '00000000-0000-0000-0000-0000000000ff';
+    const SPOOFED_ACTOR = '00000000-0000-4000-8000-0000000000ff';
     let actorSeq = 0;
     async function makeInvoice() {
       actorSeq += 1;

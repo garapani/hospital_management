@@ -44,8 +44,8 @@ describe('PharmacyDispensingService (integration)', () => {
 
   afterAll(() => teardownTenantTestContext(ctx));
 
-  const DOCTOR_ID = '00000000-0000-0000-0000-0000000000e5';
-  const PHARMACIST_ID = '00000000-0000-0000-0000-0000000000e8';
+  const DOCTOR_ID = '00000000-0000-4000-8000-0000000000e5';
+  const PHARMACIST_ID = '00000000-0000-4000-8000-0000000000e8';
 
   async function makeOrderItem(phoneNumber: string, itemType = 'Pharmacy') {
     return ctx.inTenant(async () => {
@@ -400,7 +400,7 @@ describe('PharmacyDispensingService (integration)', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
     // service must record THIS account, ignoring the spoofed value passed to it.
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
     function withActor<T>(work: () => Promise<T>): Promise<T> {
       return ctx.tenantContext.run(
@@ -427,7 +427,7 @@ describe('PharmacyDispensingService (integration)', () => {
 
     it('dispenseDrug records the authenticated account as dispensedBy, not the caller-supplied value', async () => {
       const { orderItem, dispensing } = await makePendingDispensing();
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const dispensed = await withActor(() =>
         dispensingService.dispenseDrug(dispensing.id, { dispensedBy: spoofed }),
@@ -450,7 +450,7 @@ describe('PharmacyDispensingService (integration)', () => {
 
     it('reverseDispensing records the authenticated account as reversedBy, not the caller-supplied value', async () => {
       const { dispensing } = await makePendingDispensing();
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
       await withActor(() => dispensingService.dispenseDrug(dispensing.id, {}));
 
       const reversed = await withActor(() =>

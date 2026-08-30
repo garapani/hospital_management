@@ -32,19 +32,19 @@ describe('PatientPortalController (integration)', () => {
       new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext),
     );
     const patient = await ctx.tenantContext.run(
-      { tenantId: ctx.tenantId, accountId: '00000000-0000-0000-0000-0000000000e4', correlationId: 'test' },
+      { tenantId: ctx.tenantId, accountId: '00000000-0000-4000-8000-0000000000e4', correlationId: 'test' },
       () => patientsService.create({ firstName: 'Http', lastName: 'Patient', gender: 'Female' }),
     );
     patientId = patient.id;
 
     patientToken = await signTestToken({
-      sub: '00000000-0000-0000-0000-0000000000f6',
+      sub: '00000000-0000-4000-8000-0000000000f6',
       hospitalId: ctx.tenantId,
       accountType: 'patient',
       patientId,
     });
     staffToken = await signTestToken({
-      sub: '00000000-0000-0000-0000-0000000000f7',
+      sub: '00000000-0000-4000-8000-0000000000f7',
       hospitalId: ctx.tenantId,
       accountType: 'staff',
       roles: ['Doctor'],

@@ -24,7 +24,7 @@ describe('AuditColumnsSubscriber (integration)', () => {
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'audit_columns' });
     token = await signTestToken({
-      sub: '00000000-0000-0000-0000-0000000000ac',
+      sub: '00000000-0000-4000-8000-0000000000ac',
       hospitalId: ctx.tenantId,
       permissions: [
         'master-data.manage',
@@ -55,8 +55,8 @@ describe('AuditColumnsSubscriber (integration)', () => {
       .set('x-tenant-id', ctx.tenantId)
       .send({ departmentCode: 'AUD1', departmentName: 'Audit Columns Test Dept' });
     expect(created.status).toBe(201);
-    expect(created.body.createdBy).toBe('00000000-0000-0000-0000-0000000000ac');
-    expect(created.body.updatedBy).toBe('00000000-0000-0000-0000-0000000000ac');
+    expect(created.body.createdBy).toBe('00000000-0000-4000-8000-0000000000ac');
+    expect(created.body.updatedBy).toBe('00000000-0000-4000-8000-0000000000ac');
 
     // MasterDataService.deactivateDepartment() goes through load-then-save (the correct pattern),
     // exercising the subscriber's beforeUpdate hook.
@@ -65,7 +65,7 @@ describe('AuditColumnsSubscriber (integration)', () => {
       .set('Authorization', `Bearer ${token}`)
       .set('x-tenant-id', ctx.tenantId);
     expect(deactivated.status).toBe(200);
-    expect(deactivated.body.updatedBy).toBe('00000000-0000-0000-0000-0000000000ac');
+    expect(deactivated.body.updatedBy).toBe('00000000-0000-4000-8000-0000000000ac');
   });
 
   it('regression: PatientsService.deactivate() now populates updatedBy (previously bypassed the subscriber via a raw manager.update() call)', async () => {
@@ -96,7 +96,7 @@ describe('AuditColumnsSubscriber (integration)', () => {
         return result;
       }),
     );
-    expect(row.updatedBy).toBe('00000000-0000-0000-0000-0000000000ac');
+    expect(row.updatedBy).toBe('00000000-0000-4000-8000-0000000000ac');
   });
 
   it('soft-delete populates deletedAt/deletedBy and excludes the row from normal reads', async () => {
@@ -113,7 +113,7 @@ describe('AuditColumnsSubscriber (integration)', () => {
       .set('x-tenant-id', ctx.tenantId)
       .send({
         patientId: patient.body.id,
-        doctorId: '00000000-0000-0000-0000-000000000001',
+        doctorId: '00000000-0000-4000-8000-000000000001',
         medicationName: 'Test Med',
         dosage: '1 tablet',
         frequency: 'Once daily',
@@ -145,6 +145,6 @@ describe('AuditColumnsSubscriber (integration)', () => {
       }),
     );
     expect(row.deletedAt).not.toBeNull();
-    expect(row.deletedBy).toBe('00000000-0000-0000-0000-0000000000ac');
+    expect(row.deletedBy).toBe('00000000-0000-4000-8000-0000000000ac');
   });
 });

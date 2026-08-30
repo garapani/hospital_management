@@ -84,7 +84,7 @@ describe('Radiology report PDF export (integration)', () => {
     await app.close();
   });
 
-  const DOCTOR_ID = '00000000-0000-0000-0000-0000000000e4';
+  const DOCTOR_ID = '00000000-0000-4000-8000-0000000000e4';
 
   /** Walks a radiology requisition through scanned → report entered → (optionally) verify. */
   async function setupRequisition(phone: string, { verify }: { verify: boolean }) {

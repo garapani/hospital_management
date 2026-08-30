@@ -37,8 +37,8 @@ describe('Charge capture (integration) — order-item completion auto-charges th
   let invoicesService: InvoicesService;
   let billingSettingsService: BillingSettingsService;
 
-  const DOCTOR_ID = '00000000-0000-0000-0000-000000000001';
-  const STAFF_ID = '00000000-0000-0000-0000-000000000002';
+  const DOCTOR_ID = '00000000-0000-4000-8000-000000000001';
+  const STAFF_ID = '00000000-0000-4000-8000-000000000002';
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({

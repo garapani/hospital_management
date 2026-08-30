@@ -48,7 +48,7 @@ describe('InventoryProcurementService.listByVendor (integration)', () => {
     return ctx.inTenant(() => catalogService.createVendor({ name }));
   }
 
-  const ORDERED_BY = '00000000-0000-0000-0000-0000000000e1';
+  const ORDERED_BY = '00000000-0000-4000-8000-0000000000e1';
 
   it('throws BadRequestException when vendorId is omitted', async () => {
     await expect(
@@ -317,7 +317,7 @@ describe('InventoryProcurementService.listByVendor (integration)', () => {
     // Unlike ctx.inTenant(), this run() sets an accountId — exactly what
     // TenantContextMiddleware does for a real HTTP request (from req.authContext.sub). The
     // service must record THIS account, ignoring the spoofed value passed to it.
-    const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+    const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
     function withActor<T>(work: () => Promise<T>): Promise<T> {
       return ctx.tenantContext.run(
@@ -329,7 +329,7 @@ describe('InventoryProcurementService.listByVendor (integration)', () => {
     it('createPurchaseOrder records the authenticated account as orderedBy, not the body value', async () => {
       const item = await makeItem('actor-po');
       const vendor = await makeVendor('Actor Vendor');
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       const po = await withActor(() =>
         procurementService.createPurchaseOrder({
@@ -355,7 +355,7 @@ describe('InventoryProcurementService.listByVendor (integration)', () => {
         }),
       );
       const poItem = po.items[0];
-      const spoofed = '00000000-0000-0000-0000-0000000000ff';
+      const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
       await withActor(() =>
         procurementService.recordGoodsReceipt(poItem.id, {

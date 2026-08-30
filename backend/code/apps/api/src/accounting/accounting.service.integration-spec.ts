@@ -12,8 +12,8 @@ describe('AccountingService (integration)', () => {
   let ctx: TenantTestContext;
   let accountingService: AccountingService;
 
-  const STAFF_ID = '00000000-0000-0000-0000-0000000000e1';
-  const AUTHENTICATED_ACCOUNT = '00000000-0000-0000-0000-0000000000aa';
+  const STAFF_ID = '00000000-0000-4000-8000-0000000000e1';
+  const AUTHENTICATED_ACCOUNT = '00000000-0000-4000-8000-0000000000aa';
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'accounting' });
@@ -217,7 +217,7 @@ describe('AccountingService (integration)', () => {
   it('derives createdBy/postedBy from the authenticated principal', async () => {
     const cash = await makeAccount('6700', 'Asset');
     const revenue = await makeAccount('7700', 'Income');
-    const spoofed = '00000000-0000-0000-0000-0000000000ff';
+    const spoofed = '00000000-0000-4000-8000-0000000000ff';
 
     const journal = await withActor(() =>
       accountingService.createJournal({
@@ -270,7 +270,7 @@ describe('AccountingService (integration)', () => {
         ctx.tenantConnection.runInTenantSchema(async (manager) => {
           const a = await accountingService.postAutoJournal(manager, {
             sourceType: 'Test',
-            sourceId: '00000000-0000-0000-0000-000000000001',
+            sourceId: '00000000-0000-4000-8000-000000000001',
             entryDate: '2025-06-04',
             lines: [
               { accountId: cash.id, debit: 100 },
@@ -280,7 +280,7 @@ describe('AccountingService (integration)', () => {
           });
           const b = await accountingService.postAutoJournal(manager, {
             sourceType: 'Test',
-            sourceId: '00000000-0000-0000-0000-000000000002',
+            sourceId: '00000000-0000-4000-8000-000000000002',
             entryDate: '2025-06-04',
             lines: [
               { accountId: cash.id, debit: 200 },
@@ -308,7 +308,7 @@ describe('AccountingService (integration)', () => {
           ctx.tenantConnection.runInTenantSchema((manager) =>
             accountingService.postAutoJournal(manager, {
               sourceType: 'Test',
-              sourceId: '00000000-0000-0000-0000-000000000003',
+              sourceId: '00000000-0000-4000-8000-000000000003',
               entryDate: '2025-06-04',
               lines: [
                 { accountId: cash.id, debit: 50 },

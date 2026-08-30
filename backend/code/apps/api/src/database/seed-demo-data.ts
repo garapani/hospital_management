@@ -186,7 +186,7 @@ export async function seedDemoData(): Promise<void> {
         const employeesService = app.get(EmployeeService);
         const payroll = app.get(PayrollService);
 
-        const DOCTOR_ID = '00000000-0000-0000-0000-0000000000e1';
+        const DOCTOR_ID = '00000000-0000-4000-8000-0000000000e1';
 
         // --- Ward + beds ---------------------------------------------------------------------
         const ward = await masterData.createWard({
