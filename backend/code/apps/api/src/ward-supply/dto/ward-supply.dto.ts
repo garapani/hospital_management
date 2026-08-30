@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min} from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import type { WardStockTransactionType } from '../entities/ward-stock.entity.js';
 
@@ -10,6 +10,7 @@ export class ReceiveStockDto {
   itemId!: string;
 
   @IsNumber()
+  @Min(0.01)
   quantity!: number;
 
   /** Batch lot this receipt refers to; omitted/empty = unbatchable stock ('' sentinel in the DB). */
@@ -48,6 +49,7 @@ export class ConsumeStockDto {
   itemId!: string;
 
   @IsNumber()
+  @Min(0.01)
   quantity!: number;
 
   @IsOptional()
@@ -76,6 +78,7 @@ export class ReturnStockDto {
   itemId!: string;
 
   @IsNumber()
+  @Min(0.01)
   quantity!: number;
 
   @IsOptional()
@@ -96,6 +99,7 @@ export class WasteStockDto {
   itemId!: string;
 
   @IsNumber()
+  @Min(0.01)
   quantity!: number;
 
   @IsOptional()
