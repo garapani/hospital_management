@@ -1,16 +1,17 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreatePrescriptionDto {
-  @IsString()
+  // uuid columns — the §107 write-path-uuid rule.
+  @IsUUID()
   patientId!: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   appointmentId?: string;
 
   // Not trusted from the caller — see CreateNoteDto.doctorId.
   @IsOptional()
-  @IsString()
+  @IsUUID()
   doctorId?: string;
 
   @IsString()

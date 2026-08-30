@@ -1,18 +1,19 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateNoteDto {
-  @IsString()
+  // uuid columns — the §107 write-path-uuid rule.
+  @IsUUID()
   patientId!: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   appointmentId?: string;
 
   // Not trusted from the caller: the authenticated clinician's account (from the verified
   // JWT) wins. This is only a fallback for non-HTTP callers (service specs) that run without
   // a tenant context — see EncountersService.resolveActor.
   @IsOptional()
-  @IsString()
+  @IsUUID()
   doctorId?: string;
 
   @IsOptional()
