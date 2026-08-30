@@ -13,7 +13,7 @@ earlier and never got checklist entries — the table below is the authoritative
 
 | Module (dir) | PRD phase | Wired into `AppModule`? | Status | Key gaps / notes |
 |---|---|---|---|---|
-| `auth` | Phase 0 | Yes | Done | Login/refresh/change-password, JWT + refresh, tenant-status gate, purge-safe login (2.32) |
+| `auth` | Phase 0 | Yes | Done | Login/refresh/change-password, JWT + refresh, tenant-status gate, purge-safe login (2.32). **2026-08-30 module pass:** logout is local-only (frontend no longer calls the nonexistent `/auth/logout` — server-side revocation deferred to new-features #22), username inputs capped at 255 chars |
 | `accounts` | Phase 0 | Yes — transitively via `AuthModule` | Done | Staff CRUD, deactivate/reactivate/unlock, roles, reset-password, must-change flow, no self-service password reset/email |
 | `rbac` | Phase 0 | N/A — entities + seed + guards | Done | `Role`/`Permission`/`RolePermission` + `seed-rbac-catalog.ts`, consumed by `@hospital/auth-guards` |
 | `master-data` | Phase 0 | Yes | Done | Departments/wards/beds; read-only open to all authenticated staff (2026-08-21 fix); global dept catalog is platform-side (`rbac.manage`) |
