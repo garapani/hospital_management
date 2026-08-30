@@ -1,10 +1,15 @@
 import { IsArray, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class ProvisionTenantDto {
+  // Capped at 56 so `tenant_<hospitalId>` (7 prefix chars) stays under Postgres's 63-char
+  // identifier limit — a longer id would silently truncate the schema/role names and provision
+  // into a mismatched schema (MVP module pass, 2026-08-30).
   @IsString()
+  @MaxLength(56)
   hospitalId!: string;
 
   @IsString()
+  @MaxLength(255)
   hospitalName!: string;
 
   /** SaaS package to provision under; defaults to 'basic' when omitted. */
