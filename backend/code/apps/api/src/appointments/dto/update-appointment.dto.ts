@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDateString, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 
 export class UpdateAppointmentDto {
   @IsOptional()
@@ -13,16 +13,20 @@ export class UpdateAppointmentDto {
   @IsString()
   lastName?: string;
 
+  // Same rules as the create DTO — '' or a malformed value must 400, not 500 on the date/time
+  // columns.
   @IsOptional()
-  @IsString()
+  @Matches(/^[0-9]{10}$/, { message: 'contactNumber must be a 10-digit number' })
   contactNumber?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   appointmentDate?: string;
 
   @IsOptional()
-  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, {
+    message: 'appointmentTime must be a 24h time (HH:MM)',
+  })
   appointmentTime?: string;
 
   @IsOptional()

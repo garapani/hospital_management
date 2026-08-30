@@ -85,6 +85,25 @@ describe('AppointmentsController (e2e)', () => {
     expect(Array.isArray(res.body.message)).toBe(true);
   });
 
+  it('fails with 400 (not 500) when appointmentDate/appointmentTime/contactNumber are malformed', async () => {
+    // The entity columns are Postgres date/time — an arbitrary string used to reach the DB and
+    // 500 ("invalid input syntax for type date"); the DTO now rejects it at the pipe (F5).
+    const res = await request(app.getHttpServer())
+      .post('/appointments')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({
+        firstName: 'John',
+        lastName: 'Doe',
+        contactNumber: 'not-a-phone',
+        appointmentDate: 'not-a-date',
+        appointmentTime: '25:99',
+        appointmentType: 'Consultation',
+      });
+
+    expect(res.status).toBe(HttpStatus.BAD_REQUEST);
+  });
+
   it('creates an appointment with a complete valid payload', async () => {
     const validPayload = {
       patientId,
