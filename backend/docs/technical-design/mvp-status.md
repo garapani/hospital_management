@@ -120,5 +120,8 @@ fixed-assets (categoryId), nursing, ot, maternity, cssd, vaccination, fraction, 
 
 **Already clean**: ward-supply and marketing DTOs carried `@IsUUID`; employee, payroll, helpdesk,
 packages, platform-billing, platform-branding had no string-typed id fields; patient-portal is
-read-only. **Still not started** (scoping notes only): verification (overlaps insurance
-checkCoverage), dicom, document-and-print (PDF export exists).
+read-only. **Deep-review follow-up:** controllers/services of the already-clean set reviewed —
+all properly guarded (payroll/ward-supply invariants service-enforced); pipe-level bounds added
+for RunPayrollDto (month/year/percents) and ward-supply quantities. **Still not started**
+(scoping notes only): verification (overlaps insurance checkCoverage), dicom, document-and-print
+(PDF export exists).
