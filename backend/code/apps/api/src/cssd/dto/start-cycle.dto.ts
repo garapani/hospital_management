@@ -1,8 +1,9 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID} from 'class-validator';
 import type { SterilizationMethod } from '../entities/cssd.entity.js';
 
 export class StartCycleDto {
-  @IsString()
+  @IsUUID()
+
   instrumentId!: string;
 
   @IsIn(['Steam', 'ETO', 'Chemical'])

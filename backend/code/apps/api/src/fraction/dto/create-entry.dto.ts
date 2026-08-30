@@ -1,10 +1,12 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID} from 'class-validator';
 
 export class CreateEntryDto {
-  @IsString()
+  @IsUUID()
+
   invoiceId!: string;
 
-  @IsString()
+  @IsUUID()
+
   doctorId!: string;
 
   @IsOptional()

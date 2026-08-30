@@ -1,11 +1,12 @@
-import { IsNumber, IsUUID } from 'class-validator';
+import { IsNumber, IsString, IsUUID } from 'class-validator';
 
 export class CreatePharmacyDispensingDto {
-  // uuid column — the §107 write-path-uuid rule.
+  // uuid columns — the §107 write-path-uuid rule.
   @IsUUID()
   orderItemId!: string;
 
-  @IsString()
+  // uuid column as well.
+  @IsUUID()
   inventoryItemId!: string;
 
   @IsNumber()

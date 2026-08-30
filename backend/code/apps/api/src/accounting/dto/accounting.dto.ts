@@ -7,8 +7,7 @@ import {
   IsOptional,
   IsString,
   Min,
-  ValidateNested,
-} from 'class-validator';
+  ValidateNested, IsUUID} from 'class-validator';
 import { PaginationQueryDto } from '@hospital/pagination';
 import type { AccountType } from '../entities/ledger-account.entity.js';
 

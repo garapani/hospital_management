@@ -1,11 +1,12 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID} from 'class-validator';
 
 import type { NotificationType } from '../entities/notification.entity.js';
 
 const NOTIFICATION_TYPES = ['info', 'warning', 'error', 'success'] as const;
 
 export class CreateNotificationDto {
-  @IsString()
+  @IsUUID()
+
   recipientAccountId!: string;
 
   @IsString()

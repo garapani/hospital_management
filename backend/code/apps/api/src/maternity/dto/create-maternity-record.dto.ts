@@ -1,10 +1,12 @@
-import { IsDateString, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString, IsUUID} from 'class-validator';
 
 export class CreateMaternityRecordDto {
-  @IsString()
+  @IsUUID()
+
   admissionId!: string;
 
-  @IsString()
+  @IsUUID()
+
   patientId!: string;
 
   @IsOptional()

@@ -1,7 +1,8 @@
 import { IsDateString, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateAdministrationDto {
-  @IsString()
+  @IsUUID()
+
   admissionId!: string;
 
   @IsOptional()
