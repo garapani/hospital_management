@@ -15,6 +15,10 @@ export class SearchAppointmentsDto extends PaginationQueryDto {
   departmentId?: string;
 
   @IsOptional()
+  @IsUUID()
+  patientId?: string;
+
+  @IsOptional()
   @IsString()
   status?: string;
 }

@@ -249,6 +249,9 @@ export class AppointmentsService {
       if (query.departmentId) {
         qb.andWhere('appointment.departmentId = :departmentId', { departmentId: query.departmentId });
       }
+      if (query.patientId) {
+        qb.andWhere('appointment.patientId = :patientId', { patientId: query.patientId });
+      }
       if (query.status) {
         qb.andWhere('appointment.status = :status', { status: query.status });
       }

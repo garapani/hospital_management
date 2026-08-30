@@ -3,6 +3,7 @@ import { AppointmentsService, CreateAppointmentInput, UpdateAppointmentInput } f
 import { Appointment } from './entities/appointment.entity.js';
 import { MasterDataService } from '../master-data/master-data.service.js';
 import { Department } from '../master-data/entities/department.entity.js';
+import { Patient } from '../patients/entities/patient.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -284,5 +285,31 @@ describe('AppointmentsService (integration)', () => {
 
     const listAll = await ctx.inTenant(() => appointmentsService.list({}));
     expect(listAll.meta.total).toBe(2);
+  });
+
+  it('lists appointments filtered by patientId', async () => {
+    const patient = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.getRepository(Patient).save(
+          manager.getRepository(Patient).create({
+            patientNo: `APPT-SVC-${Date.now()}`,
+            firstName: 'Owned',
+            lastName: 'Patient',
+            gender: 'Female',
+          }),
+        ),
+      ),
+    );
+
+    await ctx.inTenant(() => appointmentsService.create({
+      patientId: patient.id, firstName: 'Owned', lastName: 'Patient', contactNumber: '1', appointmentDate: '2026-08-10', appointmentTime: '09:00', appointmentType: 'A',
+    }));
+    await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Other', lastName: 'Patient', contactNumber: '2', appointmentDate: '2026-08-11', appointmentTime: '10:00', appointmentType: 'B',
+    }));
+
+    const listForPatient = await ctx.inTenant(() => appointmentsService.list({ patientId: patient.id }));
+    expect(listForPatient.meta.total).toBe(1);
+    expect(listForPatient.data[0].patientId).toBe(patient.id);
   });
 });
