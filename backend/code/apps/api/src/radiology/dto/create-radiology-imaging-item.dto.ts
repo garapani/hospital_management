@@ -1,7 +1,8 @@
-import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreateRadiologyImagingItemDto {
-  @IsString()
+  // uuid column — the §107 write-path-uuid rule.
+  @IsUUID()
   imagingTypeId!: string;
 
   @IsString()

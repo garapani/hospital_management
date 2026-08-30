@@ -1,9 +1,10 @@
-import { IsString } from 'class-validator';
+import { IsUUID } from 'class-validator';
 
 export class CreateRadiologyRequisitionDto {
-  @IsString()
+  // uuid columns — the §107 write-path-uuid rule.
+  @IsUUID()
   orderItemId!: string;
 
-  @IsString()
+  @IsUUID()
   imagingItemId!: string;
 }
