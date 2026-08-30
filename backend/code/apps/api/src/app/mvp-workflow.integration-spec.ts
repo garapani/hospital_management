@@ -90,7 +90,7 @@ describe('MVP end-to-end workflow (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'mvp_workflow' });
-    staffId = '00000000-0000-0000-0000-0000000000aa';
+    staffId = '00000000-0000-4000-8000-0000000000aa';
     // NotificationsService.create() drops notifications addressed to a nonexistent or
     // deactivated account (notifications P1 fix), so the staff actor used as
     // admittingDoctorId/doctorId must be a real Account row for the admission/appointment
