@@ -123,6 +123,34 @@ describe('seedRbacCatalog (integration)', () => {
     expect(roles.map((r: Role) => r.name).sort()).toEqual(['Hospital Admin', 'Super Admin']);
   });
 
+  it('grants master-data.read to every staff role that works the department/ward/bed layout, including Receptionist', async () => {
+    await seedRbacCatalog(ctx.dataSource);
+    const permission = await ctx.dataSource.getRepository(Permission).findOneOrFail({
+      where: { name: 'master-data.read' },
+    });
+    const mappings = await ctx.dataSource.getRepository(RolePermission).find({
+      where: { permissionId: permission.id },
+    });
+    const roles = await ctx.dataSource.getRepository(Role).find({
+      where: { id: In(mappings.map((m: RolePermission) => m.roleId)) },
+    });
+    const roleNames = roles.map((r: Role) => r.name).sort();
+    // The front desk books appointments, registers patients and admits them — a Receptionist
+    // without master-data.read 403s on the department/ward/bed lookups those screens need
+    // (regression guard for the 2026-08-30 module-pass fix).
+    expect(roleNames).toEqual(
+      [
+        'Billing/Accounts Staff',
+        'Doctor',
+        'Hospital Admin',
+        'Inventory/Store Manager',
+        'Nurse',
+        'Receptionist / Front Desk',
+        'Super Admin',
+      ].sort(),
+    );
+  });
+
   it('creates patient permissions and maps them to appropriate roles', async () => {
     await seedRbacCatalog(ctx.dataSource);
 

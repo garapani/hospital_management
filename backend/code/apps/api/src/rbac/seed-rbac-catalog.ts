@@ -456,6 +456,10 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Nurse', permissionName: 'master-data.read' },
   { roleName: 'Billing/Accounts Staff', permissionName: 'master-data.read' },
   { roleName: 'Inventory/Store Manager', permissionName: 'master-data.read' },
+  // The front desk books appointments, registers patients and admits them — the department/ward/
+  // bed layout is exactly what the 2026-08-21 fix opened reads for, and Receptionist was
+  // overlooked in the grant list (MVP module pass, 2026-08-30).
+  { roleName: 'Receptionist / Front Desk', permissionName: 'master-data.read' },
   // Super Admin is mapped to every other module's permissions (appointment, vitals, encounter,
   // triage, admission, order, billing, lab, radiology, inventory, pharmacy, reporting); patients
   // was the one omission — seed-initial-setup already grants Super Admin ALL permissions (it is
