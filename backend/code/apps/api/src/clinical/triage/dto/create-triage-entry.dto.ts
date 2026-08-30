@@ -1,8 +1,9 @@
-import { IsBoolean, IsDate, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateTriageEntryDto {
+  // uuid column — the §107 write-path-uuid rule.
   @IsOptional()
-  @IsString()
+  @IsUUID()
   patientId?: string;
 
   @IsOptional()
@@ -56,7 +57,7 @@ export class CreateTriageEntryDto {
   triagedBy?: string;
 
   @IsOptional()
-  @IsDate()
+  @IsDateString()
   triagedAt?: Date;
 
   @IsOptional()
