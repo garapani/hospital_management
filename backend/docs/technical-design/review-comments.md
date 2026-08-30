@@ -587,6 +587,8 @@ OT and nursing guard concurrent row actions with a single shared signal, which o
 
 ### High: Entered lab result values are never displayed anywhere — verification is a blind sign-off
 
+**Resolved (2026-08-30):** added `GET /lab/requisitions/:id/results` (`lab.read`) since no read path existed at all before this. `LabRequisitionDetail` now renders an "Entered Results" table (component, value, unit, reference range, abnormal flag) whenever status is `ResultsEntered` or `Verified`, and Verify now requires an explicit confirm step.
+
 `LabRequisitionDetail` renders only a "Requisition Details" panel and a "Workflow" panel; there is no results table, and `LabApiService` has no method to read results back (only `enterResult`). The backend exposes `GET /lab/requisitions/:id/report.pdf` for exactly this, and it is never called from the frontend. A lab supervisor holding `lab.result.verify` opens a `ResultsEntered` requisition, sees no values, no units, no abnormal flags, and clicks "Verify Results" — an irreversible clinical sign-off performed on data they cannot see. This is the single most serious gap in the three modules; Radiology by contrast does render `reportText` before its verify button.
 
 - `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:69-95`
@@ -594,6 +596,8 @@ OT and nursing guard concurrent row actions with a single shared signal, which o
 - `frontend/apps/staff-console/src/app/lab/lab-api.service.ts:112-114`
 
 ### High: Pharmacy console can dispense a drug but can never cancel or reverse one
+
+**Resolved (2026-08-30):** `PharmacyDispensingApiService` gained `cancel`/`reverse`; the detail screen renders Cancel (Pending, reason optional) and Reverse (Dispensed, reason required) actions, gated on the same permissions the backend already enforces. The frontend model/status union gained the `Reversed` status and the `reversedBy`/`reversedAt`/`reversalReason` fields to match the entity.
 
 The backend `PharmacyDispensingController` exposes `PATCH :id/cancel` and `PATCH :id/reverse`, but `PharmacyDispensingApiService` implements only `list`/`getById`/`create`/`dispense`. The detail template even renders a "Cancel Reason" field that nothing in this UI can ever populate. A pharmacist dispenses 30 tablets against the wrong `inventoryItemId`, inventory is decremented, and there is no path in the console to reverse it — the correction requires a direct API call or a DB fix. For the one module in this review that mutates physical drug stock, the compensating actions are the ones that must ship.
 
@@ -603,6 +607,8 @@ The backend `PharmacyDispensingController` exposes `PATCH :id/cancel` and `PATCH
 
 ### High: Lab requisition list is unusable as a worklist, based on an incorrect comment about the backend
 
+**Resolved (2026-08-30):** removed the false gate; the list now loads unfiltered (defaulting to a `Pending` status filter as the worklist view) and exposes the `status` filter the DTO already supported.
+
 `LabRequisitionsList.load()` short-circuits to an empty table unless the user types an Order Item UUID, justified by the comment "The backend rejects GET /lab/requisitions without orderItemId (400)". That is false: `SearchLabRequisitionsDto.orderItemId` is `@IsOptional() @IsUUID()` and `LabWorkflowService.listByOrderItem` only adds the `andWhere` when the value is present — an unfiltered paginated listing works today. A lab technician cannot see the Pending-sample queue at all and must obtain an order-item UUID out of band for every single requisition. The DTO also supports a `status` filter that the UI does not offer, even though both Radiology and Pharmacy expose exactly that filter.
 
 - `frontend/apps/staff-console/src/app/lab/lab-requisitions-list/lab-requisitions-list.ts:36-45`
@@ -610,6 +616,8 @@ The backend `PharmacyDispensingController` exposes `PATCH :id/cancel` and `PATCH
 - `frontend/apps/staff-console/src/app/lab/lab-api.service.ts:75-79`
 
 ### High: Every API failure in all three modules fails silently — no toast, inconsistent with 15+ sibling modules
+
+**Resolved (2026-08-30):** all three modules now inject `MessageService` and toast on every mutation/list-load failure, matching the sibling convention.
 
 All 16 `error:` handlers across lab/radiology/pharmacy do nothing but reset a loading flag; none of the three modules imports `MessageService`, even though the app already provides it globally and 15+ other modules use it for both success and error feedback. "Verify Results" hits the backend's `ConflictException` for an already-verified requisition; the spinner stops, the status tag does not change, nothing is said, and the user clicks again. Every mutation in these modules has this behaviour.
 
@@ -622,6 +630,8 @@ All 16 `error:` handlers across lab/radiology/pharmacy do nothing but reset a lo
 
 ### Medium: Irreversible clinical sign-off and stock-decrementing actions fire on a single unguarded click
 
+**Resolved (2026-08-30):** all three actions now route through `ConfirmationService` (the shared infrastructure built in the clinical/registration group).
+
 "Verify Results" (lab), "Verify Report" (radiology) and "Dispense" (pharmacy) all call the API directly from `(onClick)` with no confirmation step, though all three are one-way. Radiology's own "Cancel Requisition" correctly routes through a modal that captures a reason, so the pattern exists in-module and is simply not applied to the higher-stakes actions.
 
 - `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:79-81`
@@ -629,6 +639,8 @@ All 16 `error:` handlers across lab/radiology/pharmacy do nothing but reset a lo
 - `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-detail.html:63-67`
 
 ### Medium: Lab result entry accepts arbitrary free text; the displayed reference range is purely decorative
+
+**Deferred (2026-08-30):** not fixed in this pass — numeric-vs-qualitative component typing and client-side range evaluation is a small feature in its own right (the backend's `computeIsAbnormal` already does this server-side; the ask here is client-side feedback at entry time), and this pass already covered the higher-severity "results are never displayed" finding for the same screen. Left open for a follow-up.
 
 The result inputs are plain `pInputText` with no `type`, no `inputmode`, no numeric parsing and no comparison against `referenceRangeLow`/`referenceRangeHigh`. `EnterResultDto.isAbnormal` exists on the client but is never populated. A potassium value fat-fingered as `55` against a `3.5–5.0` range saves without any warning; units are shown but not enforced or appended.
 
@@ -638,11 +650,15 @@ The result inputs are plain `pInputText` with no `type`, no `inputmode`, no nume
 
 ### Medium: `submitResults()` fires N parallel POSTs via `forkJoin`, so a partial failure is unattributable
 
+**Resolved (2026-08-30):** switched to sequential `concatMap` (via `from(components).pipe(concatMap(...), toArray())`) — matches the pessimistic lock's actual serialization anyway, and the error message now correctly tells the user already-saved values are safe to retry (each `enterResult` call is independently idempotent server-side).
+
 Each component is a separate POST, all issued concurrently; `forkJoin` errors on the first failure, so if component 3 of 6 is rejected the other five have already persisted, but the dialog shows one blanket failure message with no indication which value failed. `LabWorkflowService.enterResult` also takes a `pessimistic_write` lock on the requisition row, so N concurrent requests serialize on one lock and a large panel risks lock-wait timeouts.
 
 - `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.ts:116-132`
 
 ### Medium: A radiology report cannot be corrected once entered, though the backend allows it
+
+**Resolved (2026-08-30):** the "Enter Report" / "Edit Report" button now also shows for `ReportEntered`, matching what `RadiologyWorkflowService.enterReport` actually allows.
 
 The "Enter Report" button is gated on `r.status === 'Scanned'` only. `RadiologyWorkflowService.enterReport` rejects only `Verified`, `Cancelled` and `Pending` — a requisition in `ReportEntered` is explicitly editable server-side. A radiographer who notices a typo in an unverified report has no way to fix it from this UI. Lab gets this right (its "Enter Results" button shows for `SampleCollected || ResultsEntered`).
 
@@ -651,11 +667,15 @@ The "Enter Report" button is gated on `r.status === 'Scanned'` only. `RadiologyW
 
 ### Medium: `RadiologyRequisitionsList` applies `?orderItemId=` only on the first emission, leaving stale rows
 
+**Resolved (2026-08-30):** `load(0)` moved inside the `queryParamMap` subscription (not called separately after it), so every emission — including a later params-only navigation on a reused component instance — refetches. A regression test with a `Subject`-backed `queryParamMap` covers the second-emission case.
+
 The constructor subscribes to `queryParamMap`, sets the filter, and calls `load(0)` once outside the subscription. On a later emission (navigating between two `?orderItemId=` values while the component instance is reused, which is exactly what Angular's default reuse strategy does), the filter input updates but no request is issued — the query-param twin of the `route.snapshot.paramMap` pattern already documented in `CLAUDE.md`.
 
 - `frontend/apps/staff-console/src/app/radiology/radiology-requisitions-list.ts:48-61`
 
 ### Medium: `LabTests` and `RadiologyCatalog` are fully built but unreachable — no route, no nav entry
+
+**Resolved (2026-08-30):** wired both up at `clinical/lab/catalog` and `clinical/radiology/catalog` (registered before their sibling `:id` routes so the literal `catalog` segment isn't captured as an id), gated on the existing `lab.catalog.manage`/`radiology.catalog.manage` permissions, with a "Manage Test/Imaging Catalog" link from each module's requisitions list.
 
 Both components (plus specs/templates, ~330 lines) have zero references anywhere in `src/app` outside their own files: no route, no `routerLink`. The `lab.catalog.manage` and `radiology.catalog.manage` permissions exist in the backend RBAC catalog with no UI behind them.
 
@@ -665,6 +685,8 @@ Both components (plus specs/templates, ~330 lines) have zero references anywhere
 
 ### Low: Icon-only back buttons have no accessible name, result inputs have no associated label, and catalog type-switching can race
 
+**Resolved (2026-08-30):** added `ariaLabel` to all three detail screens' back buttons, `[attr.aria-label]` on the lab result-value inputs (naming the component), and a request-token guard on `RadiologyCatalog.onTypeChange` so a stale response can't overwrite a newer one.
+
 (a) All three detail screens use icon-only back buttons with no `ariaLabel`. (b) Lab result inputs are labelled by a sibling `<span>` rather than `<label for>`/`aria-label` — the one place in these modules where mislabelling has clinical consequences. (c) `RadiologyCatalog.onTypeChange` has no in-flight cancellation, so rapidly switching imaging types can let a slow first response overwrite a fast second one.
 
 - `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:3`
@@ -672,6 +694,16 @@ Both components (plus specs/templates, ~330 lines) have zero references anywhere
 - `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-detail.html:3`
 - `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:110-123`
 - `frontend/apps/staff-console/src/app/radiology/radiology-catalog.ts:44-57`
+
+### High: A from-scratch `tsc --build` on the backend produces thousands of false "unknown type" errors, unrelated to any frontend-review change
+
+Discovered incidentally while adding the `GET /lab/requisitions/:id/results` endpoint above: running `pnpm exec nx run-many -t typecheck` (or a direct `tsc --build --force`) against `apps/api` from a completely clean state (no `dist/`, no `out-tsc/`, `nx reset` run first) produces ~3,000+ TS18046 (`'x' is of type 'unknown'`) errors across dozens of unrelated integration-spec files — every call site of the pattern `ctx.inTenant(() => someService.someMethod())` loses its generic return type. Confirmed independent of the lab endpoint change by reproducing the identical cascade with that change stashed out. Repeating the clean build multiple times does not converge — different files fail each time, so it isn't a simple "needs two passes" composite-project quirk. `jest` (SWC/ts-node transform, no type-checking) is unaffected and all tests pass normally, which is presumably why this has gone unnoticed — nobody's local environment or CI (if its cache is ever warm) exercises a truly from-scratch `tsc --build`.
+
+Not investigated further — out of scope for the frontend review this file otherwise tracks, and risky to root-cause blindly given the size of the composite project-reference graph. Worth a dedicated investigation: if CI ever runs on a cold cache (a fresh runner, a cache-invalidating dependency bump), this would fail a build that every local dev's warm cache lets pass silently.
+
+- Reproduce: `cd backend/code && pnpm exec nx reset && rm <each file under apps/api/dist and apps/api/out-tsc individually> && pnpm exec nx run-many -t typecheck`
+- `backend/code/apps/api/tsconfig.json` (references `tsconfig.app.json` + `tsconfig.spec.json` as separate composite projects — the spec project resolves the app project's types via its emitted `.d.ts`, not raw source)
+- `backend/code/apps/api/src/testing/tenant-test-context.ts:63` (`inTenant<T>(work: () => Promise<T>): Promise<T>` — the generic that goes missing)
 
 ### Module group: financial (`billing`, `accounting`, `payroll`, `fixed-assets`, `insurance`)
 
