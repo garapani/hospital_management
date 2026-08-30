@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   Min,
   ValidateNested,
@@ -21,7 +22,10 @@ export class CreateInvoiceItemDto {
   @IsNumber()
   quantity?: number;
 
+  // Money surface: a negative unit price would flow straight into the invoice total and the
+  // revenue journal — rejected at the pipe (the discounts/tax fields already carry @Min(0)).
   @IsNumber()
+  @Min(0)
   unitPrice!: number;
 
   @IsOptional()
@@ -36,12 +40,14 @@ export class CreateInvoiceItemDto {
   taxPercent?: number;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   sourceOrderItemId?: string;
 }
 
 export class CreateInvoiceDto {
-  @IsString()
+  // uuid columns — a malformed id 500s on the FK/WHERE before the service's 404 can run
+  // (the §107 write-path-uuid rule).
+  @IsUUID()
   patientId!: string;
 
   /** Deprecated — ignored when a tenant context with an accountId is active. */
@@ -50,11 +56,11 @@ export class CreateInvoiceDto {
   createdBy?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   sourceAppointmentId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   sourceAdmissionId?: string;
 
   @IsOptional()
