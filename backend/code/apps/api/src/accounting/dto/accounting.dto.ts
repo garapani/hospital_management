@@ -42,7 +42,9 @@ export class UpdateAccountDto {
 }
 
 export class JournalLineDto {
-  @IsString()
+  // uuid column — the §107 write-path-uuid rule (a bad accountId would otherwise 500 on the
+  // ledger FK/WHERE instead of a clean 400).
+  @IsUUID()
   accountId!: string;
 
   @IsOptional()

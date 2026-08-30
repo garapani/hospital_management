@@ -56,10 +56,11 @@ export class UpdatePayerDto {
 }
 
 export class CreatePolicyDto {
-  @IsString()
+  // uuid columns — the §107 write-path-uuid rule.
+  @IsUUID()
   patientId!: string;
 
-  @IsString()
+  @IsUUID()
   payerId!: string;
 
   @IsString()
@@ -120,10 +121,11 @@ export class UpdatePolicyDto {
 }
 
 export class CreateClaimDto {
-  @IsString()
+  // uuid columns — the §107 write-path-uuid rule.
+  @IsUUID()
   patientId!: string;
 
-  @IsString()
+  @IsUUID()
   policyId!: string;
 
   @IsString()

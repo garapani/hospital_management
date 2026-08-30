@@ -1,9 +1,10 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { FIXED_ASSET_CONDITIONS } from '../entities/fixed-asset.entity.js';
 import type { FixedAssetCondition } from '../entities/fixed-asset.entity.js';
 
 export class CreateFixedAssetDto {
-  @IsString()
+  // uuid column — the §107 write-path-uuid rule.
+  @IsUUID()
   categoryId!: string;
 
   @IsString()
