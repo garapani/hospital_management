@@ -100,3 +100,25 @@ frontend features — full write-ups with acceptance criteria live in `claude-co
 - **SSU frontend page** — backend done, page missing.
 - Ops-readiness items tracked in `claude-code-tasks.md` 2.1–2.4 (load test/sizing, OTel tracing +
   Grafana/Loki, per-tenant connection caps, WAL/PITR + self-owned-server runbook).
+
+## Phase 2+ module pass (2026-08-30)
+
+Every built Phase 2+ module was visited with the four lenses (feature enhancements vs PRD /
+new-features, code review, validation, UI/UX). All specs green; frontend staff-console screens
+exist for every module (SSU page confirmed built since the 2026-08-24 audit; patient-portal app
+remains an empty scaffold — non-MVP).
+
+**The consistent finding was the §107 uuid-validation gap** — DTOs validating uuid columns as
+plain strings (malformed id → 500 on the FK/WHERE instead of a clean 400). Closed codebase-wide
+across: clinical/vitals (patientId/appointmentId, recordedAt → @IsDateString), clinical/encounters
+(notes/diagnoses/prescriptions), clinical/triage (+ link-patient), lab (categoryId, orderItemId,
+testId, componentId), radiology (imagingTypeId, imagingItemId, orderItemId), inventory
+(categoryId, subCategoryId, itemId, vendorId, departmentId), pharmacy (orderItemId,
+inventoryItemId), insurance (CreatePolicy/CreateClaim ids), accounting (JournalLineDto accountId),
+fixed-assets (categoryId), nursing, ot, maternity, cssd, vaccination, fraction, ssu, notifications
+(recipientAccountId).
+
+**Already clean**: ward-supply and marketing DTOs carried `@IsUUID`; employee, payroll, helpdesk,
+packages, platform-billing, platform-branding had no string-typed id fields; patient-portal is
+read-only. **Still not started** (scoping notes only): verification (overlaps insurance
+checkCoverage), dicom, document-and-print (PDF export exists).
