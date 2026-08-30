@@ -3,8 +3,12 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEmail,
+  IsIn,
+  IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   ValidateNested,
 } from 'class-validator';
 import { CreatePatientAddressDto, CreatePatientKinDto } from './create-patient.dto.js';
@@ -12,6 +16,7 @@ import { CreatePatientAddressDto, CreatePatientKinDto } from './create-patient.d
 export class UpdatePatientDto {
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
   firstName?: string;
 
   @IsOptional()
@@ -20,10 +25,12 @@ export class UpdatePatientDto {
 
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
   lastName?: string;
 
   @IsOptional()
   @IsString()
+  @IsIn(['Male', 'Female', 'Other', 'Unknown'])
   gender?: string;
 
   @IsOptional()
@@ -35,15 +42,15 @@ export class UpdatePatientDto {
   age?: string;
 
   @IsOptional()
-  @IsString()
+  @Matches(/^[0-9]{10}$/, { message: 'phoneNumber must be a 10-digit number' })
   phoneNumber?: string;
 
   @IsOptional()
-  @IsString()
+  @IsEmail()
   email?: string;
 
   @IsOptional()
-  @IsString()
+  @IsIn(['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-', 'Unknown'])
   bloodGroup?: string;
 
   @IsOptional()

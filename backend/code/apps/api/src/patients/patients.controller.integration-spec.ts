@@ -82,6 +82,70 @@ describe('PatientsController (integration)', () => {
       expect(response.body.isActive).toBe(true);
     });
 
+    it('rejects creation with 400 when firstName/lastName are empty strings', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/patients')
+        .set('Authorization', `Bearer ${fullPermToken}`)
+        .send({
+          firstName: '',
+          lastName: '',
+          gender: 'Male',
+        });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects creation with 400 for an invalid email format', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/patients')
+        .set('Authorization', `Bearer ${fullPermToken}`)
+        .send({
+          firstName: 'Bad',
+          lastName: 'Email',
+          gender: 'Male',
+          email: 'not-an-email',
+        });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects creation with 400 for a non-10-digit phone number', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/patients')
+        .set('Authorization', `Bearer ${fullPermToken}`)
+        .send({
+          firstName: 'Bad',
+          lastName: 'Phone',
+          gender: 'Male',
+          phoneNumber: '12345',
+        });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects creation with 400 for an out-of-range gender or bloodGroup value', async () => {
+      const badGender = await request(app.getHttpServer())
+        .post('/api/patients')
+        .set('Authorization', `Bearer ${fullPermToken}`)
+        .send({
+          firstName: 'Bad',
+          lastName: 'Gender',
+          gender: 'Alien',
+        });
+      expect(badGender.status).toBe(400);
+
+      const badBloodGroup = await request(app.getHttpServer())
+        .post('/api/patients')
+        .set('Authorization', `Bearer ${fullPermToken}`)
+        .send({
+          firstName: 'Bad',
+          lastName: 'BloodGroup',
+          gender: 'Male',
+          bloodGroup: 'Z+',
+        });
+      expect(badBloodGroup.status).toBe(400);
+    });
+
     it('rejects creation with 403 Forbidden when patients.create permission is missing', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/patients')
