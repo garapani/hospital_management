@@ -1,10 +1,11 @@
-import { IsString } from 'class-validator';
+import { IsString, IsUUID } from 'class-validator';
 
 export class CreateRequisitionDto {
-  @IsString()
+  // uuid columns — the §107 write-path-uuid rule.
+  @IsUUID()
   orderItemId!: string;
 
-  @IsString()
+  @IsUUID()
   testId!: string;
 
   @IsString()

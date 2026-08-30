@@ -1,7 +1,8 @@
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class EnterResultDto {
-  @IsString()
+  // uuid column — the §107 write-path-uuid rule.
+  @IsUUID()
   componentId!: string;
 
   @IsString()
