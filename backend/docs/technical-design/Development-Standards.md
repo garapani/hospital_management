@@ -4173,3 +4173,41 @@ codebase follows ONE naming rule (Tech Lead decision, prompted by the `helpdesk.
   the tenant `departments` DTOs (`create-department.dto.ts`, `CreateDepartmentDto`) — the
   `platform-` prefix is the repo's established marker for public-schema concepts
   (platform-billing, platform-branding).
+
+## 110. Frontend accessibility: recurring gaps and the fix pattern (2026-08-31)
+
+An app-wide accessibility sweep (prompted after several module-group reviews had already fixed the
+same issues piecemeal — see `review-comments.md`'s per-group "Accessibility" findings and its
+"app-wide accessibility follow-up audit" section) found the same three gap shapes recurring across
+otherwise-unrelated modules. Treat these as house rules for every new screen, not one-off fixes:
+
+- **Every icon-only `p-button`/`<button>`/`<a>` needs `ariaLabel`/`aria-label`.** A `[text]="true"`
+  or bare-icon button with no visible text label is silent to a screen reader without one. Back
+  buttons get a destination-specific label (`ariaLabel="Back to appointments"`, not a generic
+  `"Back"`) so the announcement tells the user where they'll land — copy the pattern from whichever
+  `goBack()`/`routerLink` target the button actually navigates to, don't hardcode a single generic
+  string across screens with different destinations.
+- **Every form field needs its `<label>` and control connected** — `<label for="fieldId">` paired
+  with `id="fieldId"` on a plain `<input>`/`<textarea>`, or `inputId="fieldId"` on a PrimeNG
+  component (`p-select`, `p-inputNumber`, `p-datepicker`, …). A `<label>` sitting next to a control
+  with no `for` looks correct visually and passes every automated test/build check, but a screen
+  reader never announces it on focus — this is invisible to `tsc`/`nx test`/`nx build` the same way
+  an undefined `glass-*` CSS class is (§21), so it only surfaces by grep or manual audit. When a
+  label doesn't map to one specific control (e.g. a labeled section containing a search box, a
+  results list, and a manual-entry fallback), pair it with the section's primary input rather than
+  leaving it unassociated.
+- **Never signal state by color alone.** A colored dot/border/background needs accompanying text
+  (visible or `sr-only`) or an icon change alongside it — a `p-tag` with visible status text is
+  already fine (color is redundant there); a bare `<span class="bg-blue-500 rounded-full">` with no
+  text is not. Mark the purely-decorative color element `aria-hidden="true"` and add the real
+  signal as adjacent text.
+- **A custom clickable `<div>`/`<span>` needs `role="button"`, `tabindex="0"`, and both
+  `(keydown.enter)`/`(keydown.space)` handlers** alongside its `(click)` — a `(click)`-only div is
+  invisible to Tab and unreachable by a keyboard-only user. (A purely decorative overlay/scrim that
+  isn't a control a keyboard user needs to reach, like a mobile sidebar backdrop, still gets this
+  treatment for consistency once it's already being fixed, but is lower priority than an actual
+  clickable row/action element.)
+
+None of these are caught by `tsc --build`, `nx test`, or `nx build` — they require either a
+targeted grep sweep (`grep -rn` for icon-only `p-button`/bare `<label>` without `for`/color-only
+`<span>` patterns) or a manual pass, the same discovery method used here.

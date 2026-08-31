@@ -1096,6 +1096,52 @@ Of ~20 lazy `p-table`s in the app, `employees` and `notifications` never bind `[
 
 **Resolved (2026-08-30):** deleted the orphaned `marketing/` module (`marketing-api.service.ts`, `marketing.model.ts` — confirmed zero references anywhere else in `src/app`) and the stray `apps/staff-console/src/app/apps/staff-console/` generator-leftover directory tree (confirmed empty — zero files, `git status` showed nothing tracked under it). `TenantDetail.purge()` now sends `this.purgeTypedId()` (what the user actually typed) instead of `current.hospitalId` (a value the client already had) as the `confirmHospitalId` body field — the two are provably equal by the time the call fires (the client-side check just above requires it), so this has no observable behavior change in the honest-client flow; it's a correctness/hygiene fix so a future loosening of that client-side check doesn't silently make the server-side confirmation check trust-only-the-client too.
 
+### Module group: app-wide accessibility follow-up audit (2026-08-31)
+
+A full sweep of `apps/staff-console/src/app/` for accessibility gaps not already covered by the module-group reviews above (icon-only buttons, unlabeled form fields, color-only signaling, keyboard-unreachable custom controls, PrimeNG directive imports, image alt text, heading hierarchy, dialog focus). Directive-import, image-alt, heading-hierarchy and dialog-focus categories all came back clean app-wide — no findings there.
+
+### Medium: Icon-only buttons/links app-wide have no accessible name
+
+An identical "back" chevron/arrow `p-button` (icon only, `[text]="true"`) repeats across 8 detail screens with no `label`/`ariaLabel` — a screen reader announces "button" with no name on every one. The same gap recurs on row-navigation chevrons in two list screens and two more standalone icon buttons.
+
+- `frontend/apps/staff-console/src/app/patients/patient-detail.html:6`
+- `frontend/apps/staff-console/src/app/appointments/appointment-detail.html:3`
+- `frontend/apps/staff-console/src/app/triage/triage-detail.html:3`
+- `frontend/apps/staff-console/src/app/admissions/admission-detail.html:3`
+- `frontend/apps/staff-console/src/app/orders/order-detail.html:5`
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-detail/purchase-order-detail.html:3`
+- `frontend/apps/staff-console/src/app/inventory/stock-requisition-detail/stock-requisition-detail.html:3`
+- `frontend/apps/staff-console/src/app/users/user-detail.html:10`
+- `frontend/apps/staff-console/src/app/tenants/tenant-detail/tenant-detail.html:3`
+- `frontend/apps/staff-console/src/app/patients/patient-list.html:87`
+- `frontend/apps/staff-console/src/app/users/user-list.html:63`
+- `frontend/apps/staff-console/src/app/audit/audit-list.html:146`
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-list/purchase-order-list.html:188`
+
+**Resolved (2026-08-31):** added a destination-specific `ariaLabel` to each back button (e.g. "Back to appointments", "Back to purchase orders"), matching the pattern lab/radiology/pharmacy detail screens already used. Row-navigation chevrons and the two standalone icon buttons got task-specific labels ("View patient", "View account", "View audit record", "Remove line item").
+
+### Medium: Dialog/filter fields in six modules have no label/control association
+
+The `for`/`id` (or `inputId` for PrimeNG components) pairing already fixed in vitals, encounters, orders, nursing, ot, maternity, vaccination and cssd recurs, unfixed, in six more modules — 27 individual field instances where a bare `<label>` has no `id`/`inputId` counterpart, so a screen reader never announces which field it belongs to on focus.
+
+- `frontend/apps/staff-console/src/app/ssu/ssu-list.html:155,222,245,258,298,342`
+- `frontend/apps/staff-console/src/app/fraction/fraction-console.html:106,110,114,136,140`
+- `frontend/apps/staff-console/src/app/helpdesk/helpdesk-list.html:100,104,108`
+- `frontend/apps/staff-console/src/app/employees/employee-list.html:120,129,138,147,157,166,175,184,193`
+- `frontend/apps/staff-console/src/app/payroll/payroll-list.html:121,130,141,150`
+- `frontend/apps/staff-console/src/app/accounting/accounting-console.html:70,141,151,156`
+
+**Resolved (2026-08-31):** every cited field now carries a matching `for`/`id` or `label for` / `inputId` pair. The SSU "Patient" picker section (a search box + results list + manual-ID fallback, not a single control) is associated with its primary search input rather than left unlabeled or restructured into a fieldset.
+
+### Medium: Shell's unread-notification dot signals state by color alone, and its mobile backdrop is keyboard-unreachable
+
+The notification dropdown's unread indicator is a bare `<span class="w-2 h-2 bg-blue-500 rounded-full">` with no text or `aria-label` — read vs. unread is color-only. Separately, the mobile sidebar backdrop is a `<div (click)="closeSidebar()">` with no `role`/`tabindex`/keydown handler, unreachable by a keyboard-only user.
+
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.html:107`
+- `frontend/apps/staff-console/src/app/shell/shell-chrome.html:8`
+
+**Resolved (2026-08-31):** added a visually-hidden "Unread" `sr-only` span alongside the dot (dot itself marked `aria-hidden`); the backdrop now has `role="button"`, `tabindex="0"`, `aria-label="Close menu"`, and `Enter`/`Space` keydown handlers alongside its existing `(click)`.
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
