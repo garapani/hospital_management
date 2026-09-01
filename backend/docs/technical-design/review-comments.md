@@ -1745,7 +1745,9 @@ upward — the module-prefix mapping was just never added.
 **Resolved (2026-09-01):** added `audit` to `ALWAYS_ON_PERMISSION_PREFIXES`, matching the existing
 `identity`/`master-data` "core infrastructure, not a tiered feature" precedent. Covered by a new
 assertion in `packages.integration-spec.ts`'s existing Basic-package test; 13/13 tests pass and a
-clean `nx run api:typecheck`. Not yet live-verified on QA — pending redeploy.
+clean `nx run api:typecheck`. **Verified live on QA (2026-09-01)** after a full API redeploy (this
+one needed a redeploy, not just a `seed-rbac` reseed, since the fix is in application code) — the
+screen now loads real audit records with zero errors.
 
 - `backend/code/apps/api/src/packages/package-catalog.ts`
 - `backend/code/apps/api/src/packages/packages.integration-spec.ts`
