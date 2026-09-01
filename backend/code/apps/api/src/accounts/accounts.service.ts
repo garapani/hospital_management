@@ -529,6 +529,34 @@ export class AccountsService {
   }
 
   /**
+   * Sets or clears a staff account's ward assignment — the admin-facing half of ward-scoped
+   * row-level access for Nursing/Vitals (see NursingService/VitalsService's assertWardAccess*
+   * methods; PRD §6.2). wardId=null clears the assignment, restoring tenant-wide access. Raw
+   * query against `wards` (not an imported entity — accounts never imports another module's
+   * entity, see NursingService.assertAdmissionExists for the same cross-module pattern).
+   */
+  async setWard(accountId: string, wardId: string | null): Promise<Account> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(Account);
+      const account = await repository.findOne({ where: { id: accountId } });
+      if (!account) {
+        throw new NotFoundException(`Account ${accountId} not found`);
+      }
+      if (wardId) {
+        const rows = await manager.query(
+          `SELECT id FROM wards WHERE id = $1 AND "isActive" = true AND "deletedAt" IS NULL`,
+          [wardId],
+        );
+        if (rows.length === 0) {
+          throw new NotFoundException(`Ward ${wardId} not found`);
+        }
+      }
+      account.wardId = wardId;
+      return repository.save(account);
+    });
+  }
+
+  /**
    * Admin-initiated password reset (forgotten-password recovery). Always forces a change on next
    * login and clears lockout state; an optional admin-supplied temporary password is used as-is,
    * otherwise one is generated and returned once — same one-time disclosure rule as

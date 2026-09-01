@@ -698,4 +698,77 @@ describe('AccountsService (integration)', () => {
       ).rejects.toThrow('already has a portal account');
     });
   });
+
+  describe('setWard', () => {
+    async function makeWard(): Promise<string> {
+      const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const rows = await ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.query(
+          `INSERT INTO wards ("wardCode", "wardName") VALUES ($1, $2) RETURNING id`,
+          [`W-${suffix}`, `Ward ${suffix}`],
+        ),
+      );
+      return rows[0].id;
+    }
+
+    it('assigns a ward to a staff account', async () => {
+      const wardId = await ctx.inTenant(() => makeWard());
+      const account = await ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: `nurse.ward.${Date.now()}`,
+          email: 'nurse.ward@example.com',
+          displayName: 'Ward Nurse',
+          password: 'correct horse battery staple',
+          roleName: 'Nurse',
+        }),
+      );
+
+      const updated = await ctx.inTenant(() => ctx.accountsService.setWard(account.id, wardId));
+      expect(updated.wardId).toBe(wardId);
+    });
+
+    it('clears a ward assignment when wardId is null', async () => {
+      const wardId = await ctx.inTenant(() => makeWard());
+      const account = await ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: `nurse.clear.${Date.now()}`,
+          email: 'nurse.clear@example.com',
+          displayName: 'Clearable Nurse',
+          password: 'correct horse battery staple',
+          roleName: 'Nurse',
+        }),
+      );
+      await ctx.inTenant(() => ctx.accountsService.setWard(account.id, wardId));
+
+      const cleared = await ctx.inTenant(() => ctx.accountsService.setWard(account.id, null));
+      expect(cleared.wardId).toBeNull();
+    });
+
+    it('rejects assigning a nonexistent ward', async () => {
+      const account = await ctx.inTenant(() =>
+        ctx.accountsService.createStaffAccount({
+          username: `nurse.badward.${Date.now()}`,
+          email: 'nurse.badward@example.com',
+          displayName: 'Bad Ward Nurse',
+          password: 'correct horse battery staple',
+          roleName: 'Nurse',
+        }),
+      );
+
+      await expect(
+        ctx.inTenant(() =>
+          ctx.accountsService.setWard(account.id, '00000000-0000-0000-0000-000000000000'),
+        ),
+      ).rejects.toThrow('Ward');
+    });
+
+    it('rejects assigning a ward to a nonexistent account', async () => {
+      const wardId = await ctx.inTenant(() => makeWard());
+      await expect(
+        ctx.inTenant(() =>
+          ctx.accountsService.setWard('00000000-0000-0000-0000-000000000000', wardId),
+        ),
+      ).rejects.toThrow('Account');
+    });
+  });
 });

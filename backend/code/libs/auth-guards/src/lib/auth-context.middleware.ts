@@ -11,6 +11,7 @@ interface AccessTokenPayload {
   type: string;
   accountType?: 'staff' | 'patient';
   patientId?: string;
+  wardId?: string;
 }
 
 @Injectable()
@@ -51,6 +52,7 @@ export class AuthContextMiddleware implements NestMiddleware {
       permissions: payload.permissions,
       accountType: payload.accountType,
       patientId: payload.patientId,
+      wardId: payload.wardId,
     };
 
     req.authContext = authContext;

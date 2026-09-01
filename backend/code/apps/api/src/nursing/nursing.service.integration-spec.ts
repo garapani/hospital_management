@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { NursingService } from './nursing.service.js';
 import {
   setupTenantTestContext,
@@ -27,12 +27,22 @@ describe('NursingService (integration)', () => {
     );
   }
 
+  /** Simulates a ward-assigned staff member's request context (the JWT's wardId claim,
+   *  see auth-context.middleware.ts). Bypasses ctx.inTenant() (which never sets wardId)
+   *  since it always exercises the tenant-wide, unassigned-staff default. */
+  function withWard<T>(wardId: string, work: () => Promise<T>): Promise<T> {
+    return ctx.tenantContext.run({ tenantId: ctx.tenantId, wardId, correlationId: 'nursing-ward-test' }, work);
+  }
+
+  const WARD_A = '00000000-0000-4000-8000-0000000000c2';
+  const WARD_B = '00000000-0000-4000-8000-0000000000c3';
+
   let seq = 0;
 
   /** Inserts an admission row directly — nursing validates existence via raw query only.
    *  Each call uses a distinct patientId: admissions.patientId is now (correctly) unique
    *  per active admission, so reusing one patientId across rows would collide. */
-  async function makeAdmission(tenant: TenantTestContext = ctx): Promise<string> {
+  async function makeAdmission(tenant: TenantTestContext = ctx, wardId: string = WARD_A): Promise<string> {
     seq += 1;
     const rows = await tenant.inTenant(() =>
       tenant.tenantConnection.runInTenantSchema((manager) =>
@@ -44,7 +54,7 @@ describe('NursingService (integration)', () => {
             `00000000-0000-0000-0000-${String(seq).padStart(12, '0')}`,
             'OPD',
             STAFF_ID,
-            '00000000-0000-4000-8000-0000000000c2',
+            wardId,
             `00000000-0000-0000-0000-b${String(seq).padStart(11, '0')}`,
           ],
         ),
@@ -400,5 +410,89 @@ describe('NursingService (integration)', () => {
     expect(tasks.meta.total).toBe(1);
     const administrations = await ctx.inTenant(() => nursingService.listAdministrations({ admissionId }));
     expect(administrations.meta.total).toBe(1);
+  });
+
+  describe('ward-scoped access', () => {
+    it('lets a ward-assigned nurse act on an admission within her own ward', async () => {
+      const admissionId = await makeAdmission(ctx, WARD_A);
+
+      const task = await withWard(WARD_A, () =>
+        nursingService.createTask({ admissionId, taskType: 'Vitals Check', description: 'x', createdBy: STAFF_ID }),
+      );
+      await withWard(WARD_A, () => nursingService.startTask(task.id));
+      const completed = await withWard(WARD_A, () => nursingService.completeTask(task.id));
+      expect(completed.status).toBe('Completed');
+
+      const administration = await withWard(WARD_A, () =>
+        nursingService.createAdministration({ admissionId, drugName: 'Paracetamol', dose: '500mg' }),
+      );
+      const administered = await withWard(WARD_A, () => nursingService.administer(administration.id));
+      expect(administered.status).toBe('Administered');
+    });
+
+    it('denies a ward-assigned nurse acting on an admission outside her ward', async () => {
+      const admissionId = await makeAdmission(ctx, WARD_B);
+
+      await expect(
+        withWard(WARD_A, () =>
+          nursingService.createTask({ admissionId, taskType: 'Vitals Check', description: 'x' }),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        withWard(WARD_A, () =>
+          nursingService.createAdministration({ admissionId, drugName: 'Paracetamol', dose: '500mg' }),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      const task = await makeTask(admissionId);
+      await expect(withWard(WARD_A, () => nursingService.startTask(task.id))).rejects.toThrow(
+        ForbiddenException,
+      );
+      const administration = await makeAdministration(admissionId);
+      await expect(withWard(WARD_A, () => nursingService.administer(administration.id))).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('scopes unfiltered task/administration listings to the nurse\'s own ward', async () => {
+      const admissionA = await makeAdmission(ctx, WARD_A);
+      const admissionB = await makeAdmission(ctx, WARD_B);
+      await makeTask(admissionA);
+      await makeTask(admissionB);
+      await makeAdministration(admissionA);
+      await makeAdministration(admissionB);
+
+      // Other tests in this file also create WARD_A admissions/tasks, so assert inclusion of
+      // this test's own WARD_A task and exclusion of the WARD_B one, not exclusivity.
+      const wardATasks = await withWard(WARD_A, () => nursingService.listTasks({}));
+      expect(wardATasks.data.some((t) => t.admissionId === admissionA)).toBe(true);
+      expect(wardATasks.data.some((t) => t.admissionId === admissionB)).toBe(false);
+
+      const wardAAdministrations = await withWard(WARD_A, () => nursingService.listAdministrations({}));
+      expect(wardAAdministrations.data.some((a) => a.admissionId === admissionA)).toBe(true);
+      expect(wardAAdministrations.data.some((a) => a.admissionId === admissionB)).toBe(false);
+    });
+
+    it('denies listing another ward\'s tasks/administrations by explicit admissionId filter', async () => {
+      const admissionId = await makeAdmission(ctx, WARD_B);
+      await makeTask(admissionId);
+
+      await expect(
+        withWard(WARD_A, () => nursingService.listTasks({ admissionId })),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        withWard(WARD_A, () => nursingService.listAdministrations({ admissionId })),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('leaves an unassigned staff member (no wardId) with unrestricted tenant-wide access', async () => {
+      const admissionId = await makeAdmission(ctx, WARD_B);
+      const task = await makeTask(admissionId);
+
+      // ctx.inTenant() never sets wardId — this is the "no ward assigned" default already
+      // exercised throughout the rest of this file; asserted explicitly here for the record.
+      const started = await ctx.inTenant(() => nursingService.startTask(task.id));
+      expect(started.status).toBe('InProgress');
+    });
   });
 });

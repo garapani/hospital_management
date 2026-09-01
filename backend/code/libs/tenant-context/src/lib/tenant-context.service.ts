@@ -6,6 +6,9 @@ export interface RequestContextStore {
   accountId?: string;
   /** Set only for a patient-portal account's request; never derived from a client header. */
   patientId?: string;
+  /** Optional staff ward assignment; never derived from a client header. Undefined means
+   *  unrestricted (tenant-wide) access for Nursing/Vitals row-level scoping. */
+  wardId?: string;
   correlationId: string;
 }
 
@@ -27,6 +30,10 @@ export class TenantContextService {
 
   getPatientId(): string | undefined {
     return this.storage.getStore()?.patientId;
+  }
+
+  getWardId(): string | undefined {
+    return this.storage.getStore()?.wardId;
   }
 
   getCorrelationId(): string | undefined {

@@ -1,10 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { EntityManager } from 'typeorm';
+import type { EntityManager, SelectQueryBuilder } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -82,10 +83,13 @@ export class NursingService {
   async listTasks(
     query: PaginationQueryDto & { admissionId?: string },
   ): Promise<PaginatedResponseDto<NursingTask>> {
-    return this.tenantConnection.runInTenantSchema((manager) => {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
       const qb = manager.getRepository(NursingTask).createQueryBuilder('task');
       if (query.admissionId) {
+        await this.assertWardAccessForAdmissionId(manager, query.admissionId);
         qb.andWhere('task.admissionId = :admissionId', { admissionId: query.admissionId });
+      } else {
+        this.scopeToOwnWard(qb, 'task');
       }
       qb.orderBy('task.createdAt', 'DESC');
       return paginate(qb, query);
@@ -100,6 +104,7 @@ export class NursingService {
       if (!task) {
         throw new NotFoundException(`Nursing task ${id} not found`);
       }
+      await this.assertWardAccessForAdmissionId(manager, task.admissionId);
       if (task.status !== 'Pending') {
         throw new ConflictException(`Nursing task ${id} cannot move from ${task.status} to InProgress`);
       }
@@ -116,6 +121,7 @@ export class NursingService {
       if (!task) {
         throw new NotFoundException(`Nursing task ${id} not found`);
       }
+      await this.assertWardAccessForAdmissionId(manager, task.admissionId);
       if (task.status !== 'InProgress') {
         throw new ConflictException(`Nursing task ${id} cannot move from ${task.status} to Completed`);
       }
@@ -134,6 +140,7 @@ export class NursingService {
       if (!task) {
         throw new NotFoundException(`Nursing task ${id} not found`);
       }
+      await this.assertWardAccessForAdmissionId(manager, task.admissionId);
       if (task.status !== 'Pending') {
         throw new ConflictException(`Nursing task ${id} cannot move from ${task.status} to Cancelled`);
       }
@@ -179,10 +186,13 @@ export class NursingService {
   async listAdministrations(
     query: PaginationQueryDto & { admissionId?: string },
   ): Promise<PaginatedResponseDto<MedicationAdministration>> {
-    return this.tenantConnection.runInTenantSchema((manager) => {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
       const qb = manager.getRepository(MedicationAdministration).createQueryBuilder('administration');
       if (query.admissionId) {
+        await this.assertWardAccessForAdmissionId(manager, query.admissionId);
         qb.andWhere('administration.admissionId = :admissionId', { admissionId: query.admissionId });
+      } else {
+        this.scopeToOwnWard(qb, 'administration');
       }
       qb.orderBy('administration.createdAt', 'DESC');
       return paginate(qb, query);
@@ -200,6 +210,7 @@ export class NursingService {
       if (!administration) {
         throw new NotFoundException(`Medication administration ${id} not found`);
       }
+      await this.assertWardAccessForAdmissionId(manager, administration.admissionId);
       if (administration.status !== 'Scheduled') {
         throw new ConflictException(
           `Medication administration ${id} cannot move from ${administration.status} to Administered`,
@@ -223,6 +234,7 @@ export class NursingService {
       if (!administration) {
         throw new NotFoundException(`Medication administration ${id} not found`);
       }
+      await this.assertWardAccessForAdmissionId(manager, administration.admissionId);
       if (administration.status !== 'Scheduled') {
         throw new ConflictException(
           `Medication administration ${id} cannot move from ${administration.status} to Skipped`,
@@ -242,13 +254,53 @@ export class NursingService {
    * Also rejects a discharged admission — tasks/MAR lines only make sense against an active stay.
    */
   private async assertAdmissionExists(manager: EntityManager, admissionId: string): Promise<void> {
-    const rows = await manager.query(`SELECT id, status FROM admissions WHERE id = $1`, [admissionId]);
+    const rows = await manager.query(`SELECT id, status, "wardId" FROM admissions WHERE id = $1`, [admissionId]);
     if (rows.length === 0) {
       throw new NotFoundException(`Admission ${admissionId} not found`);
     }
     if (rows[0].status === 'Discharged') {
       throw new ConflictException(`Admission ${admissionId} is discharged`);
     }
+    this.assertWardAccess(admissionId, rows[0].wardId);
+  }
+
+  /**
+   * Ward-scoped row-level access (PRD §6.2: "Nurse can only write vitals for patients on their
+   * assigned ward"): a staff account with no wardId assigned (TenantContextService.getWardId())
+   * keeps today's tenant-wide access — the check only activates once a ward is explicitly
+   * assigned. See review-comments.md, "PRD-promised ward-scoped row-level access for Nurse is
+   * not implemented".
+   */
+  private assertWardAccess(admissionId: string, admissionWardId: string): void {
+    const staffWardId = this.tenantContext.getWardId();
+    if (staffWardId && staffWardId !== admissionWardId) {
+      throw new ForbiddenException(`Admission ${admissionId} is outside your assigned ward`);
+    }
+  }
+
+  /** Scopes an unfiltered list query to admissions on the staff member's assigned ward — a
+   *  no-op (unrestricted) when they have none. Subquery rather than a join, matching
+   *  assertAdmissionExists's "no cross-module entity import" convention for referencing
+   *  admissions from here. */
+  private scopeToOwnWard<T extends object>(qb: SelectQueryBuilder<T>, alias: string): void {
+    const staffWardId = this.tenantContext.getWardId();
+    if (staffWardId) {
+      qb.andWhere(`${alias}.admissionId IN (SELECT id FROM admissions WHERE "wardId" = :staffWardId)`, {
+        staffWardId,
+      });
+    }
+  }
+
+  /** Ward check for the action paths (start/complete/cancel/administer/skip), which only have an
+   *  admissionId after the task/administration row is already fetched — a second, cheap lookup
+   *  (short-circuits with no query at all for the common unrestricted-staff case). */
+  private async assertWardAccessForAdmissionId(manager: EntityManager, admissionId: string): Promise<void> {
+    const staffWardId = this.tenantContext.getWardId();
+    if (!staffWardId) {
+      return;
+    }
+    const rows = await manager.query(`SELECT "wardId" FROM admissions WHERE id = $1`, [admissionId]);
+    this.assertWardAccess(admissionId, rows[0]?.wardId);
   }
 
   /** Cross-module reference check, same shape as assertAdmissionExists: no entity import. */

@@ -18,6 +18,7 @@ import { Account } from './entities/account.entity.js';
 import { AccountsService } from './accounts.service.js';
 import { CreateAccountDto, ChangeOwnPasswordDto, ResetPasswordDto } from './dto/create-account.dto.js';
 import { AssignRoleDto } from './dto/assign-role.dto.js';
+import { SetWardDto } from './dto/set-ward.dto.js';
 
 const REQUIRED_PERMISSION = 'identity.accounts.manage';
 const DIRECTORY_PERMISSION = 'identity.accounts.directory';
@@ -134,6 +135,14 @@ export class AccountsController {
   async resetPassword(@Param('id') id: string, @Body() body: ResetPasswordDto = {}) {
     const { initialPassword } = await this.accountsService.resetPassword(id, body.password);
     return initialPassword ? { success: true, initialPassword } : { success: true };
+  }
+
+  /** Assigns or clears (wardId: null) a staff account's ward — see AccountsService.setWard. */
+  @Patch(':id/ward')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async setWard(@Param('id') id: string, @Body() body: SetWardDto) {
+    const account = await this.accountsService.setWard(id, body.wardId ?? null);
+    return toAccountResponse(account);
   }
 
   @Post(':id/roles')

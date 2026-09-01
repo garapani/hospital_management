@@ -150,6 +150,7 @@ export class AuthService {
       hospitalId,
       account.accountType,
       account.patientId,
+      account.wardId,
     );
 
     const accessToken = await this.jwtService.signAsync(payload, { expiresIn: ACCESS_TOKEN_TTL });
@@ -280,6 +281,7 @@ export class AuthService {
       payload.hospitalId,
       found.account.accountType,
       found.account.patientId,
+      found.account.wardId,
     );
 
     const accessToken = await this.jwtService.signAsync(accessPayload, { expiresIn: ACCESS_TOKEN_TTL });
@@ -301,6 +303,7 @@ export class AuthService {
     hospitalId: string | undefined,
     accountType: 'staff' | 'patient',
     patientId: string | null,
+    wardId: string | null,
   ) {
     return {
       sub: accountId,
@@ -312,6 +315,7 @@ export class AuthService {
       // Omitted rather than null: keeps the JWT payload consistent with AccessTokenPayload's
       // optional-string shape (auth-context.middleware.ts) for the common staff-account case.
       patientId: patientId ?? undefined,
+      wardId: wardId ?? undefined,
     };
   }
 }

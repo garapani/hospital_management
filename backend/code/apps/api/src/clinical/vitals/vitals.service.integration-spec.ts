@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { VitalsService } from './vitals.service.js';
 import { PatientsService } from '../../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../../patients/patient-number-generator.service.js';
@@ -21,7 +21,7 @@ describe('VitalsService (integration)', () => {
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
     patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
-    vitalsService = new VitalsService(ctx.tenantConnection);
+    vitalsService = new VitalsService(ctx.tenantConnection, ctx.tenantContext);
   });
 
   afterAll(async () => {
@@ -175,6 +175,93 @@ describe('VitalsService (integration)', () => {
       expect(vitals).toHaveLength(0);
 
       await expect(vitalsService.update(sharedVitalId, { weight: 75 })).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('ward-scoped access', () => {
+    const WARD_A = '00000000-0000-4000-8000-0000000000d1';
+    const WARD_B = '00000000-0000-4000-8000-0000000000d2';
+
+    /** Simulates a ward-assigned staff member's request context (the JWT's wardId claim,
+     *  see auth-context.middleware.ts). Bypasses ctx.inTenant() (which never sets wardId). */
+    function withWard<T>(wardId: string, work: () => Promise<T>): Promise<T> {
+      return ctx.tenantContext.run({ tenantId: ctx.tenantId, wardId, correlationId: 'vitals-ward-test' }, work);
+    }
+
+    async function admitPatient(patientId: string, wardId: string): Promise<void> {
+      await ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.query(
+          `INSERT INTO admissions ("patientId", "admissionSource", "admittingDoctorId", "wardId", "bedId", status)
+           VALUES ($1, $2, $3, $4, $5, 'Admitted')`,
+          [
+            patientId,
+            'OPD',
+            '00000000-0000-4000-8000-0000000000e1',
+            wardId,
+            `00000000-0000-4000-8000-${Math.random().toString(16).slice(2, 14).padStart(12, '0')}`,
+          ],
+        ),
+      );
+    }
+
+    it('lets a ward-assigned nurse record vitals for a patient admitted to her own ward', async () => {
+      await ctx.inTenant(async () => {
+        const patient = await patientsService.create({
+          firstName: 'Ward', lastName: 'Match', gender: 'Male', phoneNumber: '2220000001',
+        });
+        await admitPatient(patient.id, WARD_A);
+
+        const vital = await withWard(WARD_A, () =>
+          vitalsService.create({ patientId: patient.id, pulse: 72 }),
+        );
+        expect(vital.id).toBeDefined();
+
+        const list = await withWard(WARD_A, () => vitalsService.listByPatient(patient.id));
+        expect(list).toHaveLength(1);
+
+        const updated = await withWard(WARD_A, () => vitalsService.update(vital.id, { pulse: 80 }));
+        expect(updated.pulse).toBe(80);
+      });
+    });
+
+    it("denies a ward-assigned nurse recording vitals for a patient admitted to a different ward", async () => {
+      await ctx.inTenant(async () => {
+        const patient = await patientsService.create({
+          firstName: 'Ward', lastName: 'Mismatch', gender: 'Female', phoneNumber: '2220000002',
+        });
+        await admitPatient(patient.id, WARD_B);
+
+        await expect(
+          withWard(WARD_A, () => vitalsService.create({ patientId: patient.id, pulse: 72 })),
+        ).rejects.toThrow(ForbiddenException);
+        await expect(
+          withWard(WARD_A, () => vitalsService.listByPatient(patient.id)),
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    it('denies a ward-assigned nurse recording vitals for a patient with no active admission at all', async () => {
+      await ctx.inTenant(async () => {
+        const patient = await patientsService.create({
+          firstName: 'Never', lastName: 'Admitted', gender: 'Male', phoneNumber: '2220000003',
+        });
+
+        await expect(
+          withWard(WARD_A, () => vitalsService.create({ patientId: patient.id, pulse: 72 })),
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    it('leaves an unassigned staff member (no wardId) with unrestricted tenant-wide access', async () => {
+      await ctx.inTenant(async () => {
+        const patient = await patientsService.create({
+          firstName: 'No', lastName: 'WardStaff', gender: 'Female', phoneNumber: '2220000004',
+        });
+        await admitPatient(patient.id, WARD_B);
+
+        const vital = await vitalsService.create({ patientId: patient.id, pulse: 72 });
+        expect(vital.id).toBeDefined();
+      });
     });
   });
 });

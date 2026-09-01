@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import type { EntityManager } from 'typeorm';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
+import { TenantContextService } from '@hospital/tenant-context';
 import { SoftDeletableEntity } from '../../database/auditable.entity.js';
 import { Vital } from './entities/vital.entity.js';
 
@@ -10,7 +12,10 @@ export type UpdateVitalInput = Partial<CreateVitalInput>;
 
 @Injectable()
 export class VitalsService {
-  constructor(private readonly tenantConnection: TenantConnectionService) {}
+  constructor(
+    private readonly tenantConnection: TenantConnectionService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   private calculateBmi(heightCm?: number, weightKg?: number): number | undefined {
     if (!heightCm || !weightKg || heightCm <= 0 || weightKg <= 0) {
@@ -28,14 +33,15 @@ export class VitalsService {
 
   async create(input: CreateVitalInput): Promise<Vital> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      await this.assertWardAccessForPatient(manager, input.patientId);
       const repository = manager.getRepository(Vital);
       const bmi = this.calculateBmi(input.height, input.weight);
-      
+
       const newVital = repository.create({
         ...input,
         bmi,
       });
-      
+
       return repository.save(newVital);
     });
   }
@@ -46,6 +52,7 @@ export class VitalsService {
       if (!vital) {
         throw new NotFoundException(`Vital record ${id} not found`);
       }
+      await this.assertWardAccessForPatient(manager, vital.patientId);
       return vital;
     });
   }
@@ -54,10 +61,11 @@ export class VitalsService {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(Vital);
       const vital = await repository.findOne({ where: { id } });
-      
+
       if (!vital) {
         throw new NotFoundException(`Vital record ${id} not found`);
       }
+      await this.assertWardAccessForPatient(manager, vital.patientId);
 
       Object.assign(vital, input);
 
@@ -75,6 +83,7 @@ export class VitalsService {
 
   async listByPatient(patientId: string): Promise<Vital[]> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
+      await this.assertWardAccessForPatient(manager, patientId);
       return manager.getRepository(Vital).find({
         where: { patientId },
         order: { recordedAt: 'DESC' },
@@ -86,13 +95,38 @@ export class VitalsService {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const repository = manager.getRepository(Vital);
       const vital = await repository.findOne({ where: { id } });
-      
+
       if (!vital) {
         throw new NotFoundException(`Vital record ${id} not found`);
       }
-      
+      await this.assertWardAccessForPatient(manager, vital.patientId);
+
       // Soft delete (Vital extends SoftDeletableEntity) — see EncountersService.deletePrescription.
       await repository.softRemove(vital);
     });
+  }
+
+  /**
+   * Ward-scoped row-level access (PRD §6.1/§6.2: Nurse's scope is "assigned ward"; "Nurse can
+   * only write vitals for patients on their assigned ward"). A staff account with no wardId
+   * assigned keeps today's tenant-wide access. Vitals has no admissionId of its own (unlike
+   * Nursing tasks/MAR) — a vitals record can exist for a never-admitted OPD/ER patient — so the
+   * check looks up whether the patient currently has an active admission at all. Per product
+   * decision: no active admission means no access for a ward-assigned staff member, even though
+   * that blocks a ward nurse from recording OPD/ER vitals for a not-yet-admitted patient — the
+   * stricter of the two options, chosen deliberately over silently allowing an unscoped write.
+   */
+  private async assertWardAccessForPatient(manager: EntityManager, patientId: string): Promise<void> {
+    const staffWardId = this.tenantContext.getWardId();
+    if (!staffWardId) {
+      return;
+    }
+    const rows = await manager.query(
+      `SELECT "wardId" FROM admissions WHERE "patientId" = $1 AND status = 'Admitted' LIMIT 1`,
+      [patientId],
+    );
+    if (rows.length === 0 || rows[0].wardId !== staffWardId) {
+      throw new ForbiddenException(`Patient ${patientId} is outside your assigned ward`);
+    }
   }
 }

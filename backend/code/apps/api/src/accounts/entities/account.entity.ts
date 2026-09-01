@@ -44,4 +44,9 @@ export class Account extends SoftDeletableEntity {
   /** Set iff accountType === 'patient': the one Patient record this portal account may access. */
   @Column({ type: 'uuid', nullable: true })
   patientId!: string | null;
+
+  /** Optional staff ward assignment — when set, Nursing/Vitals actions are scoped to this ward
+   *  (see tenant-context's getWardId()). Null means unrestricted (today's tenant-wide access). */
+  @Column({ type: 'uuid', nullable: true })
+  wardId!: string | null;
 }

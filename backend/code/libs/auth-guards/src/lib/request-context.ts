@@ -8,6 +8,9 @@ export interface RequestContext {
   permissions: string[];
   accountType?: 'staff' | 'patient';
   patientId?: string;
+  /** Optional ward assignment for a staff account — see AddAccountWard migration. Undefined
+   *  means unrestricted (tenant-wide) access for Nursing/Vitals row-level scoping. */
+  wardId?: string;
 }
 
 declare module 'express' {

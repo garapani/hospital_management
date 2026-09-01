@@ -311,6 +311,64 @@ describe('AccountsController (integration)', () => {
     expect(response.status).toBe(404);
   });
 
+  it('assigns and clears a ward assignment via PATCH /accounts/:id/ward', async () => {
+    const wardRows = await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema((manager) =>
+        manager.query(`INSERT INTO wards ("wardCode", "wardName") VALUES ($1, $2) RETURNING id`, [
+          `W-${Date.now()}`,
+          'Controller Test Ward',
+        ]),
+      ),
+    );
+    const wardId = wardRows[0].id;
+
+    const createResponse = await request(app.getHttpServer())
+      .post('/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        username: 'ctrl.ward.nurse',
+        email: 'ctrlward@example.com',
+        displayName: 'Ctrl Ward Nurse',
+        password: 'a-ward-password',
+        roleName: 'Nurse',
+      });
+    const accountId = createResponse.body.id;
+
+    const assignResponse = await request(app.getHttpServer())
+      .patch(`/accounts/${accountId}/ward`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ wardId });
+    expect(assignResponse.status).toBe(200);
+    expect(assignResponse.body.wardId).toBe(wardId);
+
+    const clearResponse = await request(app.getHttpServer())
+      .patch(`/accounts/${accountId}/ward`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ wardId: null });
+    expect(clearResponse.status).toBe(200);
+    expect(clearResponse.body.wardId).toBeNull();
+  });
+
+  it('rejects assigning a nonexistent ward with 404', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post('/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        username: 'ctrl.badward.nurse',
+        email: 'ctrlbadward@example.com',
+        displayName: 'Ctrl Bad Ward Nurse',
+        password: 'a-ward-password',
+        roleName: 'Nurse',
+      });
+    const accountId = createResponse.body.id;
+
+    const response = await request(app.getHttpServer())
+      .patch(`/accounts/${accountId}/ward`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ wardId: '00000000-0000-0000-0000-000000000000' });
+    expect(response.status).toBe(404);
+  });
+
   it('returns 404 when assigning a role to an unknown account id', async () => {
     const response = await request(app.getHttpServer())
       .post('/accounts/00000000-0000-0000-0000-000000000000/roles')
