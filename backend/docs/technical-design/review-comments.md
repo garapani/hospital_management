@@ -1377,6 +1377,27 @@ PATCH still works, confirmed via curl). Needs dedicated triage.
 - `frontend/apps/staff-console/src/app/patients/patient-detail.ts` (`openEditModal`, `showEditModal`)
 - `frontend/apps/staff-console/src/app/patients/patient-detail.html:458` (`Edit Profile` `p-dialog`)
 
+### Medium: patientId/doctorId/wardId/bedId shown as raw UUIDs across most of the app, not just Admissions
+
+The "ward and bed are raw UUIDs" and "Doctor/Department filters... raw-UUID" findings above only
+covered Admissions and Appointments — a broader sweep (prompted directly by the user after the
+Ward Board work) found the same raw-uuid-as-display pattern on Billing invoices, Fraction/
+Incentive (doctorId), Insurance (patientId on policies and claims), Maternity (patientId,
+admissionId), Orders (detail + list: patientId, orderedBy), OT (patientId), and Vaccination
+(patientId) — nine more screens with the same shape of problem, not isolated to Admissions.
+
+**Resolved (2026-09-01):** rather than repeat the per-endpoint join pattern (§112) nine more times,
+added a shared `POST /directory/resolve` bulk lookup (`backend/code/apps/api/src/directory/`) and
+a frontend `<hms-entity-name [type]="'patient'|'doctor'|'ward'|'bed'" [id]="...">` component
+(`frontend/apps/staff-console/src/app/directory/`) backed by a batching+caching resolver service,
+then swept it across all nine screens plus the two Admissions fields (Patient ID, Admitting Doctor
+ID) the earlier ward/bed fix didn't reach. Every occurrence now shows the name with the id in small
+muted text beside it, rather than replacing the id outright. See `Development-Standards.md` §113
+for the pattern — use it for any new screen carrying one of these ids instead of adding another
+per-endpoint join. Maternity's `admissionId` column became a link to the admission instead (not a
+name — an admission has no "name" concept). Verified live end-to-end (Admissions list/detail,
+Insurance policies) with real data.
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.

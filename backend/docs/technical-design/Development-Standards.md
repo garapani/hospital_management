@@ -4275,3 +4275,40 @@ here, not a new pattern; raw SQL is for modules that don't already have that ent
   signal is typed `Admission[]`) kept compiling untouched, since a wider joined type structurally
   satisfies the narrower one. Prefer this additive-extension shape over a breaking rename/removal
   whenever an existing endpoint just needs *more* data, not different data.
+
+## 113. Displaying a raw-uuid FK: use the shared directory resolver, not another per-endpoint join (2026-09-01)
+
+§112's per-endpoint join is the right call when a screen needs one specific list enriched (Ward
+Board needed *only* `listActive`). It stops being the right call once the same "this id needs a
+name" problem shows up on nine unrelated screens (`review-comments.md`'s "patientId/doctorId/
+wardId/bedId shown as raw UUIDs across most of the app") — joining every one of those list/detail
+endpoints individually would mean nine near-identical raw queries maintained forever. Use the
+shared mechanism instead:
+
+- **Backend**: `POST /directory/resolve` (`backend/code/apps/api/src/directory/`) takes
+  `{ patientIds?, doctorIds?, wardIds?, bedIds? }` (arrays of uuids, `@IsUUID('4', { each: true })`,
+  capped at 300) and returns `{ patients, doctors, wards, beds }` — each a `Record<id, { displayName,
+  ... }>` with entries only for ids that actually resolved (soft-deleted, cross-tenant, or unknown
+  ids are silently absent, not an error). Add a new entity type here (e.g. a future `departmentId`)
+  by adding one field to the DTO, one query to `DirectoryService.resolve`, and one key to the
+  response shape — not a new endpoint. Deliberately no `@RequirePermission` (§ the resolved finding
+  above) — see `notifications.controller.ts` for the precedent of "any authenticated request, no
+  specific permission" for endpoints that only ever echo back data the caller already possesses.
+  Queries run **sequentially inside `runInTenantSchema`, never via `Promise.all`** — they share one
+  pg client, and concurrent queries on a single client are unsupported (surfaces as a `pg`
+  deprecation warning in tests if you get this wrong, not just a lint nit).
+- **Frontend**: drop `<hms-entity-name [type]="'patient'|'doctor'|'ward'|'bed'" [id]="x.someId">`
+  in wherever `{{ x.someId }}` used to be (inside an existing `<a routerLink>` if there was one —
+  it renders inline). `DirectoryResolverService` (`frontend/.../directory/directory-resolver.service.ts`)
+  batches every `resolve()` call made in the same microtask into one HTTP request — a whole
+  `@for` loop's worth of table rows becomes one network call, not N — and caches resolved names
+  for the app's lifetime. Never call `DirectoryApiService` directly from a component; the whole
+  point is the batching layer.
+- **Testing implication**: any component importing `EntityName` needs a `DirectoryResolverService`
+  mock provider in its spec — even if no test in that file asserts on a resolved name — because
+  `EntityName`'s `inject(DirectoryResolverService)` runs the instant Angular instantiates it, which
+  happens on the first `fixture.detectChanges()` that renders a row carrying an id. Missing this
+  provider fails with `NG0201: No provider found for InjectionToken API_BASE_URL` (the real
+  `ApiClientService`'s dependency chain), not an obviously-related error — recognize that error
+  shape as "a spec is missing a `DirectoryResolverService` provider," not an `ApiClientService`
+  problem.
