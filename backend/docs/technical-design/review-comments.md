@@ -136,6 +136,13 @@ After moving these files into `new/docs/technical-design/`, references such as `
 
 Use repo-root-relative paths consistently, or update relative links to account for the new folder, for example `../superpowers/specs/...`.
 
+**Resolved:** already fixed by the time this pass reached it — every reference in
+`backend/docs/technical-design/PRD.md` (lines 8, 259, 307, 340, 364, 374 as of 2026-09-01) already
+uses the correct `../superpowers/specs/...` form, and both referenced files
+(`2026-07-31-modular-monolith-architecture-design.md`, `2026-07-30-frontend-framework-architecture-design.md`)
+exist exactly there under `backend/docs/superpowers/specs/`. No content change needed — this entry
+was just never marked resolved after whichever earlier pass fixed the actual links.
+
 ### Medium: List endpoints silently return all tenant rows when their filter is omitted
 
 **Resolved:** a shared `requireParam()` helper in `@hospital/pagination` now throws
