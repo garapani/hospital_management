@@ -4570,3 +4570,22 @@ from a cold cache. Treat any `TS6133`/similar in `apps/api` as urgent to clear, 
 eventually" item, and if CI ever runs on a genuinely cold cache (a fresh runner, a cache-busting
 dependency bump), this is exactly the failure mode that would silently pass on every warm-cache
 local machine and only surface there.
+
+## 123. A demo/dev seed script's reference data needs its own idempotency gate, separate from its business-data gate
+
+`seed-demo-data.ts` originally gated its entire body — catalog data (wards, lab/radiology/inventory
+catalogs) and business data (patients, orders, an admission) alike — behind one check: "does the
+tenant have any patients yet?" That meant catalog seeding could never be re-run once a single
+patient existed for any reason (manual testing, a partial prior seed run), which is exactly why the
+demo tenant's lab catalog was empty going into this fix despite the seeder covering it — the
+underlying cause of the earlier "lab result entry" fix (§121) shipping without live verification.
+
+Split into `seedCatalogData()` — checked per-entry against its own natural key (a ward's
+`wardCode`, a lab test's `code`, a payer's `name` where there's no code) — called unconditionally,
+and wired to its own `nx run api:seed-demo-catalog` target, separate from `seed-demo-data`'s
+existing patient-count gate. The general rule for any seed script mixing reference/catalog data
+with transactional/business data: catalog data should almost always get its own idempotency check
+and be safe to run standalone, since it's the kind of data other engineers reach for constantly
+(to unblock a screen, populate a picker, reproduce a bug) independent of whatever transactional
+state the tenant happens to be in — a single shared "have we seeded at all" gate silently blocks
+re-running just the part that's actually needed.
