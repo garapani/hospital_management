@@ -1658,6 +1658,21 @@ typecheck and 6 new/updated tests.
 - `frontend/apps/staff-console/src/app/admissions/admission-list.ts`
 - `frontend/apps/staff-console/src/app/admissions/admission-list.html`
 
+### Low: Vitals/Encounters "Find patient" panel shows a stale "No patients matched" message after selection
+
+Found live during QA testing (2026-09-01): both standalone screens' `selectPatient()` cleared
+`patientResults` on selection but left `searchQuery` set, so the template's `@else if
+(searchQuery().trim() && !searching())` branch kept rendering `No patients matched "<query>"`
+underneath the now-loaded patient panel. Cosmetic only — the correct patient still loaded — but
+reproduced consistently under both an admin and a clinical-role login.
+
+**Resolved (2026-09-01):** `selectPatient()` now also clears `searchQuery` in both components.
+Covered by an assertion added to each screen's existing "selects a patient" test; full suite (596
+tests) and a clean `tsc --build` pass. Not yet re-verified live on QA — pending redeploy.
+
+- `frontend/apps/staff-console/src/app/vitals/vital-list.ts`
+- `frontend/apps/staff-console/src/app/encounters/encounter-list.ts`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
