@@ -474,6 +474,11 @@ describe('AdmissionsService (integration)', () => {
 
     const filtered = await ctx2.inTenant(() => admissionsService.listActive(admissionA.wardId));
     expect(filtered.some((a) => a.id === admissionA.id)).toBe(true);
+
+    // Ward Board reads patient display fields off the joined row, not a separate lookup.
+    const entryA = filtered.find((a) => a.id === admissionA.id);
+    expect(entryA?.patientDisplayName).toBe('Test Patient');
+    expect(entryA?.patientNo).toBe(patientA.patientNo);
   });
 
   it('throws NotFoundException for an unknown admission id', async () => {

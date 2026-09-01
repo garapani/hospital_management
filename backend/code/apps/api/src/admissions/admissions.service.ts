@@ -20,6 +20,11 @@ export interface CreateAdmissionInput {
   bedId: string;
 }
 
+export interface ActiveAdmissionWithPatient extends Admission {
+  patientDisplayName: string;
+  patientNo: string;
+}
+
 export interface TransferAdmissionInput {
   toBedId: string;
   transferredBy?: string;
@@ -213,13 +218,30 @@ export class AdmissionsService {
     });
   }
 
-  async listActive(wardId?: string): Promise<Admission[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Admission).find({
-        where: wardId ? { status: 'Admitted', wardId } : { status: 'Admitted' },
-        order: { admissionDate: 'DESC' },
-      }),
-    );
+  /**
+   * Patient display fields are joined in (not a separate lookup) so the Ward Board can render
+   * "Bed 3 — Occupied — Jane Doe" in one round trip instead of N+1 patient fetches.
+   */
+  async listActive(wardId?: string): Promise<ActiveAdmissionWithPatient[]> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager
+        .createQueryBuilder(Admission, 'admission')
+        .innerJoin(Patient, 'patient', 'patient.id = admission.patientId')
+        .select('admission')
+        .addSelect(['patient.firstName', 'patient.lastName', 'patient.patientNo'])
+        .where('admission.status = :status', { status: 'Admitted' })
+        .orderBy('admission.admissionDate', 'DESC');
+      if (wardId) {
+        qb.andWhere('admission.wardId = :wardId', { wardId });
+      }
+      return qb.getRawAndEntities().then(({ entities, raw }) =>
+        entities.map((admission, i) => ({
+          ...admission,
+          patientDisplayName: `${raw[i].patient_firstName} ${raw[i].patient_lastName}`,
+          patientNo: raw[i].patient_patientNo as string,
+        })),
+      );
+    });
   }
 
   async transfer(id: string, input: TransferAdmissionInput): Promise<Admission> {
