@@ -495,4 +495,110 @@ describe('NursingService (integration)', () => {
       expect(started.status).toBe('InProgress');
     });
   });
+
+  describe('shift handoff notes', () => {
+    it('creates a handoff note with actor derivation, and validates its inputs', async () => {
+      const admissionId = await makeAdmission();
+
+      const note = await withActor(() =>
+        nursingService.createHandoffNote({ admissionId, shift: 'Night', note: 'Watch for fever spikes.' }),
+      );
+      expect(note.note).toBe('Watch for fever spikes.');
+      expect(note.shift).toBe('Night');
+      expect(note.acknowledged).toBe(false);
+      expect(note.createdBy).toBe(AUTHENTICATED_ACCOUNT);
+
+      await expect(
+        ctx.inTenant(() => nursingService.createHandoffNote({ admissionId, note: '   ' })),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        ctx.inTenant(() =>
+          nursingService.createHandoffNote({
+            admissionId: '00000000-0000-0000-0000-000000000000',
+            note: 'x',
+          }),
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects a handoff note for a discharged admission', async () => {
+      const admissionId = await makeAdmission();
+      await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.query(`UPDATE admissions SET status = 'Discharged' WHERE id = $1`, [admissionId]),
+        ),
+      );
+
+      await expect(
+        ctx.inTenant(() => nursingService.createHandoffNote({ admissionId, note: 'x' })),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('lists handoff notes paginated and filterable by admission', async () => {
+      const admissionA = await makeAdmission();
+      const admissionB = await makeAdmission();
+      await ctx.inTenant(() => nursingService.createHandoffNote({ admissionId: admissionA, note: 'A1', createdBy: STAFF_ID }));
+      await ctx.inTenant(() => nursingService.createHandoffNote({ admissionId: admissionA, note: 'A2', createdBy: STAFF_ID }));
+      await ctx.inTenant(() => nursingService.createHandoffNote({ admissionId: admissionB, note: 'B1', createdBy: STAFF_ID }));
+
+      const byAdmission = await ctx.inTenant(() => nursingService.listHandoffNotes({ admissionId: admissionA }));
+      expect(byAdmission.meta.total).toBe(2);
+      expect(byAdmission.data.every((n) => n.admissionId === admissionA)).toBe(true);
+    });
+
+    it('acknowledges a handoff note with actor derivation, and rejects acknowledging it twice', async () => {
+      const admissionId = await makeAdmission();
+      const note = await ctx.inTenant(() =>
+        nursingService.createHandoffNote({ admissionId, note: 'x', createdBy: STAFF_ID }),
+      );
+
+      const acknowledged = await withActor(() => nursingService.acknowledgeHandoffNote(note.id));
+      expect(acknowledged.acknowledged).toBe(true);
+      expect(acknowledged.acknowledgedBy).toBe(AUTHENTICATED_ACCOUNT);
+      expect(acknowledged.acknowledgedAt).not.toBeNull();
+
+      await expect(
+        ctx.inTenant(() => nursingService.acknowledgeHandoffNote(note.id)),
+      ).rejects.toThrow(ConflictException);
+      await expect(
+        ctx.inTenant(() => nursingService.acknowledgeHandoffNote('00000000-0000-0000-0000-000000000000')),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('enforces ward-scoped access for a ward-assigned nurse', async () => {
+      const admissionId = await makeAdmission(ctx, WARD_B);
+
+      await expect(
+        withWard(WARD_A, () => nursingService.createHandoffNote({ admissionId, note: 'x', createdBy: STAFF_ID })),
+      ).rejects.toThrow(ForbiddenException);
+
+      const note = await ctx.inTenant(() =>
+        nursingService.createHandoffNote({ admissionId, note: 'x', createdBy: STAFF_ID }),
+      );
+      await expect(
+        withWard(WARD_A, () => nursingService.acknowledgeHandoffNote(note.id)),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        withWard(WARD_A, () => nursingService.listHandoffNotes({ admissionId })),
+      ).rejects.toThrow(ForbiddenException);
+
+      // Unrestricted (no wardId) staff can still act on it.
+      const acknowledged = await ctx.inTenant(() => nursingService.acknowledgeHandoffNote(note.id));
+      expect(acknowledged.acknowledged).toBe(true);
+    });
+
+    it('enforces tenant isolation for handoff notes', async () => {
+      const tenantB = await ctx.createTenant();
+      const admissionId = await makeAdmission();
+      const note = await ctx.inTenant(() =>
+        nursingService.createHandoffNote({ admissionId, note: 'x', createdBy: STAFF_ID }),
+      );
+
+      const tenantBNotes = await tenantB.inTenant(() => nursingService.listHandoffNotes({}));
+      expect(tenantBNotes.meta.total).toBe(0);
+      await expect(
+        tenantB.inTenant(() => nursingService.acknowledgeHandoffNote(note.id)),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
 });

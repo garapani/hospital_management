@@ -12,6 +12,7 @@ import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pa
 import {
   MedicationAdministration,
   NursingTask,
+  ShiftHandoffNote,
 } from './entities/nursing.entity.js';
 
 export interface CreateTaskInput {
@@ -20,6 +21,14 @@ export interface CreateTaskInput {
   description: string;
   dueAt?: Date | string;
   assignedTo?: string;
+  /** Deprecated — ignored when a tenant context with an accountId is active (see §25). */
+  createdBy?: string;
+}
+
+export interface CreateHandoffNoteInput {
+  admissionId: string;
+  shift?: string;
+  note: string;
   /** Deprecated — ignored when a tenant context with an accountId is active (see §25). */
   createdBy?: string;
 }
@@ -246,6 +255,64 @@ export class NursingService {
         administration.notes = notes;
       }
       return repository.save(administration);
+    });
+  }
+
+  // ---------- Shift Handoff Notes ----------
+
+  async createHandoffNote(input: CreateHandoffNoteInput): Promise<ShiftHandoffNote> {
+    if (!input.note?.trim()) {
+      throw new BadRequestException('note is required');
+    }
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      await this.assertAdmissionExists(manager, input.admissionId);
+      return manager.getRepository(ShiftHandoffNote).save(
+        manager.getRepository(ShiftHandoffNote).create({
+          admissionId: input.admissionId,
+          shift: (input.shift as ShiftHandoffNote['shift']) ?? null,
+          note: input.note.trim(),
+          acknowledged: false,
+          acknowledgedBy: null,
+          acknowledgedAt: null,
+          createdBy: this.resolveActor(input.createdBy),
+        }),
+      );
+    });
+  }
+
+  async listHandoffNotes(
+    query: PaginationQueryDto & { admissionId?: string },
+  ): Promise<PaginatedResponseDto<ShiftHandoffNote>> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const qb = manager.getRepository(ShiftHandoffNote).createQueryBuilder('handoff');
+      if (query.admissionId) {
+        await this.assertWardAccessForAdmissionId(manager, query.admissionId);
+        qb.andWhere('handoff.admissionId = :admissionId', { admissionId: query.admissionId });
+      } else {
+        this.scopeToOwnWard(qb, 'handoff');
+      }
+      qb.orderBy('handoff.createdAt', 'DESC');
+      return paginate(qb, query);
+    });
+  }
+
+  /** The incoming nurse confirms they've read the note — distinct from it just being visible on
+   *  screen. One-way: an acknowledged note can't be un-acknowledged or re-acknowledged. */
+  async acknowledgeHandoffNote(id: string, actor?: string): Promise<ShiftHandoffNote> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repository = manager.getRepository(ShiftHandoffNote);
+      const note = await repository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!note) {
+        throw new NotFoundException(`Shift handoff note ${id} not found`);
+      }
+      await this.assertWardAccessForAdmissionId(manager, note.admissionId);
+      if (note.acknowledged) {
+        throw new ConflictException(`Shift handoff note ${id} is already acknowledged`);
+      }
+      note.acknowledged = true;
+      note.acknowledgedBy = this.resolveActor(actor);
+      note.acknowledgedAt = new Date();
+      return repository.save(note);
     });
   }
 

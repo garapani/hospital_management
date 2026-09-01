@@ -121,4 +121,58 @@ describe('NursingController (e2e)', () => {
     expect(page2.body.data).toHaveLength(1);
     expect(page2.body.data[0].id).not.toBe(page1.body.data[0].id);
   });
+
+  it('creates, lists, and acknowledges a shift handoff note end-to-end', async () => {
+    const admissionId = await makeAdmission();
+
+    const created = await request(app.getHttpServer())
+      .post('/nursing/handoff-notes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ admissionId, shift: 'Night', note: 'Patient anxious, reassured; recheck vitals at 2am.' })
+      .expect(201);
+    expect(created.body.acknowledged).toBe(false);
+
+    const listed = await request(app.getHttpServer())
+      .get(`/nursing/handoff-notes?admissionId=${admissionId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(listed.body.data).toHaveLength(1);
+    expect(listed.body.data[0].id).toBe(created.body.id);
+
+    const acknowledged = await request(app.getHttpServer())
+      .post(`/nursing/handoff-notes/${created.body.id}/acknowledge`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+    expect(acknowledged.body.acknowledged).toBe(true);
+    expect(acknowledged.body.acknowledgedBy).toBe(staffId);
+
+    await request(app.getHttpServer())
+      .post(`/nursing/handoff-notes/${created.body.id}/acknowledge`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(409);
+  });
+
+  it('rejects creating a handoff note with 403 for a read-only token', async () => {
+    const admissionId = await makeAdmission();
+    const readOnlyToken = await signTestToken({
+      sub: staffId,
+      hospitalId: ctx.tenantId,
+      permissions: ['nursing.read'],
+    });
+
+    await request(app.getHttpServer())
+      .post('/nursing/handoff-notes')
+      .set('Authorization', `Bearer ${readOnlyToken}`)
+      .send({ admissionId, note: 'x' })
+      .expect(403);
+  });
+
+  it('rejects an unrecognized shift value with 400, not a raw 500', async () => {
+    const admissionId = await makeAdmission();
+    await request(app.getHttpServer())
+      .post('/nursing/handoff-notes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ admissionId, shift: 'Midnight', note: 'x' })
+      .expect(400);
+  });
 });

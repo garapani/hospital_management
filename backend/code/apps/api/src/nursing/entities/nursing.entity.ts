@@ -92,3 +92,36 @@ export class MedicationAdministration extends SoftDeletableEntity {
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
 }
+
+export type Shift = 'Day' | 'Evening' | 'Night';
+
+/**
+ * A nurse-to-nurse shift handoff note for an admission — what the outgoing shift wants the
+ * incoming shift to know. `acknowledged` closes the loop: the incoming nurse confirms they've
+ * read it, distinct from just having it visible on screen.
+ */
+@Entity('shift_handoff_notes')
+export class ShiftHandoffNote extends SoftDeletableEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @Column({ type: 'uuid' })
+  admissionId!: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  shift!: Shift | null;
+
+  @Column({ type: 'text' })
+  note!: string;
+
+  @Column({ type: 'boolean', default: false })
+  acknowledged!: boolean;
+
+  // varchar, not uuid: matches the audit-columns convention (auditable.entity.ts) — see
+  // completedBy above for why.
+  @Column({ type: 'varchar', nullable: true })
+  acknowledgedBy!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  acknowledgedAt!: Date | null;
+}

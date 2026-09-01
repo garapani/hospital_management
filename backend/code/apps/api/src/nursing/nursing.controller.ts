@@ -6,6 +6,8 @@ import { CreateTaskDto } from './dto/create-task.dto.js';
 import { ListAdministrationsQueryDto } from './dto/list-administrations.dto.js';
 import { ListTasksQueryDto } from './dto/list-tasks.dto.js';
 import { SkipAdministrationDto } from './dto/skip-administration.dto.js';
+import { CreateHandoffNoteDto } from './dto/create-handoff-note.dto.js';
+import { ListHandoffNotesQueryDto } from './dto/list-handoff-notes.dto.js';
 
 @Controller('nursing')
 @UseGuards(PermissionGuard)
@@ -66,5 +68,24 @@ export class NursingController {
   @RequirePermission('nursing.manage')
   async skipAdministration(@Param('id') id: string, @Body() dto: SkipAdministrationDto) {
     return this.nursingService.skipAdministration(id, dto.notes);
+  }
+
+  // Shift handoff notes
+  @Post('handoff-notes')
+  @RequirePermission('nursing.manage')
+  async createHandoffNote(@Body() dto: CreateHandoffNoteDto) {
+    return this.nursingService.createHandoffNote(dto);
+  }
+
+  @Get('handoff-notes')
+  @RequirePermission('nursing.read')
+  async listHandoffNotes(@Query() query: ListHandoffNotesQueryDto) {
+    return this.nursingService.listHandoffNotes(query);
+  }
+
+  @Post('handoff-notes/:id/acknowledge')
+  @RequirePermission('nursing.manage')
+  async acknowledgeHandoffNote(@Param('id') id: string) {
+    return this.nursingService.acknowledgeHandoffNote(id);
   }
 }
