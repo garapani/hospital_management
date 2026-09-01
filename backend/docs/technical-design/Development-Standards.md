@@ -4400,3 +4400,25 @@ a free-text/lightweight field on a record already in the asking role's scope ins
 permissions to reach it. (`PermissionGuard`/`@RequirePermission` also only supports one required
 permission per route — no OR-of-permissions — so even a narrower new permission for just this one
 action would mean a second endpoint or a guard change, more surface than a UX-only gap warrants.)
+
+## 117. A net-new feature with no obvious module: reuse a sibling entity's permissions/scoping, and `p-paginator` emits `PaginatorState`, not `TableLazyLoadEvent` (2026-09-01)
+
+"No shift-handoff notes feature" (`review-comments.md`) had no existing backend model to extend,
+unlike most findings in this batch. Rather than standing up a new module + permission pair for one
+small entity, `ShiftHandoffNote` was modeled as a sibling of `NursingTask`/
+`MedicationAdministration` inside the existing Nursing module (migration `0098`): same
+`nursing.manage`/`nursing.read` permissions, same `assertAdmissionExists`/
+`assertWardAccessForAdmissionId`/`scopeToOwnWard` ward-scoping helpers, same controller/service
+shape. Default to this — a new module/permission pair is only worth it when the entity doesn't
+belong under any existing module's read/write boundary, not just because it's a new table.
+
+On the frontend, the new "Shift Handoff" tab uses a `p-paginator` directly (card list, not a
+`p-table`) instead of the Tasks/MAR tabs' `p-table` lazy-load pattern. The two are not
+interchangeable: `p-table`'s `(onLazyLoad)` emits `TableLazyLoadEvent`, but `p-paginator`'s
+`(onPageChange)` emits a differently-shaped `PaginatorState` (`{first, rows, page, pageCount}`).
+Copying the lazy-load handler's type/name onto a paginator-only tab compiles-looking-plausible in
+isolation but fails with `Type 'Event' has no properties in common with type 'TableLazyLoadEvent'`
+plus missing-element/can't-bind diagnostics if `PaginatorModule` also isn't separately imported
+into the component (`p-table`'s module doesn't include it). Use `PaginatorState` and
+`PaginatorModule` for any card/list view paginated via a bare `p-paginator`, not the `p-table`
+lazy-load types.

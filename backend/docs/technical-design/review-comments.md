@@ -1389,6 +1389,17 @@ locked/no-edit state on both screens with zero console errors.
 
 Grep for handoff/hand-off across both frontend and backend returns nothing — nurse-to-nurse shift handoff, a core daily ritual on any ward, is entirely unsupported.
 
+**Resolved (2026-09-01):** modeled `ShiftHandoffNote` as a sibling to `NursingTask`/
+`MedicationAdministration` in the existing Nursing module (migration `0098`, `nursing.manage`/
+`nursing.read` permissions, the same ward-scoping enforcement already built for that module —
+`assertWardAccessForAdmissionId`/`scopeToOwnWard`) rather than a new module/permission set. A note
+carries an optional shift (Day/Evening/Night), free-text note, and an acknowledge action (409 on
+double-acknowledge). Frontend adds a "Shift Handoff" tab to the Nursing console — card list (not a
+table, to match `patient-detail.html`'s Notes tab), a New Handoff Note modal, and a `p-paginator`
+(not `p-table` lazy-load — see the new Development-Standards.md entry on `PaginatorState` vs
+`TableLazyLoadEvent`). Verified live end-to-end: created a Night-shift note, listed it, acknowledged
+it, resolved author/acknowledger via the directory resolver, zero console errors.
+
 ### Low: Doctor is not granted `fraction.read` despite the Fraction/Incentive module existing in nav
 
 PRD §5.6 frames Fraction & Incentive as covering "doctor incentives," and the module/nav entry exists, but `seed-rbac-catalog.ts` does not grant `fraction.read` to the Doctor role — worth a scope check, though low daily-workflow impact.
