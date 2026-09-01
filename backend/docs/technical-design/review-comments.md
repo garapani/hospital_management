@@ -508,6 +508,22 @@ Nursing, OT, maternity and vaccination expose the patient/admission as a bare `p
 - `frontend/apps/staff-console/src/app/vaccination/vaccination-list.html:52`, `:79`
 - pattern to reuse: `frontend/apps/staff-console/src/app/ssu/ssu-list.ts:162-186`, `frontend/apps/staff-console/src/app/ssu/ssu-list.html:153-215`
 
+**Resolved (2026-09-01):** Nursing was picked up separately earlier in the same session (see the
+Ward-scoping/UUID-pickers work); this pass closed the remaining three. Rather than SSU's original
+search-box-plus-click-a-result-row pattern (or its "escape hatch" of typing a raw UUID directly),
+used the server-searched `p-select` pattern established later the same session for Orders/Nursing
+(Development-Standards.md §114) — a debounced `(onFilter)` autocomplete dropdown, no separate
+search button/result list, no raw-UUID fallback (a maternity/OT/vaccination record's patientId
+should never come from free-typed text). Added to OT's filter bar and Schedule Surgery dialog,
+Vaccination's filter bar and Record Vaccination dialog, and Maternity's filter bar and New Record
+dialog. Maternity needed one more step: `CreateMaternityRecordDto` requires a real `admissionId`,
+not just a `patientId`, so selecting a patient in its create dialog resolves straight to their
+current active admission (`AdmissionsApiService.list({patientId, status:'Admitted', limit:1})`),
+mirroring `NursingConsole.onPatientSelected` — see Development-Standards.md §119. Verified live:
+searched and selected a patient in all six pickers, scheduled a surgery, recorded a vaccination,
+and created a maternity record with the admission auto-resolved and shown (ward name via the
+directory resolver) — zero console errors in any flow.
+
 ### Medium: The scheduling screens cannot actually set a schedule
 
 **Resolved (2026-08-30):** added `dueAt`/`scheduledAt` `datetime-local` inputs to the OT schedule-surgery and nursing task/administration dialogs, wired to the existing DTO fields.

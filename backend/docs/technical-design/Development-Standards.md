@@ -4457,3 +4457,31 @@ wired up at all). Re-run this sweep (grep every `*.dto.ts` for `@IsOptional()` f
 non-`@IsString`/`@IsBoolean`/`@IsArray`/`@IsObject` validator, then check the matching frontend
 form's default/clear behavior) whenever a new optional date/email/enum/UUID field gets a create or
 edit form — it's cheap to check at that point and expensive to rediscover live.
+
+## 119. Patient search picker sweep completed (OT, Maternity, Vaccination); a create dialog needing an admission (not just a patient) resolves it from the patient selection
+
+The "raw patient UUID" finding (`review-comments.md`) named two picker shapes to copy: SSU's
+original search-box-plus-click-a-result-row, or Orders/Nursing's later server-searched `p-select`
+(§114). Went with the `p-select` version for consistency with the most recent convention — a
+debounced `(onFilter)` autocomplete dropdown is one component, not a separate search button plus a
+result list, and it never offers a raw-UUID fallback (unlike SSU's original "or enter Patient ID
+directly" escape hatch) since a hand-typed UUID is exactly the failure mode being closed.
+
+A screen whose create dialog needs a real **admission**, not just a patient — Maternity's
+`CreateMaternityRecordDto.admissionId` — layers one more step onto the patient picker rather than
+adding a second picker for the admission: on patient selection, resolve their current active
+admission via `AdmissionsApiService.list({ patientId, status: 'Admitted', page: 1, limit: 1 })`
+(a patient can only have one active admission at a time, backend-enforced) and populate the form's
+`admissionId` from the result, showing a read-only "resolved" context box (ward name via
+`<hms-entity-name>`) instead of an editable admission field. Warn and leave it unresolved if the
+patient has no active admission — matches `NursingConsole.onPatientSelected`
+(`nursing-console.ts:171-204`), the pattern this mirrors; copy from there, not from a fresh
+implementation, when another screen needs the same patient-to-admission resolution.
+
+A component using `<hms-entity-name>` **anywhere in its template — including inside a `p-dialog`
+that isn't currently visible** — needs a `DirectoryResolverService` mock provider in its spec, not
+just an entity-bearing table row. `MaternityList`'s spec started failing with `NG0201: No provider
+found for InjectionToken API_BASE_URL` on a test that never opened the create modal, because
+Angular still constructs a `p-dialog`'s inner component tree even while `[(visible)]` is false —
+only the CSS visibility is conditional, not instantiation. Add the mock provider whenever a new
+`<hms-entity-name>` usage lands anywhere in a component's template, dialogs included.
