@@ -1346,6 +1346,14 @@ PRD §5.6 frames Fraction & Incentive as covering "doctor incentives," and the m
 
 - `backend/code/apps/api/src/rbac/seed-rbac-catalog.ts` (Doctor grant list vs. `fraction.read`)
 
+**Resolved (2026-09-01):** granted `fraction.read` (not `fraction.manage` — rule creation/editing
+stays HR/Payroll Admin's job) to Doctor. Also fixed a latent bug this exposed: `FractionConsole`
+rendered New Rule/Record Share/Deactivate unconditionally with no permission gate, so a Doctor
+with read-only access would have seen buttons that always 403 on click — added `canManage`
+(`fraction.manage`) gating matching the established `ssu-list.ts` pattern (hide the mutating
+controls, show "View only" per row). Verified live: `dr.test` reaches `/fraction`, sees rules with
+resolved doctor names (via the directory resolver) and no mutating controls.
+
 ### High: Patient "Edit Profile" dialog does not open — discovered 2026-09-01, unrelated to the allergies work in progress at the time
 
 **Resolved (2026-09-01) — turned out to be page-wide, not dialog-specific:** root cause was
