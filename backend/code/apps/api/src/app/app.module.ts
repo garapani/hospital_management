@@ -13,6 +13,7 @@ import { PackagesModule } from '../packages/packages.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { RbacModule } from '../rbac/rbac.module.js';
 import { MasterDataModule } from '../master-data/master-data.module.js';
+import { DirectoryModule } from '../directory/directory.module.js';
 import { PatientsModule } from '../patients/patients.module.js';
 import { PatientPortalModule } from '../patient-portal/patient-portal.module.js';
 import { AppointmentsModule } from '../appointments/appointments.module.js';
@@ -108,6 +109,7 @@ import { VaccinationModule } from '../vaccination/vaccination.module.js';
     AuditModule,
     RbacModule,
     MasterDataModule,
+    DirectoryModule,
     PatientsModule,
     PatientPortalModule,
     AppointmentsModule,
