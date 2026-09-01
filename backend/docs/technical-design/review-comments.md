@@ -1491,6 +1491,40 @@ different names) with zero console errors — screenshots in the fix commit's se
 - `frontend/apps/staff-console/src/app/patients/patient-list.ts` (`submitRegistration`, `checkAndSubmit`)
 - `frontend/apps/staff-console/src/app/patients/patient-detail.ts` (`submitEdit`)
 
+### Medium: Two more live instances of the blank-optional-field 400 (§ above) — Employee email, Maternity EDD
+
+User asked whether the Patient blank-field bug was likely to exist elsewhere. Audited every
+`*.dto.ts` under `backend/code/apps/api/src` (~140 `@IsOptional()` fields paired with a
+format-strict validator) against every frontend form that populates the matching field. Most of
+the codebase already guards this correctly (`ward-supply-console.ts`, `purchase-order-detail.ts`,
+`ot-list.ts`, `nursing-console.ts`, `user-detail.ts`, `ssu-list.ts`, `accounting-console.ts` all
+coerce `field || undefined` before sending, and most numeric fields use `p-inputNumber`, which
+emits `null` on clear, not `''`). Two live instances survived the filter:
+
+- `email` on `employee/dto/employee.dto.ts` (`CreateEmployeeDto`/`UpdateEmployeeDto`, `@IsOptional()
+@IsEmail()`) — `employee-list.ts`'s `submitSave()` sent it unguarded.
+- `edd` on `maternity/dto/create-maternity-record.dto.ts` (`@IsOptional() @IsDateString()`) —
+  `maternity-list.ts`'s `submitCreate()` sent it unguarded.
+
+**Resolved (2026-09-01):** same fix as the Patient module — coerce to `undefined` at submit time
+(`email: form.email || undefined` in `employee-list.ts`, `edd: form.edd || undefined` in
+`maternity-list.ts`), regression test per field asserting the payload omits it when blank. Verified
+live: created an Employee with email typed then cleared, and a Maternity record with EDD picked
+then cleared, both saved with zero 400s.
+
+Everything else checked (DTO field with the risky decorator shape but no live path to `''`, listed
+for completeness): `appointments` `contactNumber`/`message`/`doctorId`/`departmentId`/`patientId`
+(no frontend edit control reaches them), `insurance` `copayPercent` (bound to `p-inputNumber`),
+`ward-supply`/`inventory` `expiryDate` (already guarded), `master-data`/`rbac` numeric fields
+(coerced via `+$event`), `accounts` `assign-role` `startDate`/`endDate` (already guarded),
+`employee.dto.ts` `departmentId` (`p-select`, no blank option), and a long tail of DTOs
+(`marketing`, `rbac`, `directory`, `tenants`, `platform-billing`, `platform-branding`,
+`admissions`/`orders` source-reference fields, `lab`/`radiology`/`inventory` catalog fields) with
+no frontend create/edit UI wired up yet at all.
+
+- `frontend/apps/staff-console/src/app/employees/employee-list.ts` (`submitSave`)
+- `frontend/apps/staff-console/src/app/maternity/maternity-list.ts` (`submitCreate`)
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.

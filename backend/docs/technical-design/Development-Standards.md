@@ -4443,3 +4443,17 @@ shaped like that, coerce the empty case explicitly at submit time (`field || und
 than trusting `@IsOptional()` to absorb it — see `patient-list.ts`'s `submitRegistration()`/
 `checkAndSubmit()` and `patient-detail.ts`'s `submitEdit()` for the pattern, and add a regression
 test asserting the outgoing payload omits the field rather than sending `''`.
+
+**Codebase-wide audit (2026-09-01):** swept all ~140 `@IsOptional()` fields paired with a
+format-strict validator across every `*.dto.ts`, cross-referenced against every frontend form that
+populates the matching field. Found only two more live instances beyond Patients — `email` on
+`employee.dto.ts` (`employee-list.ts`) and `edd` on `create-maternity-record.dto.ts`
+(`maternity-list.ts`), both fixed the same way (see `review-comments.md`'s entry right after the
+Patient one). Everything else was either already guarded (this pattern is apparently well-
+established across most screens already — Ward Supply, Purchase Orders, Users, Nursing, SSU,
+Accounting all coerce correctly) or has no live frontend path to send `''` yet (numeric fields on
+`p-inputNumber`, `p-select`-driven fields with no blank option, or DTOs with no create/edit UI
+wired up at all). Re-run this sweep (grep every `*.dto.ts` for `@IsOptional()` followed by a
+non-`@IsString`/`@IsBoolean`/`@IsArray`/`@IsObject` validator, then check the matching frontend
+form's default/clear behavior) whenever a new optional date/email/enum/UUID field gets a create or
+edit form — it's cheap to check at that point and expensive to rediscover live.
