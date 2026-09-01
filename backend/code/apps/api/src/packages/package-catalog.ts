@@ -165,11 +165,16 @@ export const MODULE_PERMISSION_PREFIXES: Record<string, string[]> = {
  * (Without this, a Super Admin account accidentally enabled on a customer tenant would get
  * tenant-management powers in its JWT.)
  */
+// `audit` (audit.read) is always-on rather than a module-prefix entry: BASIC_ROLES already
+// carries 'Auditor/Compliance' at every package tier, so the compliance trail was always meant
+// to be available from Basic upward — it just had no module-prefix mapping, which silently
+// stripped it from every tenant's JWT regardless of role (found live on QA 2026-09-01).
 export const ALWAYS_ON_PERMISSION_PREFIXES = [
   'identity', // identity.accounts.manage
   'master-data', // master-data.manage
   'users', // users.all.read (legacy essential permission)
   'system', // system.config.manage (legacy essential permission)
+  'audit', // audit.read
 ];
 
 /** Whether a catalog permission is granted to a tenant whose package enables `modules`. */

@@ -128,6 +128,7 @@ describe('SaaS packages (integration)', () => {
       // Always-on infrastructure permissions survive in every package.
       expect(filtered).toContain('identity.accounts.manage');
       expect(filtered).toContain('master-data.manage');
+      expect(filtered).toContain('audit.read');
       // The platform-ops permission is NOT always-on: it only survives for the platform tenant,
       // so a customer tenant (or a Super Admin role accidentally enabled there) can never get
       // tenant-management powers.
