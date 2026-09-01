@@ -4485,3 +4485,33 @@ found for InjectionToken API_BASE_URL` on a test that never opened the create mo
 Angular still constructs a `p-dialog`'s inner component tree even while `[(visible)]` is false —
 only the CSS visibility is conditional, not instantiation. Add the mock provider whenever a new
 `<hms-entity-name>` usage lands anywhere in a component's template, dialogs included.
+
+## 120. A lazy-loaded `p-table`'s `load()` needs a `switchMap` trigger, not a plain `.subscribe` — and the two candidate fixes are not equivalent
+
+"Paginator advances before the response lands" (`review-comments.md`) named two possible fixes:
+move `firstRecord.set()` to the success handler, or route the request through an RxJS `switchMap`
+cancellation stream. Went with `switchMap` — the other option only fixes the *visual* symptom
+(paginator ahead of what's on screen), not the actual race: without cancellation, a slow response
+to an old page/filter request can still land *after* a newer one and silently overwrite it, since
+plain `.subscribe()` has no way to know a later request superseded it.
+
+The pattern (see `ot-list.ts`, `maternity-list.ts`, `vaccination-list.ts`, `ssu-list.ts` for four
+worked examples): `load()` itself just does `this.loadTrigger.next({ page, limit })` on a private
+`Subject<{page,limit}>`; the actual `switchMap(...).subscribe(...)` pipeline is wired once in the
+constructor (mirroring the `switchMap` pattern already used for route-param-driven loads in
+`invoice-detail.ts`/`patient-detail.ts`, just triggered by a `Subject` instead of a route
+`Observable`). Two details matter inside the pipeline:
+- Set `firstRecord`/table signals **only inside the subscribe callback**, never before the request
+  fires — otherwise a failed or superseded request still visually advances the paginator.
+- `catchError` **inside** the inner `switchMap` callback, returning `EMPTY` — not a `.subscribe({
+  error })` handler on the outer chain. An error handler on the outer subscription would terminate
+  the whole `switchMap` pipeline on the first failed request, silently breaking every subsequent
+  page click for the rest of the component's lifetime.
+
+Test the actual race, not just the happy path: use a manually-controlled `Subject` per response
+(not `of(...)`, which resolves synchronously and can never expose an ordering bug) so the test can
+resolve a *later* trigger's response before an *earlier* one, and assert the earlier response is
+silently discarded — see `ot-list.spec.ts`'s "does not let a slower earlier response overwrite a
+later response that resolved first" for the exact shape. A component doing this for the first time
+in its spec file may newly need `provideRouter([])` too, if a previously always-empty table now
+renders rows containing a `routerLink`.

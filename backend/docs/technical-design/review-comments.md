@@ -567,6 +567,20 @@ All four lazy tables call `this.firstRecord.set((page - 1) * limit)` before the 
 - `frontend/apps/staff-console/src/app/vaccination/vaccination-list.ts:50`, `:74`
 - `frontend/apps/staff-console/src/app/ssu/ssu-list.ts:127`, `:216`, `:247`, `:289`, `:318`
 
+**Resolved (2026-09-01):** took the `switchMap`-based cancellation stream option (not the
+firstRecord-only fix) — it's the only one of the two that actually fixes the out-of-order-response
+race, not just the visual "paginator ahead of data" symptom. `load()` in all four files now pushes
+`{page, limit}` onto a `Subject`, piped through `switchMap` to the real HTTP call (in the
+constructor, alongside `patient-list.ts`'s billing/`invoice-detail.ts`'s existing `switchMap`
+pattern) — a newer trigger cancels whatever inner request was still in flight outright, not just
+outraces it, and `firstRecord` is set only inside the winning response's handler, never eagerly.
+Post-action reloads (`load(1, pageSize)` after approve/reject/close/complete) are unaffected in
+behavior — still jump to page 1 by design, that's a separate, correct UX choice, not the bug.
+Verified live: all four screens load and display data correctly with zero console errors; the two
+new failure modes (superseded response arrives late; a page request fails) are covered by
+regression tests using RxJS `Subject`s to control response ordering precisely, not timers. See
+Development-Standards.md §120 for the pattern to copy for any future lazy-loaded table.
+
 ### Medium: Default dates are derived in UTC, so they are wrong for the first 5½ hours of every IST day
 
 **Resolved (2026-08-30):** both call sites now use the shared `todayLocal()` helper (added in the clinical/registration group's fix for the same bug class) instead of `toISOString().slice(0, 10)`.
