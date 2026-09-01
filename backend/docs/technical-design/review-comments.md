@@ -1205,6 +1205,14 @@ Exhaustive grep for "allerg*" across both `frontend/apps/staff-console` and `bac
 
 ### High: No link from an Admission to that patient's Nursing tasks/MAR — nurse must hand-copy a UUID between screens
 
+**Resolved (2026-09-01):** added a "Nursing Tasks / MAR" link next to "View Patient" on
+`AdmissionDetail`, navigating to `/clinical/nursing?admissionId=...`; `NursingConsole` now reads
+that query param (via a `queryParamMap` subscription, not a one-time snapshot — this route's
+component instance is reused across a query-params-only navigation) and auto-applies it as the
+Tasks/MAR filter on arrival. A nurse no longer has to copy the Admission ID off the admission
+screen and paste it into the Nursing console. The ward/bed-board half of the daily-friction
+problem (below) is unresolved by this change — that's a separate, still-open finding.
+
 `AdmissionDetail` has no reference into the Nursing module — no "create task" or "view MAR" action from a patient's admission record. `NursingConsole`'s Tasks and MAR tabs are both filtered by a free-text Admission ID field (`admissionIdFilter`), so a nurse caring for a patient must manually copy that patient's Admission ID (a UUID) from the admission screen and paste it into the Nursing console to see their tasks or medication schedule. Combined with the absence of any ward/bed board (below), this is the single biggest daily-friction point for the Nurse role: there is no click-through path from "patient I'm caring for" to "their tasks/MAR."
 
 - `frontend/apps/staff-console/src/app/admissions/admission-detail.ts`
