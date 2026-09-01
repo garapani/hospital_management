@@ -1165,6 +1165,19 @@ screen) remains out of scope — this closes the payment-collection half of the 
 
 ### High: No appointment "checked-in"/"waiting" state exists — no front-desk queue is structurally possible
 
+**Resolved (2026-09-01):** added `CheckedIn` as a real status — `POST /appointments/:id/check-in`
+(Scheduled -> CheckedIn only) plus a "Check In" action on the appointment list row and detail
+page, gated on `appointment.manage`. No new screen: the existing appointment list already
+defaults to today and is filterable by status, so filtering to `CheckedIn` is the queue view. Also
+fixed a correctness bug this surfaced — the doctor-conflict/department-capacity checks matched
+only `status: 'Scheduled'`, so checking a patient in would have silently freed their slot for a
+double-booking; those checks now match `ACTIVE_APPOINTMENT_STATUSES` (Scheduled/CheckedIn/Completed).
+Separately, removed the general edit form's "Status" dropdown, which posted `status` through
+`PUT /appointments/:id` but did nothing — the backend's `UpdateAppointmentDto` never had a
+`status` field, so the whitelist `ValidationPipe` silently stripped it (already covered by an
+existing controller spec, "does not let status be set through the update endpoint" — that test
+predates this fix). `Completed`/`NoShow` still have no transition mechanism — out of scope here.
+
 `APPOINTMENT_STATUSES = ['Scheduled', 'Completed', 'NoShow', 'Cancelled']` has no `CheckedIn`/`Waiting`/`InConsultation` value, so there is no way to represent "the patient has arrived and is in the waiting room" as distinct from "has a booked slot." This blocks a token/queue display for reception and blocks a doctor from seeing who is actually present versus who merely has an appointment later. This is a missing enum value, not a missing screen — fixing it requires a status-model change, not just new UI.
 
 - `frontend/apps/staff-console/src/app/appointments/appointment.model.ts:18`
