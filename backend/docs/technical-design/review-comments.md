@@ -1636,6 +1636,28 @@ no frontend create/edit UI wired up yet at all.
 - `frontend/apps/staff-console/src/app/employees/employee-list.ts` (`submitSave`)
 - `frontend/apps/staff-console/src/app/maternity/maternity-list.ts` (`submitCreate`)
 
+### High: Admissions' own New Admission dialog was never included in the raw-UUID picker sweep
+
+Found live during QA testing (2026-09-01): the earlier "raw patient/admission UUID" picker sweep
+(§ above, OT/Maternity/Vaccination/Orders/Nursing/SSU) never actually touched Admissions' own
+`admission-list.ts` — the New Admission dialog's Patient ID, Admitting Doctor ID, and Bed ID were
+still raw-UUID text fields, and the list's own Ward/Patient filters were too, even though every
+other module was swept. Ironic given Admissions is the module the "Ward/Bed Board" and
+bed-transfer-picker work (§112/§113) originated from — that work touched `admission-detail.ts`'s
+transfer flow, never `admission-list.ts`'s create flow.
+
+**Resolved (2026-09-01):** Patient — server-searched `p-select`, matching Orders/Nursing/OT/
+Maternity/Vaccination/SSU. Admitting Doctor — bulk-loaded picker via
+`UsersApiService.listDirectory('Doctor')`, matching Appointments. Ward+Bed — a cascading picker
+(pick a ward, then an available bed in it), reusing the exact shape of
+`admission-detail.ts`'s existing transfer-ward flow rather than inventing a new pattern. List
+filters: Ward is now a bulk-loaded picker, Patient a search picker. Not live-verified locally (the
+dev Postgres port was held by an unrelated project's container at the time); covered by clean
+typecheck and 6 new/updated tests.
+
+- `frontend/apps/staff-console/src/app/admissions/admission-list.ts`
+- `frontend/apps/staff-console/src/app/admissions/admission-list.html`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
