@@ -1250,6 +1250,22 @@ PRD §6.2 describes fine-grained scoping as part of the design intent — explic
 - `backend/code/apps/api/src/nursing/nursing.service.ts`
 - `backend/code/apps/api/src/clinical/vitals/`
 
+**Resolved (2026-09-01):** added an optional `wardId` to staff accounts (migration
+`0096-add-account-ward.ts`), threaded through the JWT into `TenantContextService` exactly like the
+existing `patientId` scoping pattern (`AuthContextMiddleware` → `RequestContext` →
+`TenantContextMiddleware` → `getWardId()`). `NursingService` (tasks + MAR, both list and action
+methods) and `VitalsService` (create/read/update/void/listByPatient) each enforce it per-method: an
+account with no `wardId` keeps today's tenant-wide access (product decision — "if no wards are
+defined, she can access tenant level"); a ward-assigned account is rejected with `ForbiddenException`
+outside her ward. Vitals has no `admissionId` of its own, so it resolves the patient's current
+active admission's ward; a ward-assigned nurse recording vitals for a patient with no active
+admission at all is denied (product decision, the stricter of the two options, over silently
+allowing an unscoped write). Admin assigns/clears the ward via `PATCH /accounts/:id/ward`
+(`AccountsService.setWard`, validated against `wards`), exposed on the account detail screen
+(`frontend/apps/staff-console/src/app/users/user-detail.ts`). Verified live end-to-end: in-ward
+write succeeds, out-of-ward and never-admitted are both denied, and an unassigned nurse retains
+tenant-wide access.
+
 ### Medium: No role-scoped "today" dashboard for any of the three roles
 
 **Resolved (2026-09-01):** added `/dashboard` with role-conditional widgets (Receptionist: today's

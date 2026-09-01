@@ -4211,3 +4211,41 @@ otherwise-unrelated modules. Treat these as house rules for every new screen, no
 None of these are caught by `tsc --build`, `nx test`, or `nx build` — they require either a
 targeted grep sweep (`grep -rn` for icon-only `p-button`/bare `<label>` without `for`/color-only
 `<span>` patterns) or a manual pass, the same discovery method used here.
+
+## 111. Manual per-method row-level scoping via an optional JWT claim (2026-09-01)
+
+Nurse ward-scoping (`review-comments.md`'s "PRD-promised ward-scoped row-level access for Nurse")
+is the second instance of a pattern first established by the patient-portal's `patientId` scoping
+— use this as the template for any future "restrict this role to a subset of tenant rows" feature,
+rather than inventing a new mechanism (a generic guard/interceptor was considered and rejected: it
+would need to know per-entity how to resolve "is this row in scope," which is exactly the part
+that's genuinely different per module).
+
+- **Optional claim, absent means unrestricted.** Add a nullable column to `accounts`
+  (`wardId uuid`, migration `0096-add-account-ward.ts`) rather than a required one — an account
+  with the claim unset keeps today's tenant-wide behavior. This is what makes the feature
+  incrementally adoptable: existing accounts are unaffected until an admin opts one in.
+- **Claim flows through the same four hops as every other JWT-derived value**: embedded in
+  `buildAccessPayload()` at login/refresh (`auth.service.ts`) → `AccessTokenPayload`
+  (`auth-context.middleware.ts`) → `RequestContext` (`request-context.ts`) →
+  `RequestContextStore`, read via a `getXxx()` accessor (`tenant-context.service.ts`). Add the
+  field at all four points in the same commit — a claim wired at only some of them fails silently
+  (e.g. present in the JWT but never reaching `AsyncLocalStorage`).
+- **Enforcement is manual, per-method, at the top of each service method that touches the scoped
+  entity** — not a generic guard. `NursingService`/`VitalsService`'s `assertWardAccess*` private
+  methods are the template: a no-op when the actor's claim is unset, a raw cross-module query
+  (never an imported entity — see §"cross-module reference" convention) to resolve the target
+  row's scope value, `ForbiddenException` on mismatch. An unfiltered *list* method needs a second
+  helper (`scopeToOwnWard`) that adds a `WHERE` subquery instead of throwing — listing is "show
+  what's in scope," not "assert one row is in scope."
+- **A dependent entity with no scope column of its own resolves it transitively.** `Vital` has no
+  `wardId`; `assertWardAccessForPatient` looks up the patient's current active admission and uses
+  *its* ward. When the transitive path can be absent entirely (a patient with no active admission),
+  get an explicit product decision on allow-vs-deny rather than picking one — this repo chose deny
+  (see the resolved finding above), the stricter option, because a silent unscoped write is worse
+  than a nurse needing an admin to fix a wrongly-scoped account.
+- **The admin-facing assignment endpoint validates against the owning module's table via raw
+  query** (`AccountsService.setWard` → `SELECT id FROM wards WHERE id = $1 AND "isActive" = true
+  AND "deletedAt" IS NULL`), same cross-module-raw-query rule as the enforcement side. `null`
+  clears the assignment; the DTO's `@IsOptional()` (not a separate "clear" endpoint) is what makes
+  that possible while still validating a non-null uuid.
