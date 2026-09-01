@@ -851,7 +851,7 @@ was found during.
 - `frontend/apps/staff-console/src/app/accounting/accounting-console.html:344`
 - `frontend/apps/staff-console/src/app/accounting/accounting-console.html:352`
 
-**Resolved (2026-08-30):** balance check now compares integer paise (`toPaise()`, `Math.round(amount * 100)`) instead of raw floats. Added `journalHasLineWithBothDebitAndCredit` and `journalHasAmountWithoutAccount` getters that both disable Save, closing the single-line-both-sides and amount-without-account gaps in the same pass.
+**Resolved (2026-08-30):** balance check now compares integer paise (`toPaise()`, `Math.round(amount * 100)`) instead of raw floats. Added `journalHasLineWithBothDebitAndCredit` and `journalHasAmountWithoutAccount` getters that both disable Save, closing the single-line-both-sides and amount-without-account gaps in the same pass. **Verified live on QA (2026-09-01):** a real 0.10 + 0.20 debit vs 0.30 credit entry correctly cleared the "must balance" error and saved (`JRN-2026-00001`), confirming the exact IEEE-754 edge case this fix targets.
 
 ### High: Payroll "Mark Paid" can be double-submitted and swallows its own failure
 
@@ -1711,6 +1711,20 @@ pending redeploy.
 
 - `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.ts`
 - `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.html`
+
+### Low: Payroll's Year fields render with a thousands separator ("2,026")
+
+Found live during QA testing (2026-09-01) while verifying the earlier journal-balance and
+confirmation-dialog fixes: both Payroll `p-inputNumber` Year fields (the list filter bar and the
+Run Monthly Payroll dialog) default to PrimeNG's `useGrouping: true`, so a 4-digit year displays
+with a locale thousands separator — "2,026" instead of "2026". Cosmetic only, the bound value was
+never actually a formatted string, but reads as wrong/unprofessional on every payroll run.
+
+**Resolved (2026-09-01):** added `[useGrouping]="false"` to both. Checked the rest of the app for
+the same pattern — `fixed-assets-console.html`'s "Useful Life (years)" field is a small duration
+count, not a calendar year, so it doesn't trigger the same visual bug and was left alone.
+
+- `frontend/apps/staff-console/src/app/payroll/payroll-list.html`
 
 ## Open Question
 
