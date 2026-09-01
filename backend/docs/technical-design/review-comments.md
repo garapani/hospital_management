@@ -452,6 +452,24 @@ The backend exposes `PATCH /orders/:id/items/:itemId/complete` and `.../cancel` 
 - `frontend/apps/staff-console/src/app/patients/encounters-api.service.ts:85`
 - `frontend/apps/staff-console/src/app/encounters/encounters-api.service.ts:76`
 
+**Resolved (2026-09-01):** deleted both `patients/`-local copies; `patient-detail.ts` now imports
+the canonical service each domain module already owned (`vitals/vitals-api.service.ts`,
+`encounters/encounters-api.service.ts`) — matching how it already imported
+`AdmissionsApiService`/`OrdersApiService`/etc. from their own folders, making the `patients/`-local
+duplicates the actual outlier, not the norm. Reconciled the two divergent shapes field-by-field
+against the real backend entities rather than picking one wholesale: `patients/`'s copies had the
+fuller field set (`appointmentId`, `updatedAt`, `Prescription.status` — all real, confirmed against
+the entities) but wrongly typed nullable columns as non-null-optional; `vitals/`/`encounters/`'s
+copies had correct nullable typing (`| null`, matching TypeORM's actual behavior for a nullable
+column with no value) but had silently dropped those same real fields. Kept the fuller field set
+with the correct nullable typing, standardized on `encounters/`'s optional-`limit` `get*ByPatient`
+naming, and kept Vitals' `update`/`voidVital` methods (real, backend-backed, just unused by either
+current consumer — confirmed via a full-app grep, not assumed). Moved both services' HTTP-level
+spec files to their canonical location, adding coverage for `update`/`voidVital` which had none
+before. Verified live: full create→list→void round trip on the standalone Vitals screen, and both
+consumers' read paths (patient-detail's tabs, the standalone Encounters screen) with zero
+console/network errors. See `Development-Standards.md` §124 for the general pattern.
+
 ### Module group: specialty care (`nursing`, `maternity`, `ot`, `ssu`, `cssd`, `vaccination`)
 
 ### High: Write actions in nursing, OT, maternity, vaccination and CSSD are never permission-gated

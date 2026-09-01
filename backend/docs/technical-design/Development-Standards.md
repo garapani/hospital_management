@@ -4589,3 +4589,26 @@ and be safe to run standalone, since it's the kind of data other engineers reach
 (to unblock a screen, populate a picker, reproduce a bug) independent of whatever transactional
 state the tenant happens to be in — a single shared "have we seeded at all" gate silently blocks
 re-running just the part that's actually needed.
+
+## 124. Reconciling two divergent API-service copies: check both against the real backend entity, don't just pick a winner
+
+Collapsed `patients/vitals-api.service.ts` + `vitals/vitals-api.service.ts` into one, and the same
+for `encounters/`. Both copies were wrong in different, complementary ways — one had the fuller
+field set but non-null-optional typing on columns that are actually nullable; the other had correct
+nullable typing but had silently dropped real fields (`appointmentId`, `updatedAt`,
+`Prescription.status`). Diffing the two files against each other doesn't tell you which one to
+trust; check both against the backend entity (`@Column({ nullable: true })` means the field really
+can be `null`, not just "optional" — TypeORM returns `null` for an unset nullable column, not an
+omitted key, so `field?: T` typing is actively wrong there, not just imprecise) and merge the
+correct parts of each, don't pick a wholesale winner.
+
+Before deleting either copy, grep the whole app for every call site of every method on the class
+being removed — don't assume a method is dead just because it looks unused from reading the one
+file. `patients/vitals-api.service.ts`'s `update()`/`void()` genuinely had zero callers (confirmed,
+not assumed) and were kept anyway, renamed only (`void` → `voidVital`, avoiding the reserved-word
+collision) — they're real, backend-backed endpoints a future screen may need, and "duplicate
+cleanup" isn't licence to also delete working-but-currently-unused functionality.
+
+When the canonical file already has an HTTP-level `HttpTestingController` spec and the copy being
+deleted also does, move the deleted copy's spec to the canonical location rather than discarding it
+— don't leave the merged service with only the thinner of the two test files' coverage.
