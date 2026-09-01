@@ -4312,3 +4312,49 @@ shared mechanism instead:
   `ApiClientService`'s dependency chain), not an obviously-related error — recognize that error
   shape as "a spec is missing a `DirectoryResolverService` provider," not an `ApiClientService`
   problem.
+
+## 114. A server-searched `p-select` for large-cardinality pickers (patients), not a bulk-loaded one (2026-09-01)
+
+The Appointments Doctor/Department pickers (§ the resolved "raw-UUID text inputs" finding)
+bulk-load every option once and let `p-select`'s built-in `[filter]="true"` filter client-side —
+correct for staff/department lists, wrong for patients (thousands of rows, unbounded). Orders' and
+Nursing's patient pickers use the same `p-select` component but wire its `(onFilter)` output to a
+debounced server search instead:
+
+```html
+<p-select
+  [options]="patientOptions()" [ngModel]="patientIdFilter()" (ngModelChange)="patientIdFilter.set($event)"
+  [filter]="true" (onFilter)="onPatientFilterSearch($event.filter)" [loading]="patientSearching()"
+  emptyFilterMessage="Type at least 2 characters to search" placeholder="Search for a patient"
+></p-select>
+```
+
+```ts
+onPatientFilterSearch(query: string): void {
+  clearTimeout(this.patientSearchTimer);
+  const q = query.trim();
+  if (q.length < 2) { this.patientOptions.set([]); return; }
+  this.patientSearchTimer = setTimeout(() => {
+    this.patientSearching.set(true);
+    this.patientsApi.search({ page: 1, limit: 10, q }).subscribe({
+      next: (res) => { this.patientOptions.set(res.data.map((p) => ({ label: ..., value: p.id }))); this.patientSearching.set(false); },
+      error: () => this.patientSearching.set(false),
+    });
+  }, 300);
+}
+```
+
+- Plain `setTimeout`/`clearTimeout` debounce, not an rxjs `Subject`+`debounceTime` — no typeahead
+  in this codebase uses rxjs for this, and a plain timer needs no `OnDestroy` cleanup since it's
+  harmless if it fires after the component's gone (the `subscribe` just updates a signal nobody
+  reads anymore).
+- **If an id arrives pre-selected** (a query param, a value carried over from another picker), the
+  picker's `[options]` must be seeded with that one id's label via a direct lookup
+  (`patientsApi.getById`) — otherwise `p-select` shows a blank/raw value until the user types a
+  search, even though a valid selection is already bound.
+- **When the entity you actually need (an admission) isn't independently searchable**, pick the
+  entity that is (its patient) and derive the rest — Nursing's picker searches patients, then
+  resolves the patient's one active admission via `GET /admissions?patientId=&status=Admitted`
+  (the uniqueness of "one active admission per patient" is what makes this safe, not a general
+  pattern). Don't build a second bespoke search index just to make the picker's `value` match the
+  id an endpoint technically wants.

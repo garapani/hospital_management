@@ -1305,10 +1305,18 @@ deliberately separate from admin-only `identity.accounts.manage` — see that co
 endpoint previously let Receptionist/Doctor look up staff names at all; Department reuses the
 existing `/departments` list, filtered to `isAppointmentApplicable`. Verified live end-to-end.
 **Further resolved (2026-09-01):** the bed-transfer modal's Destination Bed ID is now a ward +
-available-beds picker (see the ward/bed board finding above). **Still open:** Orders' Patient ID
-filter and Nursing's Admission ID filter are still raw-UUID text inputs — left for a follow-up
-pass; each needs its own backing lookup (patient search already exists and is reusable; an
-admission picker does not yet).
+available-beds picker (see the ward/bed board finding above).
+
+**Fully resolved (2026-09-01):** Orders' Patient ID filter (list + New Order form) and Nursing's
+Admission ID filter are now server-searched patient pickers (`p-select` + `(onFilter)`, debounced
+300ms, matching the Appointments Doctor/Department pickers' UI language). Nursing's picker searches
+patients, not admissions directly — a patient can only have one active admission at a time
+(backend-enforced), so selecting a patient resolves straight to their current admission via
+`GET /admissions?patientId=&status=Admitted`; if none is found the nurse gets a toast instead of a
+silently-empty screen. The New Task/Schedule Medication modals' own Admission ID fields, previously
+a *second* editable uuid input even though they defaulted from the filter, are now a read-only
+resolved patient/ward display — and both "New Task" and "Schedule Medication" only render once an
+admission is actually resolved, not just on `canManage`.
 
 Both the appointment list's filters and the create-appointment form bind `doctorId`/`departmentId` to a plain `pInputText`, labeled "Doctor ID"/"Department ID" — a receptionist booking a walk-in has no way to pick "Dr. Sharma, Cardiology" from a list and must already know the doctor's UUID. The same raw-UUID pattern recurs on the Orders list (Patient ID filter), the Nursing console (Admission ID filter), and the bed-transfer modal (Destination Bed ID) — a systemic issue, not isolated to one screen.
 
