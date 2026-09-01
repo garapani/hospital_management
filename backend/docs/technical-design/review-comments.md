@@ -1184,6 +1184,20 @@ predates this fix). `Completed`/`NoShow` still have no transition mechanism — 
 
 ### High: No allergy field exists anywhere in the system — a patient-safety gap for Doctor and Nurse
 
+**Resolved (2026-09-01):** added a free-text `allergies` column to `patients` (tenant migration
+`0095-add-patient-allergies.ts`, nullable so it backfills existing tenants cleanly — verified via
+`migrate-tenants-backfill.integration-spec.ts` and a real `migrate-tenants` run against the dev
+`demo` tenant), plumbed through `CreatePatientDto`/`UpdatePatientDto`/`PatientsService`, and
+surfaced on the frontend: a persistent red alert banner at the top of the patient chart (visible
+regardless of which tab is open, including while writing a Prescription) plus a Demographics grid
+tile, both driven off the same `patient.allergies` field, and an edit field on both the
+registration and edit-profile forms. Scope note: this closes the *data capture and visibility*
+half of the gap — an active interaction check (blocking/warning when a prescribed drug matches a
+recorded allergy) is not implemented; that would need a drug-interaction rule engine, out of scope
+here. Also scope note: the Nursing console's `administer()` still has no allergy surfacing, because
+it has no patient context to check against at all — that's the separate "no link from Admission to
+Nursing tasks/MAR" gap below, not re-solved by this change.
+
 Exhaustive grep for "allerg*" across both `frontend/apps/staff-console` and `backend/code` returns zero hits. There is no allergy capture on the patient record, no allergy banner on the chart, and no check against it when a Doctor writes a prescription (`patient-detail.html`'s Prescriptions tab) or a Nurse administers a dose (`nursing-console.ts`'s MAR `administer()`). For a system positioning itself as an EMR with prescribing and medication administration, this is a safety-critical omission, not a nice-to-have.
 
 - `frontend/apps/staff-console/src/app/patients/patient-detail.html:319-335` (Prescriptions tab, no allergy check)
@@ -1263,6 +1277,23 @@ Grep for handoff/hand-off across both frontend and backend returns nothing — n
 PRD §5.6 frames Fraction & Incentive as covering "doctor incentives," and the module/nav entry exists, but `seed-rbac-catalog.ts` does not grant `fraction.read` to the Doctor role — worth a scope check, though low daily-workflow impact.
 
 - `backend/code/apps/api/src/rbac/seed-rbac-catalog.ts` (Doctor grant list vs. `fraction.read`)
+
+### High: Patient "Edit Profile" dialog does not open — discovered 2026-09-01, unrelated to the allergies work in progress at the time
+
+While live-verifying the allergy-field feature (below), the "Edit Profile" button on the patient
+chart was found to do nothing when clicked: `PatientDetail.openEditModal()`'s unit tests pass
+(they call the method directly and assert on `editForm`/`showEditModal` signals), but driving the
+actual button click in a running browser produces zero `.p-dialog` elements and the underlying
+`#editFirstName` input never appears — confirmed on completely unmodified `git stash`-clean code,
+so this is pre-existing and unrelated to the allergies change. Root cause not yet isolated (not a
+console error — zero JS exceptions accompany the failed click); candidates include a PrimeNG
+`p-dialog` rendering/animation issue specific to this dialog instance, or something about how
+`showEditModal`'s two-way binding interacts with this component's change-detection. Whatever the
+cause, a receptionist or admin currently has no working UI path to correct a patient's demographics
+after registration (API-level PATCH still works, confirmed via curl). Needs dedicated triage.
+
+- `frontend/apps/staff-console/src/app/patients/patient-detail.ts` (`openEditModal`, `showEditModal`)
+- `frontend/apps/staff-console/src/app/patients/patient-detail.html:458` (`Edit Profile` `p-dialog`)
 
 ## Open Question
 
