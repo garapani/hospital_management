@@ -1280,17 +1280,31 @@ PRD §5.6 frames Fraction & Incentive as covering "doctor incentives," and the m
 
 ### High: Patient "Edit Profile" dialog does not open — discovered 2026-09-01, unrelated to the allergies work in progress at the time
 
-While live-verifying the allergy-field feature (below), the "Edit Profile" button on the patient
-chart was found to do nothing when clicked: `PatientDetail.openEditModal()`'s unit tests pass
-(they call the method directly and assert on `editForm`/`showEditModal` signals), but driving the
-actual button click in a running browser produces zero `.p-dialog` elements and the underlying
-`#editFirstName` input never appears — confirmed on completely unmodified `git stash`-clean code,
-so this is pre-existing and unrelated to the allergies change. Root cause not yet isolated (not a
-console error — zero JS exceptions accompany the failed click); candidates include a PrimeNG
-`p-dialog` rendering/animation issue specific to this dialog instance, or something about how
-`showEditModal`'s two-way binding interacts with this component's change-detection. Whatever the
-cause, a receptionist or admin currently has no working UI path to correct a patient's demographics
-after registration (API-level PATCH still works, confirmed via curl). Needs dedicated triage.
+**Resolved (2026-09-01) — turned out to be page-wide, not dialog-specific:** root cause was
+`EncountersApiService.getNotesByPatient/getDiagnosesByPatient/getPrescriptionsByPatient` being
+typed and consumed as a raw array when the backend has always returned the paginated
+`{ data, meta }` shape (matching every other patient-chart tab). `loadNotes()` stored the whole
+response object into the `notes` signal, so `pagedNotes()`'s `.slice()` call threw on every load —
+an uncaught exception inside a `computed()`, evaluated during Angular's change-detection pass,
+which aborted rendering for the *entire* page. That's why **every** `p-dialog` on the route failed
+to open, including the app shell's completely unrelated "Change Password" dialog — not a
+`p-dialog`/`showEditModal` issue at all, that was a wrong lead in the paragraph below. Fixed by
+correcting the three methods' types and extracting `.data` in the loaders (full write-up in the fix
+commit). The existing test suite had a matching test-double bug — mocks returned raw arrays,
+which is why 517 green tests never caught this — also fixed.
+
+Original (partially incorrect) write-up, kept for the record: While live-verifying the
+allergy-field feature (below), the "Edit Profile" button on the patient chart was found to do
+nothing when clicked: `PatientDetail.openEditModal()`'s unit tests pass (they call the method
+directly and assert on `editForm`/`showEditModal` signals), but driving the actual button click in
+a running browser produces zero `.p-dialog` elements and the underlying `#editFirstName` input
+never appears — confirmed on completely unmodified `git stash`-clean code, so this is pre-existing
+and unrelated to the allergies change. Root cause not yet isolated (not a console error — zero JS
+exceptions accompany the failed click); candidates include a PrimeNG `p-dialog` rendering/animation
+issue specific to this dialog instance, or something about how `showEditModal`'s two-way binding
+interacts with this component's change-detection. Whatever the cause, a receptionist or admin
+currently has no working UI path to correct a patient's demographics after registration (API-level
+PATCH still works, confirmed via curl). Needs dedicated triage.
 
 - `frontend/apps/staff-console/src/app/patients/patient-detail.ts` (`openEditModal`, `showEditModal`)
 - `frontend/apps/staff-console/src/app/patients/patient-detail.html:458` (`Edit Profile` `p-dialog`)
