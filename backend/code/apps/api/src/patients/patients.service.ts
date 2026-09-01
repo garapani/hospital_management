@@ -98,6 +98,7 @@ export class PatientsService {
         phoneNumber: dto.phoneNumber ?? null,
         email: dto.email ?? null,
         bloodGroup: dto.bloodGroup ?? null,
+        allergies: dto.allergies ?? null,
         governmentIdType: dto.governmentIdType ?? null,
         governmentIdNumber: dto.governmentIdNumber ?? null,
         addresses: (dto.addresses ?? []).map((addr) => manager.create(PatientAddress, addr)),
@@ -163,6 +164,7 @@ export class PatientsService {
       if (dto.phoneNumber !== undefined) patient.phoneNumber = dto.phoneNumber;
       if (dto.email !== undefined) patient.email = dto.email;
       if (dto.bloodGroup !== undefined) patient.bloodGroup = dto.bloodGroup;
+      if (dto.allergies !== undefined) patient.allergies = dto.allergies;
       if (dto.governmentIdType !== undefined) patient.governmentIdType = dto.governmentIdType;
       if (dto.governmentIdNumber !== undefined) patient.governmentIdNumber = dto.governmentIdNumber;
 

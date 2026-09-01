@@ -38,6 +38,9 @@ export class Patient extends SoftDeletableEntity {
   @Column({ type: 'varchar', length: 10, nullable: true })
   bloodGroup!: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  allergies!: string | null;
+
   @Column({ type: 'varchar', length: 50, nullable: true })
   governmentIdType!: string | null;
 

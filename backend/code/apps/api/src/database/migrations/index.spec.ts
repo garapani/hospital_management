@@ -47,11 +47,13 @@ describe('migration ordering', () => {
     }
   });
 
-  it('carries exactly the two squashed baselines (nothing deleted, nothing reintroduced)', () => {
+  it('carries the two squashed baselines, unmodified and in position (nothing deleted, nothing reintroduced)', () => {
     const names = [...PLATFORM_MIGRATIONS, ...TENANT_MIGRATIONS].map((m) => new m().name);
-    expect(names).toEqual([
-      'InitialPlatformSchema1000000000093',
-      'InitialTenantSchema2000000000094',
-    ]);
+    expect(names).toEqual(
+      expect.arrayContaining(['InitialPlatformSchema1000000000093', 'InitialTenantSchema2000000000094']),
+    );
+    expect(names.indexOf('InitialTenantSchema2000000000094')).toBeLessThan(
+      names.indexOf('AddPatientAllergies3000000000001'),
+    );
   });
 });

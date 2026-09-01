@@ -263,11 +263,13 @@ describe('PatientsController (integration)', () => {
         .send({
           email: 'bob.marley@example.com',
           bloodGroup: 'O+',
+          allergies: 'Latex, Penicillin',
         });
 
       expect(patchRes.status).toBe(200);
       expect(patchRes.body.email).toBe('bob.marley@example.com');
       expect(patchRes.body.bloodGroup).toBe('O+');
+      expect(patchRes.body.allergies).toBe('Latex, Penicillin');
     });
   });
 

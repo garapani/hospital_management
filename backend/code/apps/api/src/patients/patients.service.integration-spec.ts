@@ -71,6 +71,37 @@ describe('PatientsService (integration)', () => {
     });
   });
 
+  it('stores and updates allergies as free text', async () => {
+    await ctx.inTenant(async () => {
+      const created = await service.create({
+        firstName: 'Nadia',
+        lastName: 'Khan',
+        gender: 'Female',
+        phoneNumber: '9123456790',
+        allergies: 'Penicillin, Sulfa drugs',
+      });
+      expect(created.allergies).toBe('Penicillin, Sulfa drugs');
+
+      const fetched = await service.findOne(created.id);
+      expect(fetched.allergies).toBe('Penicillin, Sulfa drugs');
+
+      const updated = await service.update(created.id, { allergies: 'No known allergies' });
+      expect(updated.allergies).toBe('No known allergies');
+    });
+  });
+
+  it('leaves allergies as null when not provided at creation', async () => {
+    await ctx.inTenant(async () => {
+      const created = await service.create({
+        firstName: 'Omar',
+        lastName: 'Farooq',
+        gender: 'Male',
+        phoneNumber: '9123456791',
+      });
+      expect(created.allergies).toBeNull();
+    });
+  });
+
   it('replaces addresses and kins on update instead of silently ignoring them', async () => {
     await ctx.inTenant(async () => {
       const created = await service.create({

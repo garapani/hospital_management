@@ -96,6 +96,10 @@ export class CreatePatientDto {
 
   @IsOptional()
   @IsString()
+  allergies?: string;
+
+  @IsOptional()
+  @IsString()
   governmentIdType?: string;
 
   @IsOptional()

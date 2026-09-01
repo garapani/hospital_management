@@ -55,6 +55,10 @@ export class UpdatePatientDto {
 
   @IsOptional()
   @IsString()
+  allergies?: string;
+
+  @IsOptional()
+  @IsString()
   governmentIdType?: string;
 
   @IsOptional()
