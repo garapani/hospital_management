@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -19,6 +20,7 @@ import { CreateAccountDto, ChangeOwnPasswordDto, ResetPasswordDto } from './dto/
 import { AssignRoleDto } from './dto/assign-role.dto.js';
 
 const REQUIRED_PERMISSION = 'identity.accounts.manage';
+const DIRECTORY_PERMISSION = 'identity.accounts.directory';
 
 function toAccountResponse(account: Account): Omit<Account, 'passwordHash'> {
   const { passwordHash: _passwordHash, ...rest } = account;
@@ -59,6 +61,21 @@ export class AccountsController {
   async listRoles() {
     const roles = await this.accountsService.listRoles();
     return roles.map(r => ({ name: r.name, description: r.description }));
+  }
+
+  /**
+   * Minimal-field staff lookup (id/displayName/username only — no email, lock state, etc.) so a
+   * screen that needs to pick "which doctor" doesn't need identity.accounts.manage, an
+   * admin-only permission Receptionist/Doctor don't hold. Gated separately from the full account
+   * list for exactly that reason.
+   */
+  @Get('directory')
+  @RequirePermission(DIRECTORY_PERMISSION)
+  async listDirectory(@Query('role') role?: string) {
+    if (!role) {
+      throw new BadRequestException('role query parameter is required');
+    }
+    return this.accountsService.listDirectory(role);
   }
 
   @Get()

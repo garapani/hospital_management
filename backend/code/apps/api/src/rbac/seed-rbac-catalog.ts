@@ -108,6 +108,14 @@ const PERMISSION_CATALOG: PermissionSeed[] = [
     description: 'Create, list, deactivate, unlock accounts and manage role assignments.',
   },
   {
+    // Deliberately separate from identity.accounts.manage: a receptionist/doctor picking "which
+    // doctor" for an appointment needs a name lookup, not the full admin-only account list (email,
+    // lock state, role management). See review-comments.md's "UUID filters instead of name
+    // pickers" finding.
+    name: 'identity.accounts.directory',
+    description: 'Look up staff by role (id/name only) — e.g. picking a doctor for an appointment.',
+  },
+  {
     name: 'system-admin.tenants.manage',
     description: 'Provision, list, view, suspend, and reactivate hospital tenants.',
   },
@@ -441,6 +449,13 @@ interface RolePermissionMapping {
 const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Hospital Admin', permissionName: 'identity.accounts.manage' },
   { roleName: 'Super Admin', permissionName: 'identity.accounts.manage' },
+  // identity.accounts.directory: granted to whichever roles actually pick a doctor for an
+  // appointment (appointment.manage holders), plus admins for consistency — not the whole staff
+  // roster, which stays gated behind identity.accounts.manage above.
+  { roleName: 'Hospital Admin', permissionName: 'identity.accounts.directory' },
+  { roleName: 'Super Admin', permissionName: 'identity.accounts.directory' },
+  { roleName: 'Receptionist / Front Desk', permissionName: 'identity.accounts.directory' },
+  { roleName: 'Doctor', permissionName: 'identity.accounts.directory' },
   { roleName: 'Super Admin', permissionName: 'system-admin.tenants.manage' },
   // Role-catalog management is platform-only: only the Super Admin may create/list roles.
   // Hospital admins map (assign) roles to users through the tenant-scoped /accounts/roles

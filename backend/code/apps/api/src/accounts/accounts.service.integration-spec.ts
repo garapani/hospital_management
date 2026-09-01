@@ -119,6 +119,65 @@ describe('AccountsService (integration)', () => {
     );
   });
 
+  it('lists only active accounts holding an active assignment of the named role, minimal fields, sorted by name', async () => {
+    await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
+        username: 'dir.zeta',
+        email: 'zeta@example.com',
+        displayName: 'Dr. Zeta',
+        password: 'password-zeta',
+        roleName: 'Doctor',
+      }),
+    );
+    await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
+        username: 'dir.amara',
+        email: 'amara@example.com',
+        displayName: 'Dr. Amara',
+        password: 'password-amara',
+        roleName: 'Doctor',
+      }),
+    );
+    const deactivated = await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
+        username: 'dir.deactivated',
+        email: 'deact@example.com',
+        displayName: 'Dr. Deactivated',
+        password: 'password-deact',
+        roleName: 'Doctor',
+      }),
+    );
+    await ctx.inTenant(() => ctx.accountsService.deactivateAccount(deactivated.id));
+    await ctx.inTenant(() =>
+      ctx.accountsService.createStaffAccount({
+        username: 'dir.nurse',
+        email: 'nurse@example.com',
+        displayName: 'Nurse Nia',
+        password: 'password-nurse',
+        roleName: 'Nurse',
+      }),
+    );
+
+    const doctors = await ctx.inTenant(() => ctx.accountsService.listDirectory('Doctor'));
+    const names = doctors.map((d) => d.displayName);
+
+    // Other tests in this file share the same tenant schema and also create Doctor accounts, so
+    // assert presence/shape/exclusion rather than the exact array (matches the established
+    // pattern in "lists accounts in the current tenant with limit/offset" above).
+    expect(names).toEqual(expect.arrayContaining(['Dr. Amara', 'Dr. Zeta']));
+    expect(names).not.toContain('Dr. Deactivated');
+    expect(names).not.toContain('Nurse Nia');
+    // Sorted by displayName: Amara comes before Zeta wherever both land in the fuller list.
+    expect(names.indexOf('Dr. Amara')).toBeLessThan(names.indexOf('Dr. Zeta'));
+    const amara = doctors.find((d) => d.username === 'dir.amara');
+    expect(amara).toEqual({ id: expect.any(String), displayName: 'Dr. Amara', username: 'dir.amara' });
+  });
+
+  it('returns an empty list for an unknown role name', async () => {
+    const result = await ctx.inTenant(() => ctx.accountsService.listDirectory('Not A Real Role'));
+    expect(result).toEqual([]);
+  });
+
   it('gets a single account by id with its roles', async () => {
     const created = await ctx.inTenant(() =>
       ctx.accountsService.createStaffAccount({

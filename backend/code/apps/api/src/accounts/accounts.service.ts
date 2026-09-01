@@ -451,6 +451,31 @@ export class AccountsService {
     return query.getMany();
   }
 
+  /**
+   * Active staff holding an active assignment of the named role, minimal fields only (no email,
+   * lock state, etc.) — the read path for "pick a doctor" style screens, which shouldn't need
+   * identity.accounts.manage just to look up a name. Same cross-schema two-step as attachRoles():
+   * Role lives in the platform dataSource, AccountRole/Account are tenant-scoped.
+   */
+  async listDirectory(roleName: string): Promise<Array<{ id: string; displayName: string; username: string | null }>> {
+    const role = await this.dataSource.getRepository(Role).findOne({ where: { name: roleName } });
+    if (!role) {
+      return [];
+    }
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const accountRoles = await manager.getRepository(AccountRole).find({ where: { roleId: role.id, isActive: true } });
+      const accountIds = accountRoles.map((accountRole) => accountRole.accountId);
+      if (accountIds.length === 0) {
+        return [];
+      }
+      const accounts = await manager.getRepository(Account).find({
+        where: { id: In(accountIds), isActive: true },
+        order: { displayName: 'ASC' },
+      });
+      return accounts.map((account) => ({ id: account.id, displayName: account.displayName, username: account.username }));
+    });
+  }
+
   async getAccountWithRoles(accountId: string): Promise<AccountWithRoles | null> {
     const account = await this.tenantConnection.runInTenantSchema((manager) =>
       manager.getRepository(Account).findOne({ where: { id: accountId } }),

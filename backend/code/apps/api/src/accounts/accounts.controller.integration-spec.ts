@@ -224,6 +224,50 @@ describe('AccountsController (integration)', () => {
     expect(response.body.items.some((a: { username: string }) => a.username === 'ctrl.create.user')).toBe(true);
   });
 
+  describe('GET /accounts/directory', () => {
+    let directoryToken: string;
+
+    beforeAll(async () => {
+      directoryToken = await signTestToken({
+        sub: 'accounts-controller-directory',
+        hospitalId: ctx.tenantId,
+        permissions: ['identity.accounts.directory'],
+      });
+      await request(app.getHttpServer())
+        .post('/accounts')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ username: 'dir.ctrl.doc', email: 'dir.ctrl.doc@example.com', displayName: 'Dr. Ctrl', password: 'password-doc', roleName: 'Doctor' });
+    });
+
+    it('returns minimal-field doctor entries for a caller holding identity.accounts.directory alone', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/accounts/directory')
+        .query({ role: 'Doctor' })
+        .set('Authorization', `Bearer ${directoryToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.some((d: { displayName: string }) => d.displayName === 'Dr. Ctrl')).toBe(true);
+      expect(Object.keys(response.body[0]).sort()).toEqual(['displayName', 'id', 'username']);
+    });
+
+    it('rejects a caller holding only identity.accounts.manage with 403 — the two permissions are deliberately separate', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/accounts/directory')
+        .query({ role: 'Doctor' })
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(response.status).toBe(403);
+    });
+
+    it('fails with 400 when the role query parameter is missing', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/accounts/directory')
+        .set('Authorization', `Bearer ${directoryToken}`);
+
+      expect(response.status).toBe(400);
+    });
+  });
+
   it('gets, deactivates, reactivates, and unlocks a single account', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/accounts')
