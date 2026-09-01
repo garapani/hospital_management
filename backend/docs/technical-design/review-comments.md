@@ -1259,6 +1259,17 @@ Doctor lands on the full patient roster (`/clinical/patients`), Nurse on the ful
 
 ### Medium: Doctor/Department filters on Appointments are raw-UUID text inputs, not name pickers
 
+**Partially resolved (2026-09-01):** the Appointments slice is done — all four fields (list
+filters + create form) are now searchable name pickers. Doctor needed a new backend endpoint
+(`GET /accounts/directory?role=X`, gated on a new `identity.accounts.directory` permission
+deliberately separate from admin-only `identity.accounts.manage` — see that commit) since no
+endpoint previously let Receptionist/Doctor look up staff names at all; Department reuses the
+existing `/departments` list, filtered to `isAppointmentApplicable`. Verified live end-to-end.
+**Still open:** Orders' Patient ID filter, Nursing's Admission ID filter, and the bed-transfer
+modal's Destination Bed ID are all still raw-UUID text inputs — left for a follow-up pass; each
+needs its own backing lookup (patient search already exists and is reusable; admission and bed
+pickers do not yet).
+
 Both the appointment list's filters and the create-appointment form bind `doctorId`/`departmentId` to a plain `pInputText`, labeled "Doctor ID"/"Department ID" — a receptionist booking a walk-in has no way to pick "Dr. Sharma, Cardiology" from a list and must already know the doctor's UUID. The same raw-UUID pattern recurs on the Orders list (Patient ID filter), the Nursing console (Admission ID filter), and the bed-transfer modal (Destination Bed ID) — a systemic issue, not isolated to one screen.
 
 - `frontend/apps/staff-console/src/app/appointments/appointment-list.html:26-33,110,114`
