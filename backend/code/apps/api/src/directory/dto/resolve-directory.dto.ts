@@ -28,4 +28,10 @@ export class ResolveDirectoryDto {
   @ArrayMaxSize(MAX_IDS)
   @IsUUID('4', { each: true })
   bedIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_IDS)
+  @IsUUID('4', { each: true })
+  itemIds?: string[];
 }

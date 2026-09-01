@@ -7,6 +7,7 @@ export interface DirectoryResolveResult {
   doctors: Record<string, { displayName: string }>;
   wards: Record<string, { displayName: string }>;
   beds: Record<string, { displayName: string }>;
+  items: Record<string, { displayName: string }>;
 }
 
 @Injectable()
@@ -42,6 +43,9 @@ export class DirectoryService {
       const beds = input.bedIds?.length
         ? await manager.query(`SELECT id, "bedNumber" FROM beds WHERE id = ANY($1)`, [input.bedIds])
         : [];
+      const items = input.itemIds?.length
+        ? await manager.query(`SELECT id, name FROM inventory_items WHERE id = ANY($1)`, [input.itemIds])
+        : [];
 
       return {
         patients: Object.fromEntries(
@@ -58,6 +62,9 @@ export class DirectoryService {
         ),
         beds: Object.fromEntries(
           beds.map((b: { id: string; bedNumber: string }) => [b.id, { displayName: b.bedNumber }]),
+        ),
+        items: Object.fromEntries(
+          items.map((i: { id: string; name: string }) => [i.id, { displayName: i.name }]),
         ),
       };
     });
