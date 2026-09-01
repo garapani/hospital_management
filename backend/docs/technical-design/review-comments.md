@@ -1219,6 +1219,15 @@ Exhaustive grep for "allerg*" across both `frontend/apps/staff-console` and `bac
 
 ### High: `root-redirect.guard.ts` hardcodes the `/billing/invoices` landing route for every tenant user, locking Doctor/Nurse out on a refresh
 
+**Resolved (2026-09-01):** `rootRedirectGuard` now calls `login.ts`'s `resolveTenantLandingUrl()`
+directly (same app, no lib-boundary issue) instead of the hardcoded `TENANT_LANDING_URL`, falling
+back to `/login` only for the pre-existing "role has no accessible screens" edge case. Verified
+live with a fresh Doctor-role test account: navigating straight to `/` now lands on
+`/clinical/patients`, not `/login`. `platformGuard`'s own `TENANT_LANDING_URL` fallback (`@org/auth`,
+a tenant user manually browsing into `/platform/*`) was left as-is — the shared lib can't import an
+app-level resolver without restructuring, and it's a much rarer path than a plain page refresh;
+revisit only if that specific case turns out to matter in practice.
+
 The login screen's role-aware landing logic (`ROLE_LANDING_ROUTES` in `login.ts`) is not reused by the guard that handles the bare `/` path (e.g. a page refresh, or the SPA cold-booting on the root URL while a session already exists) — `auth.guard.ts`'s `TENANT_LANDING_URL` is hardcoded to `/billing/invoices` for every non-platform-admin user. Doctor and Nurse hold no `billing.manage` permission, so `permissionGuard(BILLING_MANAGE)` rejects them and bounces them to `/login` even though their session is valid. The common case (logging in through the form) is unaffected; a refresh or deep-link to `/` is not.
 
 - `frontend/apps/staff-console/src/app/root-redirect.guard.ts:6-15`
