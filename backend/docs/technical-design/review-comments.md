@@ -1706,8 +1706,8 @@ module list never included Billing.
 
 **Resolved (2026-09-01):** replaced with the same server-searched `p-select` pattern (debounced
 `onPatientFilterSearch`, `PatientsApiService.search`) used everywhere else. Covered by a new
-debounce test; full suite (597 tests) and a clean `tsc --build` pass. Not yet live-verified on QA —
-pending redeploy.
+debounce test; full suite (597 tests) and a clean `tsc --build` pass. **Verified live on QA
+(2026-09-01)** after redeploy.
 
 - `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.ts`
 - `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.html`
@@ -1723,8 +1723,32 @@ never actually a formatted string, but reads as wrong/unprofessional on every pa
 **Resolved (2026-09-01):** added `[useGrouping]="false"` to both. Checked the rest of the app for
 the same pattern — `fixed-assets-console.html`'s "Useful Life (years)" field is a small duration
 count, not a calendar year, so it doesn't trigger the same visual bug and was left alone.
+**Verified live on QA (2026-09-01)** after redeploy — both fields render "2026", no comma.
 
 - `frontend/apps/staff-console/src/app/payroll/payroll-list.html`
+
+### High: `audit.read` silently stripped from every tenant's JWT on every package tier
+
+Found live during QA testing (2026-09-01): the Audit Trail screen 403'd for `demoadmin` even after
+two RBAC reseeds confirmed the Hospital Admin role does carry `audit.read` in
+`seed-rbac-catalog.ts` (and has since a very early commit, ruling out "recent grant missed a
+reseed" as with the two RBAC findings above). Traced to a second, independent permission gate:
+`PackagesService.filterPermissions` intersects a role's resolved permissions against the tenant's
+package `modules` list via `MODULE_PERMISSION_PREFIXES`, and the `audit` prefix had no entry in
+that map and wasn't in `ALWAYS_ON_PERMISSION_PREFIXES` either — so `audit.read` was silently
+filtered out of every tenant's JWT on every package tier (Basic/Standard/Enterprise), regardless of
+RBAC role. This is exactly the failure mode `PackagesService.warnIfPrefixUnmapped`'s own doc comment
+warns about ("fails closed with no signal"). `BASIC_ROLES` already lists `'Auditor/Compliance'` as
+a default role at every tier, so the compliance trail was clearly meant to be available from Basic
+upward — the module-prefix mapping was just never added.
+
+**Resolved (2026-09-01):** added `audit` to `ALWAYS_ON_PERMISSION_PREFIXES`, matching the existing
+`identity`/`master-data` "core infrastructure, not a tiered feature" precedent. Covered by a new
+assertion in `packages.integration-spec.ts`'s existing Basic-package test; 13/13 tests pass and a
+clean `nx run api:typecheck`. Not yet live-verified on QA — pending redeploy.
+
+- `backend/code/apps/api/src/packages/package-catalog.ts`
+- `backend/code/apps/api/src/packages/packages.integration-spec.ts`
 
 ## Open Question
 
