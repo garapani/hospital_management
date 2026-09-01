@@ -678,6 +678,24 @@ The result inputs are plain `pInputText` with no `type`, no `inputmode`, no nume
 - `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.ts:105-114`
 - `frontend/apps/staff-console/src/app/lab/lab-api.service.ts:81-86`
 
+**Resolved (2026-09-01):** added `computeIsAbnormal`/`hasNumericRange` helpers to `lab.model.ts`,
+mirroring the backend's `computeIsAbnormal` (`lab-workflow.service.ts`) exactly — same numeric-range
+comparison, same fallback to `false` for a qualitative component (only `referenceRangeText`, no
+numeric bounds) or a non-numeric entered value. The Enter Results dialog now uses
+`type="number"`/`inputmode="decimal"` for a component with a numeric range, shows an inline "Outside
+reference range" warning live as the value is typed, and `submitResults()` sends the computed
+`isAbnormal` with each result instead of leaving it unset (previously always defaulting to `false`
+server-side). Scope stayed to the "client-side feedback at entry time" ask from the original
+deferral — no operator-override checkbox for qualitative components, since the deferred note never
+asked for one and the backend has no path to accept one differently than it already does. Not
+live-verified end-to-end: the demo tenant's lab catalog is empty (no categories/tests seeded) and
+no UI exists anywhere to create a lab requisition (only `POST /lab/requisitions` via direct API
+call) — reaching this screen live would mean seeding a full category → test → components → order →
+requisition chain by hand. Covered instead by component tests against the exact backend algorithm
+(`lab-requisition-detail.spec.ts`): a value above/below/inside a numeric range, a qualitative
+component never flagged, and the saved payload's `isAbnormal` matching what the backend would
+independently compute for the same inputs.
+
 ### Medium: `submitResults()` fires N parallel POSTs via `forkJoin`, so a partial failure is unattributable
 
 **Resolved (2026-08-30):** switched to sequential `concatMap` (via `from(components).pipe(concatMap(...), toArray())`) — matches the pessimistic lock's actual serialization anyway, and the error message now correctly tells the user already-saved values are safe to retry (each `enterResult` call is independently idempotent server-side).

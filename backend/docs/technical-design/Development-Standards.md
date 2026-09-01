@@ -4515,3 +4515,26 @@ silently discarded — see `ot-list.spec.ts`'s "does not let a slower earlier re
 later response that resolved first" for the exact shape. A component doing this for the first time
 in its spec file may newly need `provideRouter([])` too, if a previously always-empty table now
 renders rows containing a `routerLink`.
+
+## 121. Duplicate a backend validation/scoring function client-side only when there's a real doc string to pin it to — and it's fine to ship untested-live when the only path to live data is seeding a whole workflow by hand
+
+`lab-requisition-detail.ts`'s new `isValueAbnormal`/`isNumericComponent` duplicate the backend's
+`computeIsAbnormal` (`lab-workflow.service.ts`) logic client-side, for entry-time feedback before
+the round trip. This is a deliberate exception to "don't duplicate business logic" — the backend
+function has a doc comment as of this fix explicitly describing what it does and why, so a future
+change to the range-comparison rule has a fighting chance of being caught (a reviewer or the
+function's own comment prompts "did the client copy need updating too?"). Don't reach for this
+duplication pattern without that anchor — an undocumented backend function copied client-side just
+for a UX nicety is exactly the kind of drift that goes unnoticed for years.
+
+Also: this fix shipped without a live Playwright verification, unlike nearly everything else this
+session. The demo tenant's lab catalog was empty (no categories/tests/components seeded) and no UI
+anywhere creates a lab requisition (`POST /lab/requisitions` has no frontend caller at all — see the
+still-open "no requisition creation" line of a different, already-resolved finding) — reaching the
+Enter Results dialog live would have meant seeding a category → test → components → order →
+requisition chain by direct API calls, disproportionate effort for a low-risk, additive,
+frontend-only UI change (not money, not tenant isolation, not a clinical sign-off gate). Component
+tests asserting the exact same values the backend's algorithm would independently classify
+(in-range, above-range, below-range, qualitative) are the right-sized substitute here — reach for
+live verification when it's cheap relative to the change's risk, not as a uniform ritual regardless
+of cost.
