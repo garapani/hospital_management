@@ -1773,6 +1773,34 @@ modal now show "Demo Hospital Administrator (uuid)".
 - `frontend/apps/staff-console/src/app/audit/audit-list.html`
 - `frontend/apps/staff-console/src/app/audit/audit-list.spec.ts`
 
+### Low: Ward Supply's Stock Balances/Transactions tables showed raw item UUIDs
+
+Found live during QA testing (2026-09-01) while continuing the platform/admin screen sweep: both
+Ward Supply tables (`ward-supply-console.html`) interpolated `balance.itemId`/`txn.itemId` directly
+— the create-side "Receive Stock"/"Consume Stock" dialogs already used a proper Category →
+Sub-category → Item cascading picker, but the read-side tables leaked the raw id, unlike the
+Department column right next to it (already resolved via a local `departmentName()` lookup). This
+was the last remaining raw-UUID display found across the whole session's picker/directory sweep —
+no existing `DirectoryEntityType` covered inventory items, since the directory-resolve endpoint
+only ever needed patient/doctor/ward/bed for prior fixes.
+
+**Resolved (2026-09-01):** extended `/directory/resolve` with an `itemIds` param (plain
+`inventory_items` lookup by id, mirroring the existing four), added `'item'` as a new
+`DirectoryEntityType` on the frontend, and wired both tables through
+`<hms-entity-name type="item">`. Backend: 6/6 directory specs pass, clean `nx run api:typecheck`.
+Frontend: full suite (597 tests), clean `tsc --build`. Not yet live-verified on QA — pending
+redeploy of both backend and frontend.
+
+- `backend/code/apps/api/src/directory/directory.service.ts`
+- `backend/code/apps/api/src/directory/dto/resolve-directory.dto.ts`
+- `backend/code/apps/api/src/directory/directory.service.integration-spec.ts`
+- `frontend/apps/staff-console/src/app/directory/directory-api.service.ts`
+- `frontend/apps/staff-console/src/app/directory/directory-resolver.service.ts`
+- `frontend/apps/staff-console/src/app/directory/directory-resolver.service.spec.ts`
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.ts`
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.html`
+- `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.spec.ts`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
