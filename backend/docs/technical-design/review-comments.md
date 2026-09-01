@@ -1788,8 +1788,13 @@ only ever needed patient/doctor/ward/bed for prior fixes.
 `inventory_items` lookup by id, mirroring the existing four), added `'item'` as a new
 `DirectoryEntityType` on the frontend, and wired both tables through
 `<hms-entity-name type="item">`. Backend: 6/6 directory specs pass, clean `nx run api:typecheck`.
-Frontend: full suite (597 tests), clean `tsc --build`. Not yet live-verified on QA — pending
-redeploy of both backend and frontend.
+Frontend: full suite (597 tests), clean `tsc --build`. **Partially verified live on QA
+(2026-09-01)** after redeploy — a direct authenticated call to `/api/directory/resolve` with an
+`itemIds` payload returns `200` with `items` in the response shape, confirming the deploy landed.
+Not end-to-end verified through the actual Ward Supply UI: this demo tenant's inventory catalog is
+empty (no category/sub-category/item ever created) and the staff-console has no UI to create one
+yet (`/inventory` is browse-only) — full visual confirmation needs real stock data, which is a
+tenant data-seeding gap, not part of this fix.
 
 - `backend/code/apps/api/src/directory/directory.service.ts`
 - `backend/code/apps/api/src/directory/dto/resolve-directory.dto.ts`
