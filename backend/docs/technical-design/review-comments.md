@@ -1766,7 +1766,8 @@ table lookup by id with no role filter (confirmed in `directory.service.ts`), th
 Orders' "Ordered By" field already relies on, so it resolves any staff account regardless of their
 actual role. Covered by adding a `DirectoryResolverService` test provider (the component now
 depends on it transitively via `EntityName`); full suite (597 tests) and a clean `tsc --build`
-pass. Not yet live-verified on QA — pending redeploy.
+pass. **Verified live on QA (2026-09-01)** after redeploy — both the table column and the detail
+modal now show "Demo Hospital Administrator (uuid)".
 
 - `frontend/apps/staff-console/src/app/audit/audit-list.ts`
 - `frontend/apps/staff-console/src/app/audit/audit-list.html`
