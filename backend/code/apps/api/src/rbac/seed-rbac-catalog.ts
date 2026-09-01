@@ -717,6 +717,10 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   // (code-review-findings-2026-08-25 fraction P3).
   { roleName: 'HR/Payroll Admin', permissionName: 'fraction.read' },
   { roleName: 'HR/Payroll Admin', permissionName: 'fraction.manage' },
+  // PRD §5.6 frames Fraction & Incentive as covering "doctor incentives" — read-only, so a Doctor
+  // can see their own revenue-share rules/entries without gaining fraction.manage (rule
+  // creation/editing stays HR/Payroll Admin's job) (review-comments.md, 2026-09-01).
+  { roleName: 'Doctor', permissionName: 'fraction.read' },
   { roleName: 'Super Admin', permissionName: 'helpdesk.read' },
   { roleName: 'Super Admin', permissionName: 'helpdesk.manage' },
   { roleName: 'Hospital Admin', permissionName: 'helpdesk.read' },
