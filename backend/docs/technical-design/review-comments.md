@@ -1651,9 +1651,10 @@ Maternity/Vaccination/SSU. Admitting Doctor — bulk-loaded picker via
 `UsersApiService.listDirectory('Doctor')`, matching Appointments. Ward+Bed — a cascading picker
 (pick a ward, then an available bed in it), reusing the exact shape of
 `admission-detail.ts`'s existing transfer-ward flow rather than inventing a new pattern. List
-filters: Ward is now a bulk-loaded picker, Patient a search picker. Not live-verified locally (the
-dev Postgres port was held by an unrelated project's container at the time); covered by clean
-typecheck and 6 new/updated tests.
+filters: Ward is now a bulk-loaded picker, Patient a search picker. Not live-verified locally at the
+time (the dev Postgres port was held by an unrelated project's container); covered by clean
+typecheck and 6 new/updated tests. **Verified live on QA (2026-09-01)** after redeploy — see the
+RBAC finding immediately below for the one follow-up issue that surfaced during that verification.
 
 - `frontend/apps/staff-console/src/app/admissions/admission-list.ts`
 - `frontend/apps/staff-console/src/app/admissions/admission-list.html`
@@ -1668,10 +1669,48 @@ reproduced consistently under both an admin and a clinical-role login.
 
 **Resolved (2026-09-01):** `selectPatient()` now also clears `searchQuery` in both components.
 Covered by an assertion added to each screen's existing "selects a patient" test; full suite (596
-tests) and a clean `tsc --build` pass. Not yet re-verified live on QA — pending redeploy.
+tests) and a clean `tsc --build` pass. **Verified live on QA (2026-09-01)** after redeploy — the
+search box clears and the stale message no longer renders on either screen.
 
 - `frontend/apps/staff-console/src/app/vitals/vital-list.ts`
 - `frontend/apps/staff-console/src/app/encounters/encounter-list.ts`
+
+### High: `identity.accounts.directory` RBAC grant never reached QA's already-provisioned tenant
+
+Found live during QA testing (2026-09-01), immediately after the Admissions picker fix above shipped:
+the Admitting Doctor picker's `usersApi.listDirectory('Doctor')` call 403'd for `demoadmin`
+(Hospital Admin role) on QA. `seed-rbac-catalog.ts` does grant `identity.accounts.directory` to
+Hospital Admin (added in `cdfe902`, "add a staff directory endpoint for name-picker UIs" — the same
+commit that introduced the directory endpoint the whole picker sweep depends on), but that grant
+only reaches a tenant's `role_permissions` table when the RBAC seed is actually re-run against it.
+QA's demo tenant was provisioned before `cdfe902` and was never re-seeded, so its Hospital Admin
+role was still missing the grant even though the code (and a fresh tenant) would have it correctly.
+Not a code bug — an operational gap: RBAC catalog changes need a re-seed step called out explicitly
+as part of shipping any commit that touches `seed-rbac-catalog.ts`'s `ROLE_PERMISSION_MAPPINGS`.
+
+**Resolved (2026-09-01):** re-ran the RBAC seed against QA
+(`docker compose -f docker-compose.prod.yml --profile seed run --rm seed-rbac`, safe/idempotent —
+`seedRbacCatalog` upserts, doesn't truncate). Verified live: the doctor picker on both Admissions
+and Appointments now populates correctly with zero 403s.
+
+- `backend/code/apps/api/src/rbac/seed-rbac-catalog.ts`
+
+### High: Invoices' patient filter was a raw-UUID text field, missed by the earlier picker sweep
+
+Found live during QA testing (2026-09-01) while working through the financial modules not yet
+covered by this pass: `/billing/invoices` never got the server-searched patient picker the
+clinical/operations screens received — it was a bare `pInputText` requiring the patient's raw UUID
+typed or pasted by hand, unlike its own table body which already resolves via
+`<hms-entity-name type="patient">`. Same class of gap as the Admissions finding above — the sweep's
+module list never included Billing.
+
+**Resolved (2026-09-01):** replaced with the same server-searched `p-select` pattern (debounced
+`onPatientFilterSearch`, `PatientsApiService.search`) used everywhere else. Covered by a new
+debounce test; full suite (597 tests) and a clean `tsc --build` pass. Not yet live-verified on QA —
+pending redeploy.
+
+- `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.ts`
+- `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.html`
 
 ## Open Question
 
