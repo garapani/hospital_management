@@ -4358,3 +4358,20 @@ onPatientFilterSearch(query: string): void {
   (the uniqueness of "one active admission per patient" is what makes this safe, not a general
   pattern). Don't build a second bespoke search index just to make the picker's `value` match the
   id an endpoint technically wants.
+
+## 115. Two `EncountersApiService` files exist — check both when touching notes/diagnoses/prescriptions (2026-09-01)
+
+`frontend/apps/staff-console/src/app/patients/encounters-api.service.ts` (used by
+`patient-detail.ts`'s chart tabs) and `frontend/apps/staff-console/src/app/encounters/
+encounters-api.service.ts` (used by the standalone `/clinical/encounters` screen,
+`encounter-list.ts`) are two independent files with the same class name and near-identical
+methods, wrapping the same `/encounters/*` backend routes. They drifted: the `patients/` copy was
+fixed for the paginated-response bug during the "Edit Profile dialog does not open" incident; the
+`encounters/` copy was not, and stayed broken (`@for` crashing on a `{data, meta}` object) until
+found and fixed alongside the Sign & Lock work (`review-comments.md`, "No explicit sign-off/lock UI
+on clinical notes"). **When you fix a bug or add a capability in one of these two files, check the
+other one too** — they are not re-exports of each other, `grep -rn "encounters-api.service"
+apps/staff-console/src` to find both call sites before assuming a fix is complete. This wasn't
+consolidated into one shared service as part of this fix — that's a larger, deliberately deferred
+follow-up (the two screens' `ClinicalNote`/`Diagnosis`/`Prescription` interfaces have small shape
+differences, e.g. `appointmentId` presence, that would need reconciling first).

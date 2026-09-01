@@ -1352,6 +1352,23 @@ A clinical note becomes immutable server-side the instant it is saved (actor/loc
 - `backend/code/apps/api/src/clinical/encounters/encounters.service.ts`
 - `frontend/apps/staff-console/src/app/patients/patient-detail.html:230-272`
 
+**Resolved (2026-09-01), premise corrected:** the backend model was actually already
+Draft/Signed with lock enforcement (`ClinicalNote.status`, `EncountersService.updateNote` rejecting
+edits once `'Signed'`) — the gap was purely that no frontend screen exposed a way to sign a note or
+showed its status distinctly (`patient-detail.html` hardcoded `severity="info"` for every note
+regardless of status; `encounter-list.ts` let a user open the edit form for an already-signed note,
+which then 409'd on save with no explanation). Added Draft (amber) vs Signed (green) status tags
+and a "Sign & Lock" action (with an irreversibility confirm) to both `patient-detail.html`'s Notes
+tab and `encounter-list.ts`'s Clinical Notes tab; also hardened `UpdateNoteDto.status` server-side
+(`@IsIn(['Draft','Signed'])`, previously an unvalidated free string). **Bonus fix found en route:**
+`encounter-list.ts`'s `EncountersApiService` (a *second*, still-live copy of the service, distinct
+from the already-fixed one `patient-detail.ts` uses) still typed
+`notesByPatient`/`diagnosesByPatient`/`prescriptionsByPatient` as raw arrays when the backend has
+always paginated them — the same bug class as the "Edit Profile dialog does not open" incident
+above, this time in the `/clinical/encounters` screen, throwing on `@for` over the resulting
+`{data, meta}` object. Verified live end-to-end: created a Draft note, signed it, confirmed the
+locked/no-edit state on both screens with zero console errors.
+
 ### Medium: No shift-handoff notes feature
 
 Grep for handoff/hand-off across both frontend and backend returns nothing — nurse-to-nurse shift handoff, a core daily ritual on any ward, is entirely unsupported.
