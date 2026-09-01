@@ -1330,6 +1330,14 @@ Both the appointment list's filters and the create-appointment form bind `doctor
 
 - `frontend/apps/staff-console/src/app/orders/order-list.ts:49,65-70,82-93`
 
+**Resolved (2026-09-01):** the backend still genuinely requires `patientId` to list orders
+(`OrdersService.list` calls `requireParam(query.patientId, 'patientId')` — a global "all orders"
+view isn't a supported query shape, and building one was out of scope here), but the "dead end"
+part of this finding was specifically the bare, guidance-free text field — that's now the same
+patient search picker built for the UUID-picker finding above, with a clear "Search for a patient
+above to load their orders" prompt in the empty state instead of a blank table. Verified live: a
+Doctor opening `/clinical/orders` cold from the nav sees a guided picker, not a dead end.
+
 ### Medium: No insurance/payer capture at patient registration intake
 
 `CreatePatientDto`/`Patient` have no insurance/payer/policy fields; Insurance exists only as a fully separate module (`insurance/insurance-dashboard`) with no link from patient registration or the front-desk billing flow. A receptionist registering a walk-in has no prompt to capture payer information at the point of intake.
