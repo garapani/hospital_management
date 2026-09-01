@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: hospital_db_password
       POSTGRES_DB: hospital_db
     ports:
-      - '5433:5432'
+      - '5435:5432'
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -72,7 +72,7 @@ services:
       OBJECT_STORAGE_SECRET_KEY: hospital_dev_password
       JWT_SECRET: dev-secret-key-at-least-32-chars-long-12345
     ports:
-      - '3000:3000'
+      - '3005:3000'
     volumes:
       - .:/usr/src/app
       - ./data/node_modules:/usr/src/app/node_modules

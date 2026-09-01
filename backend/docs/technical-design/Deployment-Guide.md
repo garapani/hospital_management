@@ -24,7 +24,7 @@ NODE_ENV=production
 
 # Database
 DB_HOST=localhost
-DB_PORT=5433
+DB_PORT=5435
 DB_USERNAME=hospital_db_user
 DB_PASSWORD=hospital_db_password
 DB_DATABASE=hospital_db
