@@ -753,6 +753,44 @@ Not investigated further — out of scope for the frontend review this file othe
 - `backend/code/apps/api/tsconfig.json` (references `tsconfig.app.json` + `tsconfig.spec.json` as separate composite projects — the spec project resolves the app project's types via its emitted `.d.ts`, not raw source)
 - `backend/code/apps/api/src/testing/tenant-test-context.ts:63` (`inTenant<T>(work: () => Promise<T>): Promise<T>` — the generic that goes missing)
 
+**Resolved (2026-09-01):** root cause was `noEmitOnError: true` (`backend/code/tsconfig.base.json`)
+combined with `composite: true`/`emitDeclarationOnly: true` — under those three settings together,
+**any single TS diagnostic error anywhere in the app project blocks `.d.ts` emission for the
+entire project**, not just the offending file. The original repro's documented cleanup
+(`rm apps/api/dist apps/api/out-tsc`) never cleared the *libs'* own `dist`/`out-tsc`/`.tsbuildinfo`
+output, so most local reproductions were unknowingly reading stale-but-present library
+declarations from an earlier, differently-shaped build — masking the real trigger and producing
+the "different files fail each time" symptom (whichever unrelated file happened to carry a stray
+diagnostic on a given tree state silently blocked the whole project's declarations, and that file
+varies commit-to-commit). Isolated the actual cause by bypassing Nx entirely — a single bare
+`tsc --build tsconfig.app.json --emitDeclarationOnly`, from a truly clean state (all 7 libs' output
+removed too, confirmed via `git check-ignore`), emitted only `dist/tsconfig.app.tsbuildinfo` and
+**zero `.d.ts` files**, despite reporting just one trivial diagnostic
+(`create-pharmacy-dispensing.dto.ts`'s unused `IsString` import, `TS6133`) — proving the whole-app
+suppression, not a race or a project-references ordering bug (a single, non-parallel `tsc` process
+reproduced it identically to `nx run-many`, ruling out Nx task-parallelism as the cause).
+Fixed by removing the unused import; a clean `nx run-many -t typecheck` across all 8 projects now
+passes with zero errors. Two integration-spec failures surfaced by the full clean test run
+(`fixed-assets.service.integration-spec.ts`, `cssd.service.integration-spec.ts`) are pre-existing
+and unrelated — both compute an elapsed-time value against the real wall clock with a hardcoded
+expected value that rots as calendar time passes (confirmed identical on unmodified `main` via
+`git stash`); left open as a new, separate finding below rather than folded into this fix.
+
+### Low: Two integration specs assert a hardcoded elapsed-time value against the real wall clock, so they fail once enough calendar time has passed
+
+`fixed-assets.service.integration-spec.ts`'s valuation test purchases an asset on a fixed date and
+asserts `monthsInService` equals a literal number "as of the run date" (comment says "as of
+2026-08"); `cssd.service.integration-spec.ts`'s sterility test has the same shape. Both compute the
+actual value from `new Date()` at test-run time rather than freezing time (Jest fake timers) or
+asserting a date-agnostic invariant, so they were already failing by 2026-09-01 (discovered via the
+cold-`tsc --build` investigation above, unrelated to that fix) and will need updating again next
+month. Needs its own look at whether to freeze the clock or recompute the expected value from
+`Date.now()` in the test itself — not fixed here, out of scope for the typecheck investigation this
+was found during.
+
+- `backend/code/apps/api/src/fixed-assets/fixed-assets.service.integration-spec.ts:142`
+- `backend/code/apps/api/src/cssd/cssd.service.integration-spec.ts:345`
+
 ### Module group: financial (`billing`, `accounting`, `payroll`, `fixed-assets`, `insurance`)
 
 ### High: Invoice list pagination is dead — the frontend reads `result.total` but the API returns `{ data, meta: { total } }`

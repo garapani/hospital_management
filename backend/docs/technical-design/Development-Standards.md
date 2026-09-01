@@ -4538,3 +4538,35 @@ tests asserting the exact same values the backend's algorithm would independentl
 (in-range, above-range, below-range, qualitative) are the right-sized substitute here — reach for
 live verification when it's cheap relative to the change's risk, not as a uniform ritual regardless
 of cost.
+
+## 122. `noEmitOnError` + `composite` + `emitDeclarationOnly`: one unrelated diagnostic anywhere in a project silently blocks `.d.ts` emission for the *whole* project
+
+Root-caused the long-open "from-scratch `tsc --build` produces ~3,000 false errors" finding
+(`review-comments.md`). `tsconfig.base.json` sets `noEmitOnError: true` alongside `composite: true`
+and `emitDeclarationOnly: true`. Under that combination, `tsc --build` on `apps/api` treats the
+project as all-or-nothing: if *any* file has a TS diagnostic — even something as trivial as an
+unused import (`TS6133`) in one DTO nobody was touching — the compiler reports that one error and
+then emits **zero** `.d.ts` files for the entire project, not just skips the offending file. Every
+other project that references this one via TS project references (here, `tsconfig.spec.json`,
+which resolves `tsconfig.app.json`'s types via its emitted declarations, not raw source) then sees
+those types as absent, and TypeScript's generic inference silently falls back to `unknown` at every
+call site depending on them — in this repo, every `ctx.inTenant(() => service.method())` in every
+`*.integration-spec.ts` file, since `inTenant<T>`'s `T` infers from `service.method()`'s return
+type. The result reads exactly like a project-references ordering bug or a task-parallelism race —
+it is neither. Confirmed by isolating a single bare `tsc --build tsconfig.app.json
+--emitDeclarationOnly` (no Nx, no other process running) from a genuinely clean state: it reported
+one trivial diagnostic and produced a `dist/` containing only a `.tsbuildinfo`, no `.d.ts` files at
+all.
+
+Two practical takeaways. First, when reproducing a "clean build" issue in this workspace, clean
+*everything* the graph touches — `apps/api/dist`+`out-tsc` alone is not clean; every one of the 7
+referenced libs (`libs/*/dist`, `libs/*/out-tsc`) and the root `tsconfig.tsbuildinfo` carry their
+own incremental state too, and a stale-but-present library `.d.ts` from an earlier,
+differently-shaped build can mask exactly this kind of bug (which is presumably why this one went
+undiagnosed for as long as it did). Second, this means a single unrelated lint-level TS error
+(unused import, unused variable) anywhere in `apps/api` is not merely cosmetic — under this
+tsconfig combination it's load-bearing for every downstream project's ability to typecheck at all
+from a cold cache. Treat any `TS6133`/similar in `apps/api` as urgent to clear, not a "get to it
+eventually" item, and if CI ever runs on a genuinely cold cache (a fresh runner, a cache-busting
+dependency bump), this is exactly the failure mode that would silently pass on every warm-cache
+local machine and only surface there.
