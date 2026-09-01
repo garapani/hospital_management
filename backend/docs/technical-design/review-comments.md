@@ -1752,6 +1752,26 @@ screen now loads real audit records with zero errors.
 - `backend/code/apps/api/src/packages/package-catalog.ts`
 - `backend/code/apps/api/src/packages/packages.integration-spec.ts`
 
+### Low: Audit Trail's "Changed By" showed the raw account UUID, no name
+
+Requested live during QA testing (2026-09-01), right after the `audit.read` package-filter fix
+above made the screen reachable: both the results table's Changed By column and the record detail
+modal rendered `record.changedByAccountId` as a bare UUID with no name — the one screen this
+session's picker/directory-resolver sweep never reached, since it only 403'd (and so was skipped)
+until the fix above.
+
+**Resolved (2026-09-01):** wrapped both in `<hms-entity-name type="doctor" [id]="...">`, reusing
+the existing directory-resolve endpoint — its `doctorIds` param is actually a plain `accounts`
+table lookup by id with no role filter (confirmed in `directory.service.ts`), the same trick
+Orders' "Ordered By" field already relies on, so it resolves any staff account regardless of their
+actual role. Covered by adding a `DirectoryResolverService` test provider (the component now
+depends on it transitively via `EntityName`); full suite (597 tests) and a clean `tsc --build`
+pass. Not yet live-verified on QA — pending redeploy.
+
+- `frontend/apps/staff-console/src/app/audit/audit-list.ts`
+- `frontend/apps/staff-console/src/app/audit/audit-list.html`
+- `frontend/apps/staff-console/src/app/audit/audit-list.spec.ts`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
