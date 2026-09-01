@@ -4249,3 +4249,29 @@ that's genuinely different per module).
   AND "deletedAt" IS NULL`), same cross-module-raw-query rule as the enforcement side. `null`
   clears the assignment; the DTO's `@IsOptional()` (not a separate "clear" endpoint) is what makes
   that possible while still validating a non-null uuid.
+
+## 112. Joining a display name into a list endpoint beats an N+1 lookup on the frontend (2026-09-01)
+
+`AdmissionsService.listActive` (Ward Board, `review-comments.md`'s "No ward/bed board" finding)
+joins the occupant's patient name/number into the query server-side rather than returning bare
+`patientId`s and making the frontend fetch each patient individually. Unlike Nursing's
+`assertAdmissionExists` (raw SQL query against another module's table, §"cross-module reference"),
+this one uses a real `createQueryBuilder(...).innerJoin(Patient, 'patient', 'patient.id =
+admission.patientId')` — `AdmissionsService` already imports the `Patient` entity directly
+elsewhere in the same file (`admit()`'s existence check), so a typed join is the consistent choice
+here, not a new pattern; raw SQL is for modules that don't already have that entity in scope.
+
+- **`getRawAndEntities()`, not `getMany()`, when you need columns from the joined table that
+  aren't a mapped relation on the entity.** `Admission` has no `@ManyToOne` to `Patient` (this
+  codebase deliberately avoids cross-module TypeORM relations — raw uuid FKs only), so
+  `leftJoinAndSelect` isn't available; `.select('admission').addSelect(['patient.firstName', ...])`
+  plus `getRawAndEntities()` returns `{ entities, raw }` in matching order, where `raw[i]` carries
+  the extra columns under TypeORM's default `<alias>_<column>` key (e.g. `patient_firstName`) —
+  confirmed empirically via the integration spec, not assumed, since this was the first use of
+  `getRawAndEntities()` in this codebase.
+- **A response shape addition is safe to make without a frontend contract change first** — the
+  service's return type changed from `Admission[]` to `ActiveAdmissionWithPatient[]` (an `extends
+  Admission` superset) and the existing consumer (`AdmissionList`, whose `activeAdmissionsAll`
+  signal is typed `Admission[]`) kept compiling untouched, since a wider joined type structurally
+  satisfies the narrower one. Prefer this additive-extension shape over a breaking rename/removal
+  whenever an existing endpoint just needs *more* data, not different data.

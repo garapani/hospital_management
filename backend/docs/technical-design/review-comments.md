@@ -1225,6 +1225,19 @@ problem (below) is unresolved by this change — that's a separate, still-open f
 - `frontend/apps/staff-console/src/app/admissions/admission-detail.html:56-61,194-208`
 - `frontend/apps/staff-console/src/app/admissions/admission-detail.ts:110-136`
 
+**Resolved (2026-09-01):** added a Ward Board screen (`/admissions/ward-board`, nav-linked next to
+"Admissions / ADT") — a ward picker plus a live bed-occupancy grid (Available/Occupied/Maintenance,
+each occupied card linking to its admission), backed by `GET /wards`, `GET /wards/:wardId/beds`,
+and an enriched `GET /admissions/active?wardId=` that now joins in the occupant's patient name/
+number server-side (`AdmissionsService.listActive`) instead of the frontend doing an N+1 lookup.
+Defaults to the viewer's own assigned ward when she has one (reusing the `wardId` JWT claim from
+the ward-scoping work above), otherwise the first ward. `AdmissionDetail`'s "Transfer Bed" modal's
+free-text "Destination Bed ID" is now a ward picker + an available-beds-only picker (defaulting to
+the admission's current ward, switchable to any ward); its Details panel now resolves `wardId`/
+`bedId` to `wardName`/`bedNumber` via `GET /wards/:id`/`GET /beds/:id` instead of showing raw
+UUIDs. Verified live end-to-end: board renders occupancy correctly across two wards, a cross-ward
+transfer via the pickers persisted correctly, and the Details panel shows resolved names.
+
 ### High: `root-redirect.guard.ts` hardcodes the `/billing/invoices` landing route for every tenant user, locking Doctor/Nurse out on a refresh
 
 **Resolved (2026-09-01):** `rootRedirectGuard` now calls `login.ts`'s `resolveTenantLandingUrl()`
@@ -1291,10 +1304,11 @@ filters + create form) are now searchable name pickers. Doctor needed a new back
 deliberately separate from admin-only `identity.accounts.manage` — see that commit) since no
 endpoint previously let Receptionist/Doctor look up staff names at all; Department reuses the
 existing `/departments` list, filtered to `isAppointmentApplicable`. Verified live end-to-end.
-**Still open:** Orders' Patient ID filter, Nursing's Admission ID filter, and the bed-transfer
-modal's Destination Bed ID are all still raw-UUID text inputs — left for a follow-up pass; each
-needs its own backing lookup (patient search already exists and is reusable; admission and bed
-pickers do not yet).
+**Further resolved (2026-09-01):** the bed-transfer modal's Destination Bed ID is now a ward +
+available-beds picker (see the ward/bed board finding above). **Still open:** Orders' Patient ID
+filter and Nursing's Admission ID filter are still raw-UUID text inputs — left for a follow-up
+pass; each needs its own backing lookup (patient search already exists and is reusable; an
+admission picker does not yet).
 
 Both the appointment list's filters and the create-appointment form bind `doctorId`/`departmentId` to a plain `pInputText`, labeled "Doctor ID"/"Department ID" — a receptionist booking a walk-in has no way to pick "Dr. Sharma, Cardiology" from a list and must already know the doctor's UUID. The same raw-UUID pattern recurs on the Orders list (Patient ID filter), the Nursing console (Admission ID filter), and the bed-transfer modal (Destination Bed ID) — a systemic issue, not isolated to one screen.
 
