@@ -1252,6 +1252,16 @@ PRD §6.2 describes fine-grained scoping as part of the design intent — explic
 
 ### Medium: No role-scoped "today" dashboard for any of the three roles
 
+**Resolved (2026-09-01):** added `/dashboard` with role-conditional widgets (Receptionist: today's
+appointments + status counts; Doctor: my schedule today, filtered to my own doctorId; Nurse:
+pending/in-progress nursing tasks sorted by due date, each linking into the Nursing console
+pre-filtered to its admission). `login.ts`'s `resolveTenantLandingUrl()` now sends all three roles
+here instead of their old unfiltered list screens, which stay reachable from the sidebar; a new
+"Dashboard" nav link (gated on `appointment.read || nursing.read`) makes it reachable after
+navigating away. Verified live for all three roles with real fixture data. The `/reporting`
+unreachability for these roles is unaffected by this change — still a separate, open item if it
+ever needs addressing (the new dashboard covers the "daily work summary" need directly instead).
+
 Doctor lands on the full patient roster (`/clinical/patients`), Nurse on the full triage list (`/clinical/triage`), Receptionist on the full appointment list (`/clinical/appointments`) — all unfiltered, hospital-wide list/search screens, not a "your day" summary (today's appointments, your pending tasks, unread alerts). The one dashboard-shaped screen in the app (`/reporting`, gated by `reporting.read`) is granted only to Super Admin, Hospital Admin, and Auditor/Compliance in `seed-rbac-catalog.ts` — structurally unreachable by any of these three roles even by direct navigation (the route guard redirects to `/login`, the same failure mode as the root-redirect finding above).
 
 - `frontend/apps/staff-console/src/app/login/login.ts:26-33`
