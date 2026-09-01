@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
-import { Not, QueryFailedError } from 'typeorm';
+import { In, Not, QueryFailedError } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Appointment } from './entities/appointment.entity.js';
 import { Department } from '../master-data/entities/department.entity.js';
@@ -33,6 +33,12 @@ export interface UpdateAppointmentInput {
   reason?: string;
 }
 
+// Statuses that still occupy a doctor/department slot — excludes Cancelled and NoShow, which
+// free it up. Used everywhere a query needs "does this appointment still hold its slot", not
+// just the literal 'Scheduled' status, so checking a patient in doesn't silently let a second
+// appointment get double-booked into the same slot.
+const ACTIVE_APPOINTMENT_STATUSES = ['Scheduled', 'CheckedIn', 'Completed'] as const;
+
 export interface AppointmentFilters {
   date?: string;
   doctorId?: string;
@@ -65,10 +71,10 @@ export class AppointmentsService {
             where: {
               departmentId: input.departmentId,
               appointmentDate: input.appointmentDate,
-              status: 'Scheduled',
+              status: In(ACTIVE_APPOINTMENT_STATUSES),
             },
           });
-          
+
           if (existingCount >= department.maxDailyAppointments) {
             throw new ConflictException(
               `Department ${department.departmentName} has reached its maximum daily capacity of ${department.maxDailyAppointments} appointments for ${input.appointmentDate}`
@@ -84,10 +90,10 @@ export class AppointmentsService {
             doctorId: input.doctorId,
             appointmentDate: input.appointmentDate,
             appointmentTime: input.appointmentTime,
-            status: 'Scheduled',
+            status: In(ACTIVE_APPOINTMENT_STATUSES),
           },
         });
-        
+
         if (conflictingAppointment) {
           throw new ConflictException(
             `Doctor already has an appointment scheduled at ${input.appointmentTime} on ${input.appointmentDate}`
@@ -166,7 +172,7 @@ export class AppointmentsService {
               where: {
                 departmentId: nextDepartmentId,
                 appointmentDate: nextDate,
-                status: 'Scheduled',
+                status: In(ACTIVE_APPOINTMENT_STATUSES),
                 id: Not(id),
               },
             });
@@ -185,7 +191,7 @@ export class AppointmentsService {
               doctorId: nextDoctorId,
               appointmentDate: nextDate,
               appointmentTime: nextTime,
-              status: 'Scheduled',
+              status: In(ACTIVE_APPOINTMENT_STATUSES),
               id: Not(id),
             },
           });
@@ -213,6 +219,21 @@ export class AppointmentsService {
         }
         throw error;
       }
+    });
+  }
+
+  async checkIn(id: string): Promise<Appointment> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repo = manager.getRepository(Appointment);
+      const appointment = await repo.findOne({ where: { id } });
+      if (!appointment) {
+        throw new NotFoundException(`Appointment ${id} not found`);
+      }
+      if (appointment.status !== 'Scheduled') {
+        throw new ConflictException(`Appointment ${id} is ${appointment.status} and cannot be checked in`);
+      }
+      appointment.status = 'CheckedIn';
+      return repo.save(appointment);
     });
   }
 
@@ -272,7 +293,7 @@ export class AppointmentsService {
         where: {
           doctorId,
           appointmentDate: date,
-          status: 'Scheduled',
+          status: In(ACTIVE_APPOINTMENT_STATUSES),
         },
         order: { appointmentTime: 'ASC' },
       });
@@ -307,10 +328,10 @@ export class AppointmentsService {
         where: {
           departmentId,
           appointmentDate: date,
-          status: 'Scheduled',
+          status: In(ACTIVE_APPOINTMENT_STATUSES),
         },
       });
-      
+
       return {
         maxCapacity: department.maxDailyAppointments,
         currentBookings,

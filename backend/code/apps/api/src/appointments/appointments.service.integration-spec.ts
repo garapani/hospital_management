@@ -212,6 +212,73 @@ describe('AppointmentsService (integration)', () => {
     ).rejects.toThrow(ConflictException);
   });
 
+  it('checks in a scheduled appointment', async () => {
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Waiting', lastName: 'Room', contactNumber: '5550000020',
+      appointmentDate: '2026-08-25', appointmentTime: '09:00', appointmentType: 'Consultation',
+    }));
+
+    const checkedIn = await ctx.inTenant(() => appointmentsService.checkIn(created.id));
+    expect(checkedIn.status).toBe('CheckedIn');
+  });
+
+  it('rejects checking in an appointment that is not Scheduled', async () => {
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Already', lastName: 'CheckedIn', contactNumber: '5550000021',
+      appointmentDate: '2026-08-25', appointmentTime: '10:00', appointmentType: 'Consultation',
+    }));
+    await ctx.inTenant(() => appointmentsService.checkIn(created.id));
+
+    await expect(ctx.inTenant(() => appointmentsService.checkIn(created.id))).rejects.toThrow(ConflictException);
+  });
+
+  it('throws NotFoundException checking in a non-existent appointment', async () => {
+    const fakeId = '22222222-2222-2222-2222-222222222222';
+    await expect(ctx.inTenant(() => appointmentsService.checkIn(fakeId))).rejects.toThrow(NotFoundException);
+  });
+
+  it('still blocks double-booking a doctor slot once the original appointment is checked in', async () => {
+    const doctorId = '00000000-0000-4000-8000-0000000000d4';
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'First', lastName: 'Arrived', contactNumber: '5550000022',
+      appointmentDate: '2026-08-26', appointmentTime: '09:00', appointmentType: 'Consultation', doctorId,
+    }));
+    await ctx.inTenant(() => appointmentsService.checkIn(created.id));
+
+    await expect(
+      ctx.inTenant(() => appointmentsService.create({
+        firstName: 'Second', lastName: 'Attempt', contactNumber: '5550000023',
+        appointmentDate: '2026-08-26', appointmentTime: '09:00', appointmentType: 'Consultation', doctorId,
+      })),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('still counts toward department daily capacity once checked in', async () => {
+    const department = await ctx.inTenant(() => masterDataService.createDepartment({
+      departmentCode: `APPT-CHECKEDIN-CAP-${Date.now()}`,
+      departmentName: 'Checked-In Capacity Test Dept',
+      isAppointmentApplicable: true,
+    }));
+    await ctx.inTenant(() =>
+      ctx.tenantConnection.runInTenantSchema(async (manager) => {
+        await manager.getRepository(Department).update(department.id, { maxDailyAppointments: 1 });
+      }),
+    );
+
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Filled', lastName: 'AndArrived', contactNumber: '5550000024',
+      appointmentDate: '2026-08-27', appointmentTime: '09:00', appointmentType: 'Consultation', departmentId: department.id,
+    }));
+    await ctx.inTenant(() => appointmentsService.checkIn(created.id));
+
+    await expect(
+      ctx.inTenant(() => appointmentsService.create({
+        firstName: 'Second', lastName: 'InDept', contactNumber: '5550000025',
+        appointmentDate: '2026-08-27', appointmentTime: '10:00', appointmentType: 'Consultation', departmentId: department.id,
+      })),
+    ).rejects.toThrow(ConflictException);
+  });
+
   it('rejects rescheduling into a slot the doctor already has scheduled', async () => {
     const doctorId = '00000000-0000-4000-8000-0000000000d2';
     await ctx.inTenant(() => appointmentsService.create({

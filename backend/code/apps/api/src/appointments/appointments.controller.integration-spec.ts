@@ -206,8 +206,9 @@ describe('AppointmentsController (e2e)', () => {
 
   it('does not let status be set through the update endpoint', async () => {
     // status is not part of UpdateAppointmentDto: a client-supplied status is silently
-    // stripped by the whitelist ValidationPipe, not applied. Cancellation is the only
-    // sanctioned status transition, via POST /appointments/:id/cancel.
+    // stripped by the whitelist ValidationPipe, not applied. Sanctioned status transitions go
+    // through their own dedicated endpoints instead: POST /appointments/:id/cancel and
+    // POST /appointments/:id/check-in.
     const createRes = await request(app.getHttpServer())
       .post('/appointments')
       .set('Authorization', `Bearer ${token}`)
@@ -231,6 +232,61 @@ describe('AppointmentsController (e2e)', () => {
 
     expect(res.status).toBe(HttpStatus.OK);
     expect(res.body.status).toBe('Scheduled');
+  });
+
+  it('checks in a scheduled appointment via POST /appointments/:id/check-in', async () => {
+    const createRes = await request(app.getHttpServer())
+      .post('/appointments')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({
+        firstName: 'Fox',
+        lastName: 'Mulder',
+        contactNumber: '5556667777',
+        appointmentDate: '2026-08-19',
+        appointmentTime: '14:00',
+        appointmentType: 'Checkup',
+      });
+    expect(createRes.status).toBe(HttpStatus.CREATED);
+    const appointmentId = createRes.body.id;
+
+    const res = await request(app.getHttpServer())
+      .post(`/appointments/${appointmentId}/check-in`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({});
+
+    expect(res.status).toBe(HttpStatus.OK);
+    expect(res.body.status).toBe('CheckedIn');
+  });
+
+  it('fails with 409 checking in an appointment that is already checked in', async () => {
+    const createRes = await request(app.getHttpServer())
+      .post('/appointments')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({
+        firstName: 'Already',
+        lastName: 'Arrived',
+        contactNumber: '5556667778',
+        appointmentDate: '2026-08-19',
+        appointmentTime: '15:00',
+        appointmentType: 'Checkup',
+      });
+    const appointmentId = createRes.body.id;
+    await request(app.getHttpServer())
+      .post(`/appointments/${appointmentId}/check-in`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({});
+
+    const res = await request(app.getHttpServer())
+      .post(`/appointments/${appointmentId}/check-in`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({});
+
+    expect(res.status).toBe(HttpStatus.CONFLICT);
   });
 
   it('fails with 400 when updating with invalid UUID', async () => {

@@ -35,6 +35,13 @@ export class AppointmentsController {
     return this.appointmentsService.update(id, body);
   }
 
+  @Post(':id/check-in')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('appointment.manage')
+  async checkInAppointment(@Param('id') id: string) {
+    return this.appointmentsService.checkIn(id);
+  }
+
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)
   @RequirePermission('appointment.manage')
