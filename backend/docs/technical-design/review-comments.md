@@ -1466,6 +1466,31 @@ per-endpoint join. Maternity's `admissionId` column became a link to the admissi
 name — an admission has no "name" concept). Verified live end-to-end (Admissions list/detail,
 Insurance policies) with real data.
 
+### High: Patient registration/edit 400s whenever Date of Birth, Phone, or Email is left/cleared blank — discovered 2026-09-01 while verifying the family-shared-phone scenario
+
+While live-verifying that multiple family members can share one phone number (a common India
+pattern — parents registering children under one contact number), registering a second patient
+with a blank Date of Birth 400'd. Root cause: `CreatePatientDto`/`UpdatePatientDto`'s `@IsOptional()`
+only skips validation when a field is `undefined`/`null`, not `''` — the format validators on
+`dateOfBirth`/`phoneNumber`/`email` (`@IsDateString`, `@Matches`, `@IsEmail`) still run against an
+empty string and reject it. `patient-list.ts`'s registration form defaults these fields to `''`
+(not `undefined`), and `patient-detail.ts`'s edit form carries an empty string forward if a
+previously-filled field is cleared — both sent the raw `''` straight to the API, so any
+registration/edit that left one of these three fields blank failed with a 400.
+
+**Resolved (2026-09-01):** `submitRegistration()`/`checkAndSubmit()` (`patient-list.ts`) and
+`submitEdit()` (`patient-detail.ts`) now coerce `dateOfBirth`/`phoneNumber`/`email` to `undefined`
+when blank before sending. Added regression tests asserting the payload omits these fields when
+empty, and confirming the underlying family-shared-phone scenario itself: `checkDuplicates` on a
+shared phone number returns the existing family member as a non-blocking warning (name +
+patientNo shown so staff can see it's a different person), "Register as New Patient Anyway"
+proceeds, and a phone-number search on the Patient Master Index returns every family member as
+distinct, separately-selectable rows. Verified live end-to-end (two patients, same phone number,
+different names) with zero console errors — screenshots in the fix commit's session log.
+
+- `frontend/apps/staff-console/src/app/patients/patient-list.ts` (`submitRegistration`, `checkAndSubmit`)
+- `frontend/apps/staff-console/src/app/patients/patient-detail.ts` (`submitEdit`)
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.

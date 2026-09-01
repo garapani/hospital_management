@@ -4422,3 +4422,24 @@ plus missing-element/can't-bind diagnostics if `PaginatorModule` also isn't sepa
 into the component (`p-table`'s module doesn't include it). Use `PaginatorState` and
 `PaginatorModule` for any card/list view paginated via a bare `p-paginator`, not the `p-table`
 lazy-load types.
+
+## 118. `@IsOptional()` skips `undefined`/`null`, not `''` — an optional form field with a format validator must be coerced to `undefined` before it reaches the API (2026-09-01)
+
+Found live-verifying that family members can share one phone number (a common India registration
+pattern): registering a second patient with a blank Date of Birth 400'd. `class-validator`'s
+`@IsOptional()` only short-circuits the rest of a property's decorators when the value is
+`undefined` or `null` — an empty string `''` still runs every validator after it. `CreatePatientDto`/
+`UpdatePatientDto`'s `dateOfBirth`/`phoneNumber`/`email` each pair `@IsOptional()` with a format
+validator (`@IsDateString`, `@Matches`, `@IsEmail` respectively), all of which reject `''`. Any
+Angular form whose signal defaults one of these fields to `''` (not `undefined`) — or whose
+`(ngModelChange)` sets it back to `''` when the user clears the input — sends that literal empty
+string, not an absent field, and 400s.
+
+A plain `@IsOptional() @IsString()` field (`allergies`, `governmentIdType`, middleName, etc.) is
+unaffected — an empty string is a valid string, so it never surfaces this. The failure is specific
+to `@IsOptional()` layered under a validator that rejects `''` on its own terms (date/email/regex
+format checks, `@IsIn` with a fixed enum, `@IsUUID`, etc.). Before shipping a form for a DTO field
+shaped like that, coerce the empty case explicitly at submit time (`field || undefined`) rather
+than trusting `@IsOptional()` to absorb it — see `patient-list.ts`'s `submitRegistration()`/
+`checkAndSubmit()` and `patient-detail.ts`'s `submitEdit()` for the pattern, and add a regression
+test asserting the outgoing payload omits the field rather than sending `''`.
