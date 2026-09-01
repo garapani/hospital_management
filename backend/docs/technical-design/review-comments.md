@@ -1345,6 +1345,22 @@ Doctor opening `/clinical/orders` cold from the nav sees a guided picker, not a 
 - `frontend/apps/staff-console/src/app/patients/patients-api.service.ts:21-52`
 - `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/`
 
+**Resolved (2026-09-01), deliberately not a formal `PatientPolicy` link:** the PRD's role-scope
+table puts "Insurance & Claims" under Billing/Accounts Staff, not Receptionist ("Patient,
+Appointment/Scheduling, Billing (charge capture, deposits)") — granting Receptionist
+`insurance.manage` to create a real `PatientPolicy` (payer, coverage window, sum insured) at
+intake would have crossed that boundary, and the `PermissionGuard`/`@RequirePermission` decorator
+only supports a single required permission per route (no OR-of-permissions), so a narrower new
+permission would've meant a second endpoint or a guard change — more surface than this finding
+needs. Instead added two free-text columns directly on `patients`
+(`insuranceProvider`/`insurancePolicyNumber`, migration `0097-add-patient-insurance-info.ts`) —
+within Receptionist's existing `patients.create`/`patients.update` permissions, no RBAC change at
+all. A "Has Insurance?" toggle on the registration modal reveals Provider/Policy Number fields;
+the same fields are shown/editable on the patient chart. This is a quick note for Billing to act
+on, not the formal policy record — Billing/Accounts Staff still sets that up separately via the
+Insurance module using the real `InsurancePayer` catalog and coverage-eligibility logic. Verified
+live end-to-end (registration → chart display).
+
 ### Medium: No explicit sign-off/lock UI on clinical notes
 
 A clinical note becomes immutable server-side the instant it is saved (actor/lock derived from the JWT), but the UI has no visible draft-vs-signed state and no explicit "Sign & Lock" action — a Doctor can't tell from the screen whether a note is still editable before committing it.

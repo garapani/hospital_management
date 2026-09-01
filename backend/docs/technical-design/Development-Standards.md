@@ -4375,3 +4375,28 @@ apps/staff-console/src` to find both call sites before assuming a fix is complet
 consolidated into one shared service as part of this fix — that's a larger, deliberately deferred
 follow-up (the two screens' `ClinicalNote`/`Diagnosis`/`Prescription` interfaces have small shape
 differences, e.g. `appointmentId` presence, that would need reconciling first).
+
+## 116. A UX gap that crosses a PRD role boundary: capture a note, don't grant the other role's permission (2026-09-01)
+
+"No insurance/payer capture at patient registration intake" (`review-comments.md`) asked for a
+Receptionist-facing prompt, but the PRD's role-scope table puts Insurance & Claims under
+Billing/Accounts Staff, not Receptionist. Two ways to close a gap like this, and only one was
+right here:
+
+- **Wrong for this case**: grant Receptionist the permission needed to create the "real" record
+  (`insurance.manage`, a `PatientPolicy` with payer/coverage/sum insured) — this hands her a whole
+  module's write access (payer CRUD, claims, every policy in the tenant) just to solve "note the
+  provider name at intake," and violates the PRD's explicit role split.
+- **Right for this case**: add plain free-text columns to the record the asking role *already*
+  manages (`patients.insuranceProvider`/`insurancePolicyNumber`, gated by the `patients.create`/
+  `patients.update` permissions Receptionist already holds) — a quick note she can leave, not a
+  formal transaction in the other role's domain. The owning role (Billing/Accounts Staff) turns it
+  into the real record later via its own module, unprompted by this change.
+
+Reach for this pattern whenever a finding's literal ask ("let X capture Y at the point of Z") would
+otherwise require granting a permission the PRD deliberately didn't give that role — check the PRD
+role-scope table first, and if the target module's real permission crosses the boundary, look for
+a free-text/lightweight field on a record already in the asking role's scope instead of extending
+permissions to reach it. (`PermissionGuard`/`@RequirePermission` also only supports one required
+permission per route — no OR-of-permissions — so even a narrower new permission for just this one
+action would mean a second endpoint or a guard change, more surface than a UX-only gap warrants.)
