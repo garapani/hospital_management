@@ -25,6 +25,7 @@ import { PharmacyDispensingService } from '../pharmacy/pharmacy-dispensing.servi
 import { OrdersService } from '../orders/orders.service.js';
 import { EmployeeService } from '../employee/employee.service.js';
 import { PayrollService } from '../payroll/payroll.service.js';
+import { InsuranceClaimsService } from '../insurance/insurance-claims.service.js';
 import { Patient } from '../patients/entities/patient.entity.js';
 import { PLATFORM_TENANT_ID } from '../tenants/platform-tenant.js';
 
@@ -89,7 +90,120 @@ export function demoStaffPassword(): string {
   return process.env['DEMO_STAFF_PASSWORD'] ?? 'Demo@123!';
 }
 
-export async function seedDemoData(): Promise<void> {
+/**
+ * Ensures reference/catalog data exists — ward+beds, a department, the inventory item catalog,
+ * lab test catalog, and radiology catalog, plus insurance payers. Idempotent per entry (checked by
+ * its own natural key: code, or name where there's no code), independent of whether the tenant
+ * already has patients/orders/etc. — unlike seedDemoData's business-data block below (gated behind
+ * "no patients yet"), this is safe to call on every run, including a demo tenant that's already
+ * been used for manual testing. Must run inside an active TenantContextService.run(...) call, same
+ * as every other tenant-scoped service call in this file.
+ */
+export async function seedCatalogData(app: INestApplicationContext) {
+  const masterData = app.get(MasterDataService);
+  const inventoryCatalog = app.get(InventoryCatalogService);
+  const labCatalog = app.get(LabCatalogService);
+  const radiologyCatalog = app.get(RadiologyCatalogService);
+  const insuranceClaims = app.get(InsuranceClaimsService);
+
+  // --- Ward + beds -----------------------------------------------------------------------
+  let ward = (await masterData.listWards()).find((w) => w.wardCode === 'W-GEN');
+  if (!ward) {
+    ward = await masterData.createWard({ wardCode: 'W-GEN', wardName: 'General Ward', wardType: 'General', bedCapacity: 20 });
+    logger.log('✓ Created ward: General Ward (W-GEN)');
+  }
+  const existingBeds = await masterData.listBedsByWard(ward.id);
+  let bed1 = existingBeds.find((b) => b.bedNumber === 'G-101');
+  if (!bed1) {
+    bed1 = await masterData.createBed({ wardId: ward.id, bedNumber: 'G-101', bedType: 'General' });
+  }
+  let bed2 = existingBeds.find((b) => b.bedNumber === 'G-102');
+  if (!bed2) {
+    bed2 = await masterData.createBed({ wardId: ward.id, bedNumber: 'G-102', bedType: 'General' });
+  }
+
+  // --- Department --------------------------------------------------------------------------
+  if (!(await masterData.listDepartments()).some((d) => d.departmentCode === 'GEN-MED')) {
+    await masterData.createDepartment({ departmentCode: 'GEN-MED', departmentName: 'General Medicine', isAppointmentApplicable: true });
+    logger.log('✓ Created department: General Medicine (GEN-MED)');
+  }
+
+  // --- Inventory catalog ---------------------------------------------------------------------
+  let pharmaCat = (await inventoryCatalog.listCategories()).find((c) => c.name === 'Pharmaceuticals');
+  if (!pharmaCat) {
+    pharmaCat = await inventoryCatalog.createCategory({ name: 'Pharmaceuticals' });
+  }
+  let analgesics = (await inventoryCatalog.listSubCategoriesByCategory(pharmaCat.id)).find((s) => s.name === 'Analgesics');
+  if (!analgesics) {
+    analgesics = await inventoryCatalog.createSubCategory({ categoryId: pharmaCat.id, name: 'Analgesics', isConsumable: true });
+  }
+  let paracetamol = (await inventoryCatalog.listItemsBySubCategory(analgesics.id)).find((i) => i.code === 'PARA-500');
+  if (!paracetamol) {
+    paracetamol = await inventoryCatalog.createItem({
+      subCategoryId: analgesics.id,
+      name: 'Paracetamol 500mg',
+      code: 'PARA-500',
+      unitOfMeasure: 'tablet',
+      reorderLevel: 100,
+      minimumStock: 50,
+      salePrice: 2,
+    });
+  }
+  let vendor = (await inventoryCatalog.listVendors()).find((v) => v.name === 'MediSupply Co');
+  if (!vendor) {
+    vendor = await inventoryCatalog.createVendor({ name: 'MediSupply Co', phone: '011-40000001' });
+  }
+
+  // --- Lab catalog -----------------------------------------------------------------------
+  let hemaCat = (await labCatalog.listCategories()).find((c) => c.name === 'Hematology');
+  if (!hemaCat) {
+    hemaCat = await labCatalog.createCategory({ name: 'Hematology' });
+  }
+  let cbc = (await labCatalog.listTestsByCategory(hemaCat.id)).find((t) => t.code === 'CBC');
+  if (!cbc) {
+    cbc = await labCatalog.createTest({ categoryId: hemaCat.id, name: 'Complete Blood Count', code: 'CBC', specimenType: 'Blood', price: 300 });
+  }
+  let hb = (await labCatalog.listComponentsByTest(cbc.id)).find((c) => c.name === 'Hemoglobin');
+  if (!hb) {
+    // Numeric range set (unlike the original demo seed) so the Enter Results screen's entry-time
+    // abnormal-range warning has real data to demonstrate against.
+    hb = await labCatalog.createComponent(cbc.id, { name: 'Hemoglobin', unit: 'g/dL', referenceRangeLow: 12, referenceRangeHigh: 16 });
+  }
+
+  // --- Radiology catalog -------------------------------------------------------------------
+  let xrayType = (await radiologyCatalog.listTypes()).find((t) => t.name === 'X-Ray');
+  if (!xrayType) {
+    xrayType = await radiologyCatalog.createType({ name: 'X-Ray' });
+  }
+  let chestXray = (await radiologyCatalog.listItemsByType(xrayType.id)).find((i) => i.procedureCode === 'XR-CHEST');
+  if (!chestXray) {
+    chestXray = await radiologyCatalog.createItem({ imagingTypeId: xrayType.id, name: 'Chest X-Ray PA', procedureCode: 'XR-CHEST', price: 450 });
+  }
+
+  // --- Insurance payers --------------------------------------------------------------------
+  const existingPayers = await insuranceClaims.listPayers();
+  if (!existingPayers.some((p) => p.name === 'CGHS')) {
+    await insuranceClaims.createPayer({ name: 'CGHS', type: 'Government' });
+    logger.log('✓ Created insurance payer: CGHS (Government)');
+  }
+  if (!existingPayers.some((p) => p.name === 'Star Health')) {
+    await insuranceClaims.createPayer({ name: 'Star Health', type: 'Private' });
+    logger.log('✓ Created insurance payer: Star Health (Private)');
+  }
+
+  logger.log('✓ Catalog/reference data ensured: ward+beds, department, inventory catalog, lab catalog, radiology catalog, insurance payers.');
+
+  return { ward, bed1, bed2, pharmaCat, analgesics, paracetamol, vendor, hemaCat, cbc, hb, xrayType, chestXray };
+}
+
+/**
+ * Boots the app, ensures the demo tenant's schema is provisioned, and runs `work` inside its
+ * tenant context — the boilerplate shared by every demo-seeding entry point (seedDemoData,
+ * seedDemoCatalog). Booting the real app (not hand-wiring services) matters here: it keeps the
+ * charge-capture and notification subscribers live, so business-data seeding doesn't silently skip
+ * auto-billing.
+ */
+async function bootAndRunInDemoTenant(correlationId: string, work: (app: INestApplicationContext) => Promise<void>): Promise<void> {
   const demoConfig = getDemoHospitalAdminConfig();
   const tenantId = demoConfig.tenantId;
   if (tenantId === PLATFORM_TENANT_ID) {
@@ -102,14 +216,32 @@ export async function seedDemoData(): Promise<void> {
   });
   try {
     const tenantContext = app.get(TenantContextService);
-    const tenantConnection = app.get(TenantConnectionService);
-
     const tenantProvisioning = app.get(TenantProvisioningService);
     await tenantProvisioning.provisionTenantSchema(tenantId);
 
-    await tenantContext.run(
-      { tenantId, correlationId: 'seed-demo-data' },
-      async () => {
+    await tenantContext.run({ tenantId, correlationId }, () => work(app));
+  } finally {
+    await app.close();
+  }
+}
+
+/** Seeds only the reference/catalog data (ward+beds, department, inventory/lab/radiology
+ *  catalogs, insurance payers) — safe to run standalone, any time, including against a demo
+ *  tenant that already has patients/orders from manual testing. See seedCatalogData's own doc
+ *  comment for exactly what it covers and its idempotency guarantee. */
+export async function seedDemoCatalog(): Promise<void> {
+  await bootAndRunInDemoTenant('seed-demo-catalog', async (app) => {
+    await seedCatalogData(app);
+  });
+}
+
+export async function seedDemoData(): Promise<void> {
+  const demoConfig = getDemoHospitalAdminConfig();
+  const tenantId = demoConfig.tenantId;
+  await bootAndRunInDemoTenant('seed-demo-data', async (app) => {
+    const tenantConnection = app.get(TenantConnectionService);
+
+    {
         // Staff accounts are ensured on every run (idempotent per username) so the demo always
         // has role-appropriate logins for every Basic feature, even after a data re-seed.
         const accounts = app.get(AccountsService);
@@ -159,6 +291,11 @@ export async function seedDemoData(): Promise<void> {
           logger.log(`✓ Seeded SaaS subscription & open invoice for tenant: ${tenantId}`);
         }
 
+        // Reference/catalog data is ensured unconditionally, before the patient-count gate below —
+        // it's idempotent per entry and independent of whether business data has already been
+        // seeded, unlike everything from here down.
+        const catalog = await seedCatalogData(app);
+
         // Count must run inside the tenant schema — a bare repository count() queries the
         // default search_path (public) and would see the legacy public tables, not the demo.
         const existingCount = await tenantConnection.runInTenantSchema((manager: EntityManager) =>
@@ -174,12 +311,8 @@ export async function seedDemoData(): Promise<void> {
         const vitals = app.get(VitalsService);
         const encounters = app.get(EncountersService);
         const admissions = app.get(AdmissionsService);
-        const masterData = app.get(MasterDataService);
-        const inventoryCatalog = app.get(InventoryCatalogService);
         const inventoryProcurement = app.get(InventoryProcurementService);
-        const labCatalog = app.get(LabCatalogService);
         const labWorkflow = app.get(LabWorkflowService);
-        const radiologyCatalog = app.get(RadiologyCatalogService);
         const radiologyWorkflow = app.get(RadiologyWorkflowService);
         const pharmacy = app.get(PharmacyDispensingService);
         const orders = app.get(OrdersService);
@@ -187,16 +320,6 @@ export async function seedDemoData(): Promise<void> {
         const payroll = app.get(PayrollService);
 
         const DOCTOR_ID = '00000000-0000-4000-8000-0000000000e1';
-
-        // --- Ward + beds ---------------------------------------------------------------------
-        const ward = await masterData.createWard({
-          wardCode: 'W-GEN',
-          wardName: 'General Ward',
-          wardType: 'General',
-          bedCapacity: 20,
-        });
-        const bed1 = await masterData.createBed({ wardId: ward.id, bedNumber: 'G-101', bedType: 'General' });
-        await masterData.createBed({ wardId: ward.id, bedNumber: 'G-102', bedType: 'General' });
 
         // --- Patients ------------------------------------------------------------------------
         const anita = await patients.create({
@@ -283,29 +406,13 @@ export async function seedDemoData(): Promise<void> {
           patientId: ravi.id,
           admissionSource: 'OPD',
           admittingDoctorId: DOCTOR_ID,
-          bedId: bed1.id,
+          bedId: catalog.bed1.id,
         });
 
-        // --- Inventory stock for pharmacy ------------------------------------------------------
-        const pharmaCat = await inventoryCatalog.createCategory({ name: 'Pharmaceuticals' });
-        const analgesics = await inventoryCatalog.createSubCategory({
-          categoryId: pharmaCat.id,
-          name: 'Analgesics',
-          isConsumable: true,
-        });
-        const paracetamol = await inventoryCatalog.createItem({
-          subCategoryId: analgesics.id,
-          name: 'Paracetamol 500mg',
-          code: 'PARA-500',
-          unitOfMeasure: 'tablet',
-          reorderLevel: 100,
-          minimumStock: 50,
-          salePrice: 2,
-        });
-        const vendor = await inventoryCatalog.createVendor({ name: 'MediSupply Co', phone: '011-40000001' });
+        // --- Inventory stock for pharmacy (catalog itself is seeded by seedCatalogData above) ---
         const po = await inventoryProcurement.createPurchaseOrder({
-          vendorId: vendor.id,
-          items: [{ itemId: paracetamol.id, orderedQuantity: 500, unitCost: 1 }],
+          vendorId: catalog.vendor.id,
+          items: [{ itemId: catalog.paracetamol.id, orderedQuantity: 500, unitCost: 1 }],
           orderedBy: DOCTOR_ID,
         });
         await inventoryProcurement.recordGoodsReceipt(po.items[0].id, {
@@ -314,26 +421,6 @@ export async function seedDemoData(): Promise<void> {
           unitCost: 1,
           receivedQuantity: 500,
           recordedBy: DOCTOR_ID,
-        });
-
-        // --- Lab catalog ------------------------------------------------------------------------
-        const hemaCat = await labCatalog.createCategory({ name: 'Hematology' });
-        const cbc = await labCatalog.createTest({
-          categoryId: hemaCat.id,
-          name: 'Complete Blood Count',
-          code: 'CBC',
-          specimenType: 'Blood',
-          price: 300,
-        });
-        const hb = await labCatalog.createComponent(cbc.id, { name: 'Hemoglobin', unit: 'g/dL' });
-
-        // --- Radiology catalog -------------------------------------------------------------------
-        const xrayType = await radiologyCatalog.createType({ name: 'X-Ray' });
-        const chestXray = await radiologyCatalog.createItem({
-          imagingTypeId: xrayType.id,
-          name: 'Chest X-Ray PA',
-          procedureCode: 'XR-CHEST',
-          price: 450,
         });
 
         // --- Order + complete all three items (drives charge-capture into an invoice) ------------
@@ -352,16 +439,16 @@ export async function seedDemoData(): Promise<void> {
 
         const labReq = await labWorkflow.createRequisition({
           orderItemId: labItem.id,
-          testId: cbc.id,
+          testId: catalog.cbc.id,
           specimenType: 'Blood',
         });
         await labWorkflow.collectSample(labReq.id);
-        await labWorkflow.enterResult(labReq.id, { componentId: hb.id, value: '13.2', enteredBy: DOCTOR_ID });
+        await labWorkflow.enterResult(labReq.id, { componentId: catalog.hb.id, value: '13.2', enteredBy: DOCTOR_ID });
         await labWorkflow.verify(labReq.id, DOCTOR_ID);
 
         const radioReq = await radiologyWorkflow.createRequisition({
           orderItemId: radioItem.id,
-          imagingItemId: chestXray.id,
+          imagingItemId: catalog.chestXray.id,
         });
         await radiologyWorkflow.markScanned(radioReq.id, DOCTOR_ID);
         await radiologyWorkflow.enterReport(radioReq.id, {
@@ -373,7 +460,7 @@ export async function seedDemoData(): Promise<void> {
 
         const dispensing = await pharmacy.createDispensing({
           orderItemId: pharmaItem.id,
-          inventoryItemId: paracetamol.id,
+          inventoryItemId: catalog.paracetamol.id,
           quantity: 10,
         });
         await pharmacy.dispenseDrug(dispensing.id, { dispensedBy: DOCTOR_ID });
@@ -402,9 +489,6 @@ export async function seedDemoData(): Promise<void> {
           `Demo data seeded: 3 patients, 2 appointments, 1 admission, 1 completed order (charge-captured to an invoice), ` +
             `2 employees, ${payslips.length} payslip(s).`,
         );
-      },
-    );
-  } finally {
-    await app.close();
-  }
+    }
+  });
 }
