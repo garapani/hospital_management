@@ -1142,6 +1142,115 @@ The notification dropdown's unread indicator is a bare `<span class="w-2 h-2 bg-
 
 **Resolved (2026-08-31):** added a visually-hidden "Unread" `sr-only` span alongside the dot (dot itself marked `aria-hidden`); the backdrop now has `role="button"`, `tabindex="0"`, `aria-label="Close menu"`, and `Enter`/`Space` keydown handlers alongside its existing `(click)`.
 
+### Module group: role-based daily-workflow review — 2026-09-01 (Doctor / Nurse / Receptionist)
+
+Product/UX review of `frontend/apps/staff-console`, walked as a Doctor, Nurse, and Receptionist would actually use it day to day (login → landing screen → core daily task), not a code-correctness pass. Cross-referenced against `PRD.md` §6.1 (role scope) and `mvp-status.md` (claimed backend/frontend completeness). The recurring theme: module coverage is broad and backend-complete almost everywhere, but several screens are missing the one write action the role's daily job actually needs, and several PRD-promised behaviors (ward scoping, queue state) were never implemented.
+
+### High: Billing frontend has no payment/deposit recording UI at all — Receptionist cannot collect payment
+
+**Resolved (2026-09-01):** added a "Record Payment" action to the invoice detail screen (gated on
+`billing.manage` and hidden once the invoice is `Paid`/`Cancelled`), an Outstanding-balance figure
+alongside Total/Paid, and `InvoicesApiService.recordPayment()` wrapping `POST
+/billing/invoices/:id/payments`. The modal supports all six backend payment modes (including
+`Deposit`, which requires a source deposit id) and refetches the invoice on success so
+paid/status/outstanding reflect immediately. Deposit *creation* (a separate, still-missing
+screen) remains out of scope — this closes the payment-collection half of the gap only.
+
+`InvoicesApiService` implements only `list()` and `findOne()`; there is no `create`, `recordPayment`, `recordDeposit`, or `return`/credit-note call anywhere in the frontend, and `InvoiceDetail` renders totals/returns read-only with no "Record Payment" action. The backend fully supports all of this (`InvoicesController`'s `POST /billing/invoices`, `POST /:id/payments`, `POST /:id/returns`, `PATCH /:id/cancel`, plus a separate `DepositsController`), and `mvp-status.md`'s "Done" status for `billing` does not flag that the frontend is view-only. Charges land on an invoice automatically via `ChargeCaptureSubscriber`, but there is no way to close one out with a payment through this UI — the Receptionist role's core front-desk task (PRD §6.1: "Billing (charge capture, deposits)") is blocked.
+
+- `frontend/apps/staff-console/src/app/billing/invoices-api.service.ts`
+- `frontend/apps/staff-console/src/app/billing/invoice-detail/invoice-detail.html`
+- `backend/code/apps/api/src/billing/invoices.controller.ts`
+- `backend/docs/technical-design/mvp-status.md:25`
+
+### High: No appointment "checked-in"/"waiting" state exists — no front-desk queue is structurally possible
+
+`APPOINTMENT_STATUSES = ['Scheduled', 'Completed', 'NoShow', 'Cancelled']` has no `CheckedIn`/`Waiting`/`InConsultation` value, so there is no way to represent "the patient has arrived and is in the waiting room" as distinct from "has a booked slot." This blocks a token/queue display for reception and blocks a doctor from seeing who is actually present versus who merely has an appointment later. This is a missing enum value, not a missing screen — fixing it requires a status-model change, not just new UI.
+
+- `frontend/apps/staff-console/src/app/appointments/appointment.model.ts:18`
+
+### High: No allergy field exists anywhere in the system — a patient-safety gap for Doctor and Nurse
+
+Exhaustive grep for "allerg*" across both `frontend/apps/staff-console` and `backend/code` returns zero hits. There is no allergy capture on the patient record, no allergy banner on the chart, and no check against it when a Doctor writes a prescription (`patient-detail.html`'s Prescriptions tab) or a Nurse administers a dose (`nursing-console.ts`'s MAR `administer()`). For a system positioning itself as an EMR with prescribing and medication administration, this is a safety-critical omission, not a nice-to-have.
+
+- `frontend/apps/staff-console/src/app/patients/patient-detail.html:319-335` (Prescriptions tab, no allergy check)
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.ts:214-236` (`administer()`, no allergy check)
+
+### High: No link from an Admission to that patient's Nursing tasks/MAR — nurse must hand-copy a UUID between screens
+
+`AdmissionDetail` has no reference into the Nursing module — no "create task" or "view MAR" action from a patient's admission record. `NursingConsole`'s Tasks and MAR tabs are both filtered by a free-text Admission ID field (`admissionIdFilter`), so a nurse caring for a patient must manually copy that patient's Admission ID (a UUID) from the admission screen and paste it into the Nursing console to see their tasks or medication schedule. Combined with the absence of any ward/bed board (below), this is the single biggest daily-friction point for the Nurse role: there is no click-through path from "patient I'm caring for" to "their tasks/MAR."
+
+- `frontend/apps/staff-console/src/app/admissions/admission-detail.ts`
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.ts:40` (`admissionIdFilter`)
+
+### High: No ward/bed board — ward and bed are raw UUIDs, and bed transfer is a free-text UUID field
+
+`AdmissionDetail` renders `{{ a.wardId }}` / `{{ a.bedId }}` as literal UUIDs, and the "Transfer Bed" modal is a free-text "Destination Bed ID" input the nurse must type a UUID into — there is no visual ward/bed-occupancy board anywhere ("Ward Supply" is stock inventory, not a clinical occupancy view; `master-data-list.ts` manages wards/beds as an admin CRUD list, not an operational one). A nurse has no way to see "which beds on my ward are free right now" or transfer a patient without already knowing a bed's UUID by heart.
+
+- `frontend/apps/staff-console/src/app/admissions/admission-detail.html:56-61,194-208`
+- `frontend/apps/staff-console/src/app/admissions/admission-detail.ts:110-136`
+
+### High: `root-redirect.guard.ts` hardcodes the `/billing/invoices` landing route for every tenant user, locking Doctor/Nurse out on a refresh
+
+The login screen's role-aware landing logic (`ROLE_LANDING_ROUTES` in `login.ts`) is not reused by the guard that handles the bare `/` path (e.g. a page refresh, or the SPA cold-booting on the root URL while a session already exists) — `auth.guard.ts`'s `TENANT_LANDING_URL` is hardcoded to `/billing/invoices` for every non-platform-admin user. Doctor and Nurse hold no `billing.manage` permission, so `permissionGuard(BILLING_MANAGE)` rejects them and bounces them to `/login` even though their session is valid. The common case (logging in through the form) is unaffected; a refresh or deep-link to `/` is not.
+
+- `frontend/apps/staff-console/src/app/root-redirect.guard.ts:6-15`
+- `frontend/libs/auth/src/lib/auth.guard.ts:38`
+- `frontend/apps/staff-console/src/app/login/login.ts:26-33` (the logic that should be reused instead)
+
+### High: PRD-promised ward-scoped row-level access for Nurse is not implemented
+
+PRD §6.2 describes fine-grained scoping as part of the design intent — explicitly, "Nurse can only write vitals for patients on their assigned ward." No evidence of ward-assignment-based row scoping exists in the nursing/vitals backend services; once a Nurse holds `vitals.manage`/`nursing.manage`, access is tenant-wide, not restricted to an assigned ward. This is a scope/security gap against the documented design, not just a UX one.
+
+- `backend/docs/technical-design/PRD.md:176` (§6.2, the "Nurse can only write vitals..." example)
+- `backend/code/apps/api/src/nursing/nursing.service.ts`
+- `backend/code/apps/api/src/clinical/vitals/`
+
+### Medium: No role-scoped "today" dashboard for any of the three roles
+
+Doctor lands on the full patient roster (`/clinical/patients`), Nurse on the full triage list (`/clinical/triage`), Receptionist on the full appointment list (`/clinical/appointments`) — all unfiltered, hospital-wide list/search screens, not a "your day" summary (today's appointments, your pending tasks, unread alerts). The one dashboard-shaped screen in the app (`/reporting`, gated by `reporting.read`) is granted only to Super Admin, Hospital Admin, and Auditor/Compliance in `seed-rbac-catalog.ts` — structurally unreachable by any of these three roles even by direct navigation (the route guard redirects to `/login`, the same failure mode as the root-redirect finding above).
+
+- `frontend/apps/staff-console/src/app/login/login.ts:26-33`
+- `backend/code/apps/api/src/rbac/seed-rbac-catalog.ts` (`reporting.read` grants)
+
+### Medium: Doctor/Department filters on Appointments are raw-UUID text inputs, not name pickers
+
+Both the appointment list's filters and the create-appointment form bind `doctorId`/`departmentId` to a plain `pInputText`, labeled "Doctor ID"/"Department ID" — a receptionist booking a walk-in has no way to pick "Dr. Sharma, Cardiology" from a list and must already know the doctor's UUID. The same raw-UUID pattern recurs on the Orders list (Patient ID filter), the Nursing console (Admission ID filter), and the bed-transfer modal (Destination Bed ID) — a systemic issue, not isolated to one screen.
+
+- `frontend/apps/staff-console/src/app/appointments/appointment-list.html:26-33,110,114`
+- `frontend/apps/staff-console/src/app/orders/order-list.ts:49-50`
+- `frontend/apps/staff-console/src/app/nursing/nursing-console.ts:40`
+
+### Medium: Orders list is a dead end when opened outside patient-chart context
+
+`OrderList` requires a `patientId` before it will list anything (`order-list.ts:49`'s comment: "the backend list endpoint requires patientId"). Opened from the patient chart it pre-fills correctly via a query param; opened cold from the nav sidebar, a Doctor sees an empty screen with no prompt beyond a bare Patient ID text field.
+
+- `frontend/apps/staff-console/src/app/orders/order-list.ts:49,65-70,82-93`
+
+### Medium: No insurance/payer capture at patient registration intake
+
+`CreatePatientDto`/`Patient` have no insurance/payer/policy fields; Insurance exists only as a fully separate module (`insurance/insurance-dashboard`) with no link from patient registration or the front-desk billing flow. A receptionist registering a walk-in has no prompt to capture payer information at the point of intake.
+
+- `frontend/apps/staff-console/src/app/patients/patients-api.service.ts:21-52`
+- `frontend/apps/staff-console/src/app/insurance/insurance-dashboard/`
+
+### Medium: No explicit sign-off/lock UI on clinical notes
+
+A clinical note becomes immutable server-side the instant it is saved (actor/lock derived from the JWT), but the UI has no visible draft-vs-signed state and no explicit "Sign & Lock" action — a Doctor can't tell from the screen whether a note is still editable before committing it.
+
+- `backend/code/apps/api/src/clinical/encounters/encounters.service.ts`
+- `frontend/apps/staff-console/src/app/patients/patient-detail.html:230-272`
+
+### Medium: No shift-handoff notes feature
+
+Grep for handoff/hand-off across both frontend and backend returns nothing — nurse-to-nurse shift handoff, a core daily ritual on any ward, is entirely unsupported.
+
+### Low: Doctor is not granted `fraction.read` despite the Fraction/Incentive module existing in nav
+
+PRD §5.6 frames Fraction & Incentive as covering "doctor incentives," and the module/nav entry exists, but `seed-rbac-catalog.ts` does not grant `fraction.read` to the Doctor role — worth a scope check, though low daily-workflow impact.
+
+- `backend/code/apps/api/src/rbac/seed-rbac-catalog.ts` (Doctor grant list vs. `fraction.read`)
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
