@@ -126,6 +126,35 @@ describe('EncountersController (integration)', () => {
       expect(res.body.plan).toBe('Take paracetamol');
     });
 
+    it('rejects an unrecognized status with 400, not a raw 500', async () => {
+      await request(app.getHttpServer())
+        .patch(`/encounters/notes/${noteId}`)
+        .set('Authorization', `Bearer ${fullPermToken}`)
+        .send({ status: 'Approved' })
+        .expect(400);
+    });
+
+    it('signs a note, then rejects any further edit — including trying to sign it again', async () => {
+      const signed = await request(app.getHttpServer())
+        .patch(`/encounters/notes/${noteId}`)
+        .set('Authorization', `Bearer ${fullPermToken}`)
+        .send({ status: 'Signed' })
+        .expect(200);
+      expect(signed.body.status).toBe('Signed');
+
+      await request(app.getHttpServer())
+        .patch(`/encounters/notes/${noteId}`)
+        .set('Authorization', `Bearer ${fullPermToken}`)
+        .send({ plan: 'Changed after signing' })
+        .expect(409);
+
+      await request(app.getHttpServer())
+        .patch(`/encounters/notes/${noteId}`)
+        .set('Authorization', `Bearer ${fullPermToken}`)
+        .send({ status: 'Signed' })
+        .expect(409);
+    });
+
     it('creates a diagnosis', async () => {
       const res = await request(app.getHttpServer())
         .post('/encounters/diagnoses')
