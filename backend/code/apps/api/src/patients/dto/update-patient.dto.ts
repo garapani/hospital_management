@@ -66,6 +66,14 @@ export class UpdatePatientDto {
   governmentIdNumber?: string;
 
   @IsOptional()
+  @IsString()
+  insuranceProvider?: string;
+
+  @IsOptional()
+  @IsString()
+  insurancePolicyNumber?: string;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreatePatientAddressDto)

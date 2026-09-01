@@ -47,6 +47,14 @@ export class Patient extends SoftDeletableEntity {
   @Column({ type: 'varchar', length: 100, nullable: true })
   governmentIdNumber!: string | null;
 
+  // Free-text, captured by Receptionist at intake — not a link to insurance_payers. See
+  // migration 0097's doc comment for why this stays free text rather than a formal PatientPolicy.
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  insuranceProvider!: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  insurancePolicyNumber!: string | null;
+
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
 

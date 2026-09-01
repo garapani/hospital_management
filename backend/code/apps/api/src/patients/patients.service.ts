@@ -101,6 +101,8 @@ export class PatientsService {
         allergies: dto.allergies ?? null,
         governmentIdType: dto.governmentIdType ?? null,
         governmentIdNumber: dto.governmentIdNumber ?? null,
+        insuranceProvider: dto.insuranceProvider ?? null,
+        insurancePolicyNumber: dto.insurancePolicyNumber ?? null,
         addresses: (dto.addresses ?? []).map((addr) => manager.create(PatientAddress, addr)),
         kins: (dto.kins ?? []).map((kin) => manager.create(PatientKin, kin)),
       });
@@ -167,6 +169,8 @@ export class PatientsService {
       if (dto.allergies !== undefined) patient.allergies = dto.allergies;
       if (dto.governmentIdType !== undefined) patient.governmentIdType = dto.governmentIdType;
       if (dto.governmentIdNumber !== undefined) patient.governmentIdNumber = dto.governmentIdNumber;
+      if (dto.insuranceProvider !== undefined) patient.insuranceProvider = dto.insuranceProvider;
+      if (dto.insurancePolicyNumber !== undefined) patient.insurancePolicyNumber = dto.insurancePolicyNumber;
 
       // Full-replace semantics, matching create(): the client sends the complete list it wants
       // on the record, not a diff. cascade:true on the OneToMany only inserts/updates the array

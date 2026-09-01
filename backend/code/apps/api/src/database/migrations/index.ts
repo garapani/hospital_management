@@ -2,6 +2,7 @@ import { InitialPlatformSchema1000000000093 } from './0093-initial-platform-sche
 import { InitialTenantSchema2000000000094 } from './0094-initial-tenant-schema.js';
 import { AddPatientAllergies3000000000001 } from './0095-add-patient-allergies.js';
 import { AddAccountWard3000000000002 } from './0096-add-account-ward.js';
+import { AddPatientInsuranceInfo3000000000003 } from './0097-add-patient-insurance-info.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -25,4 +26,5 @@ export const TENANT_MIGRATIONS = [
   InitialTenantSchema2000000000094,
   AddPatientAllergies3000000000001,
   AddAccountWard3000000000002,
+  AddPatientInsuranceInfo3000000000003,
 ];

@@ -102,6 +102,43 @@ describe('PatientsService (integration)', () => {
     });
   });
 
+  it('stores and updates the free-text insurance provider/policy number captured at intake', async () => {
+    await ctx.inTenant(async () => {
+      const created = await service.create({
+        firstName: 'Leena',
+        lastName: 'Sharma',
+        gender: 'Female',
+        phoneNumber: '9123456792',
+        insuranceProvider: 'Star Health',
+        insurancePolicyNumber: 'SH-2026-00042',
+      });
+      expect(created.insuranceProvider).toBe('Star Health');
+      expect(created.insurancePolicyNumber).toBe('SH-2026-00042');
+
+      const fetched = await service.findOne(created.id);
+      expect(fetched.insuranceProvider).toBe('Star Health');
+      expect(fetched.insurancePolicyNumber).toBe('SH-2026-00042');
+
+      const updated = await service.update(created.id, { insuranceProvider: 'ICICI Lombard' });
+      expect(updated.insuranceProvider).toBe('ICICI Lombard');
+      // Untouched field survives a partial update.
+      expect(updated.insurancePolicyNumber).toBe('SH-2026-00042');
+    });
+  });
+
+  it('leaves insurance fields null when not provided at creation (self-pay is the common case)', async () => {
+    await ctx.inTenant(async () => {
+      const created = await service.create({
+        firstName: 'Tariq',
+        lastName: 'Islam',
+        gender: 'Male',
+        phoneNumber: '9123456793',
+      });
+      expect(created.insuranceProvider).toBeNull();
+      expect(created.insurancePolicyNumber).toBeNull();
+    });
+  });
+
   it('replaces addresses and kins on update instead of silently ignoring them', async () => {
     await ctx.inTenant(async () => {
       const created = await service.create({
