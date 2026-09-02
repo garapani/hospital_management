@@ -4946,3 +4946,38 @@ Pin the routing itself, not just that the write succeeds: a `jest.spyOn(tenantCo
 argument is the only thing that would catch a future edit silently dropping it and reintroducing the
 starvation risk — every other test in both files exercises the publisher without checking which pool
 served the write, so all of them stay green even if that argument is deleted.
+
+## 133. Fixing a bug inside an immutable squashed migration baseline needs a new migration and a fresh sort-key block, not an edit
+
+`0093-initial-platform-schema.ts` (the platform baseline from the 2026-08-27 squash, §108) carries
+a self-contradicting pg_dump artifact: `REVOKE USAGE ON SCHEMA public FROM PUBLIC; GRANT ALL ON
+SCHEMA public TO PUBLIC;` — the second statement immediately undoes the first and grants `CREATE`
+on top, so every tenant Postgres role (`PUBLIC` covers all of them) could `CREATE TABLE`/`FUNCTION`
+directly in the shared `public` schema. The file is explicitly documented "APPEND-ONLY / IMMUTABLE:
+never edit it" and a `PreToolUse` hook blocks direct edits to already-committed migrations anyway
+(see the `migration-safety-check` skill) — so the fix is a **new** migration,
+`0099-restrict-public-schema-grants.ts`, not a change to 0093 itself.
+
+Two things worth generalizing:
+
+- **A new migration in an array that currently holds only its squashed baseline needs its own
+  fresh sort-key block prefix, not the existing one.** `index.spec.ts` checks sort-key uniqueness
+  *across both arrays combined* (`[...PLATFORM_MIGRATIONS, ...TENANT_MIGRATIONS]`), and the tenant
+  side already claimed the "3-prefix" block (`AddPatientAllergies3000000000001` etc. — §95-98).
+  `RestrictPublicSchemaGrants4000000000001` starts a "4-prefix" block instead — first platform
+  migration since the squash, so any prefix distinct from `1...093` (the old baseline) and
+  `3...xxx` (tenant's modern block) would satisfy the ascending-order check trivially (a
+  single-element "modern" slice for `PLATFORM_MIGRATIONS`), but picking a genuinely new block
+  keeps the numbering legible as "which squash-era generation this migration belongs to" rather
+  than interleaving two unrelated features' counters.
+- **`GRANT`/`REVOKE ... TO/FROM PUBLIC` is a pseudo-role, not a role name** — it applies to every
+  Postgres role including ones created after the migration runs, so a schema-level ACL fix like
+  this needs no per-tenant backfill loop the way a tenant-scoped *table* migration would (compare
+  `migration-safety-check`'s guidance on `TENANT_MIGRATIONS`/`migrate-tenants.ts` replay, which
+  doesn't apply here precisely because this isn't a tenant-schema change). Verified live via
+  `\dn+ public` (ACL went from `=UC/pg_database_owner` to `=U/pg_database_owner` — USAGE only) and
+  via two new integration tests against a real provisioned tenant role in
+  `tenant-connection.service.integration-spec.ts`: `CREATE TABLE public.x` now fails with
+  `permission denied for schema`, while `SELECT gen_random_uuid()` (what every tenant table's
+  `id uuid DEFAULT gen_random_uuid()` depends on via the `search_path` fallback to `public`) still
+  succeeds — proving the fix revoked `CREATE` without over-correcting into revoking `USAGE` too.

@@ -208,14 +208,23 @@ scope, not merely lower priority.
       repo's git history. Rotating the live DB/MinIO/JWT secrets on that server is a follow-up the
       human partner needs to do (and is outside what an agent should do unilaterally against a
       shared production box). Found in the 2026-09-03 external review.
-- [ ] **Public schema over-grant on tenant roles.** Migration `0093-initial-platform-schema.ts:429-430`
-      runs `REVOKE USAGE ON SCHEMA public FROM PUBLIC; GRANT ALL ON SCHEMA public TO PUBLIC;` — a
-      raw pg_dump artifact that self-contradicts (revoke then immediately re-grant to PUBLIC).
-      Lower severity than it first reads: `tenant-provisioning.service.ts:42-92` already scopes
-      each tenant role to `NOLOGIN` + `USAGE`/`ALL` on its own schema only, so this isn't the
-      tenant role's actual grant path — but the stray `GRANT ALL ON SCHEMA public TO PUBLIC` is
-      still live and should be removed/tightened so no future role accidentally inherits it. Found
-      in the 2026-09-03 external review.
+- [x] **Public schema over-grant on tenant roles.** **Resolved (2026-09-03):** migration
+      `0093-initial-platform-schema.ts:429-430`'s `REVOKE USAGE ON SCHEMA public FROM PUBLIC;
+      GRANT ALL ON SCHEMA public TO PUBLIC;` was a raw pg_dump artifact that self-contradicted (the
+      second statement undid the first and added `CREATE` on top) — since 0093 is an immutable
+      squashed baseline (never hand-edited), fixed via a new appended migration,
+      `0099-restrict-public-schema-grants.ts` (`RestrictPublicSchemaGrants4000000000001`, first
+      platform migration since the squash — starts a new "4-prefix" sort-key block, distinct from
+      the tenant side's "3-prefix" block, per `index.spec.ts`'s global-uniqueness check), which
+      revokes `ALL` and re-grants only `USAGE` to `PUBLIC`. `PUBLIC` is a pseudo-role covering
+      every role including future ones, so this one statement pair closes the gap for every
+      already-provisioned tenant role too — no per-tenant backfill loop needed (confirmed live:
+      `\dn+ public` now shows `=U/pg_database_owner`, USAGE only, no CREATE). `USAGE` deliberately
+      kept, not fully revoked, so `gen_random_uuid()` (installed into `public` by 0093's
+      `CREATE EXTENSION pgcrypto`, and what every tenant table's `id uuid DEFAULT gen_random_uuid()`
+      depends on via the `search_path` fallback) still resolves. 2 new pinning tests in
+      `tenant-connection.service.integration-spec.ts` (CREATE on public now denied; USAGE-based
+      resolution still works); full suite green. Found in the 2026-09-03 external review.
 
 ## Phase 2 — Guardrails while the backlog grows
 
