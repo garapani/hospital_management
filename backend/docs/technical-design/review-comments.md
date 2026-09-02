@@ -2144,6 +2144,29 @@ dispensing work already has its own unaffected path via `GET /pharmacy/dispensin
 
 - `frontend/apps/staff-console/src/app/orders/order-list.{ts,html}`
 
+### Medium: Add Dispensing required hand-typing both `orderItemId` and `inventoryItemId` as raw UUIDs
+
+**Resolved (2026-09-02):** added `GET /pharmacy/dispensings/pending-items` (Pharmacy order items
+awaiting dispensing, `patientId` joined in bulk, optionally status-filtered — same worklist shape
+as Lab/Radiology's `listByOrderItem`/`findAll` above) and swapped the modal's Order Item field for
+a searchable picker built from it (patient name + item description, name resolved via the existing
+directory resolver). Inventory Item became a cascading Category → Sub-category → Item picker,
+reusing the exact pattern `purchase-order-list` already established for line items — no free-text
+item search exists anywhere in this codebase, so this wasn't a new UI pattern, just its second use.
+Backend: 19 pharmacy tests (2 new), clean `nx run api:typecheck`. Frontend: 670 tests (3 new),
+clean `nx lint`, clean `tsc --build` (app + spec).
+
+A pharmacist filling this form needed the exact UUID of the order item and the inventory item
+already in hand — genuinely unusable without a database console, since neither UUID is ever shown
+anywhere in this app's UI. Directly related to the Order List finding above: Pharmacist has no
+patient search access, so before this fix there was no in-app way to discover a pending Pharmacy
+order item's id at all, hand-typed or otherwise.
+
+- `backend/code/apps/api/src/pharmacy/pharmacy-dispensing.{controller,service}.ts`
+- `backend/code/apps/api/src/pharmacy/dto/list-pending-pharmacy-items.dto.ts`
+- `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-list.{ts,html}`
+- `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-api.service.ts`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
