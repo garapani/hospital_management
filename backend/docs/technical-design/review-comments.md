@@ -1019,6 +1019,17 @@ The PO detail screen renders a "Received Qty" column but there is no goods-recei
 
 **Deferred (2026-08-30):** the low-stock endpoint (`GET stock-balances/low-stock`) and a low-stock banner/badge are not wired up — no existing screen has an analogous "warning banner" pattern to copy, and scoping where it should surface (item list? a dashboard widget?) is a product decision better suited to its own pending-tasks item.
 
+**Resolved (2026-09-02):** went with the item list — `InventoryItemList` (`/inventory`) is the
+screen a storekeeper/pharmacist already lands on to browse the catalog, and it already shares the
+`inventory.read` permission the endpoint is gated on, so no new nav entry or RBAC decision was
+needed. Added `InventoryApiService.listLowStockItems()` (`GET
+/inventory/purchase-orders/stock-balances/low-stock`, best-effort — a failed lookup just leaves the
+banner hidden, matching the "list-load failure shouldn't block the rest of the screen" convention
+established elsewhere) and an amber banner above the catalog filters listing item name/code,
+available quantity, and reorder level for every item at or below its reorder point (capped to 5
+inline rows + a "+N more" count, since the query is intentionally unpaginated). Frontend: 632
+tests, clean `tsc --build` (app + spec).
+
 ### Medium: Both detail screens render a blank page on a failed fetch, with the header stuck on "Loading…"
 
 `load()` clears the loading signal in its `error` handler but leaves the detail signal `null`, and the template's `@if`/`@else if` chain has no final `@else` — a 404/500/403 produces an empty content area under a heading that permanently reads "Loading Purchase Order…" with no message, no retry, no toast.
