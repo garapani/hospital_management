@@ -2057,6 +2057,30 @@ form, reading as "I got logged out" rather than a permissions gap.
 - `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.ts`
 - `frontend/libs/auth/src/lib/auth.guard.ts`
 
+### High: Lab and Radiology requisition screens showed zero patient identity anywhere in the workflow
+
+**Resolved (2026-09-02):** `patientId` was previously resolved only inside `renderReportPdf`'s raw
+SQL join (never exposed via the JSON API a Technician's worklist actually uses). Added the same
+join to `findOne`/`listByOrderItem` (Lab) and `findOne`/`findAll` (Radiology) — a single-row join
+for `findOne`, one bulk `ANY($1)` lookup for the whole page on the list endpoints (not a
+per-row query). Frontend renders it via the existing `<hms-entity-name type="patient">` /
+directory-resolver component on both worklist tables and detail screens. Backend: 2 new
+integration tests (patientId round-trips through both findOne and the list/worklist) plus the
+existing lab/radiology suites, clean `nx run api:typecheck`. Frontend: 660 tests, clean `nx lint`,
+clean `tsc --build` (app + spec).
+
+Neither the lab nor radiology requisition entity carries `patientId` directly (only
+`orderItemId`) — a Lab or Radiology Technician clicking "Verify," an irreversible clinical sign-
+off, had no digital confirmation of whose sample/scan they were signing off on, at any point in
+the flow. This is a distinct angle from the already-resolved "results are never displayed"
+finding (that was about result *values*, not patient *identity*) and from the systemic raw-UUID
+sweep that covered nine other screens but never touched lab/radiology/pharmacy.
+
+- `backend/code/apps/api/src/lab/lab-workflow.service.ts` (`findOne`, `listByOrderItem`)
+- `backend/code/apps/api/src/radiology/radiology-workflow.service.ts` (`findOne`, `findAll`)
+- `frontend/apps/staff-console/src/app/lab/lab-requisitions-list/`, `lab-requisition-detail/`
+- `frontend/apps/staff-console/src/app/radiology/radiology-requisitions-list.*`, `radiology-requisition-detail.*`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
