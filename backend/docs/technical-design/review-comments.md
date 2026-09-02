@@ -1326,6 +1326,16 @@ predates this fix). `Completed`/`NoShow` still have no transition mechanism — 
 
 - `frontend/apps/staff-console/src/app/appointments/appointment.model.ts:18`
 
+**Resolved (2026-09-02), `Completed`/`NoShow` half:** added `POST /appointments/:id/complete` and
+`POST /appointments/:id/no-show` (`AppointmentsService.complete`/`markNoShow`), mirroring
+`checkIn`'s own shape — both accept from `Scheduled` or `CheckedIn` only, 409 on any other status
+(so a already-`Cancelled`/`Completed`/`NoShow` appointment can't be re-transitioned). Wired into
+"Complete"/"No-Show" actions on both the appointment list row and detail screen, gated on
+`appointment.manage`, matching Check In's existing UI placement. Backend: 12 new tests (8
+service-level + 4 controller e2e) — full appointments suite 45 passed, clean `api:typecheck`.
+Frontend: 626 tests, clean `tsc --build` (app + spec). Scoped as plain Appointments CRUD (not
+auth/tenant-isolation/PHI/money) per this repo's risk gate, so no high-effort review was run.
+
 ### High: No allergy field exists anywhere in the system — a patient-safety gap for Doctor and Nurse
 
 **Resolved (2026-09-01):** added a free-text `allergies` column to `patients` (tenant migration
