@@ -2205,6 +2205,29 @@ grant them.
 - `frontend/apps/staff-console/src/app/helpdesk/helpdesk-ticket-detail.{ts,html}` (new)
 - `frontend/apps/staff-console/src/app/helpdesk/helpdesk.model.ts`, `helpdesk-api.service.ts`
 
+### Medium: Lab Technician and Radiology Technician hold `*.requisition.create` but no screen anywhere ever called either create endpoint
+
+**Resolved (2026-09-02):** frontend-only — both backend endpoints (`POST /lab/requisitions`,
+`POST /radiology/requisitions`) already fully existed and were already tested; nothing called
+them. Added a "Create Lab/Radiology Requisition" action to each Pending Lab/Radiology line item on
+the Order Detail screen (gated on `lab.requisition.create`/`radiology.requisition.create`
+respectively), opening a cascading Category→Test (Lab, specimen type pre-filled from the test's
+catalog default but editable) or ImagingType→Item (Radiology) picker — same cascading-picker shape
+`purchase-order-list` and the Pharmacy dispensing fix above both already use. Order Detail was the
+natural home rather than a new picker inside the lab/radiology modules themselves: it already knows
+the Pending item's id and type, and both roles can already reach it (`order.read` +
+`patients.read`, granted earlier in this same review). Frontend: 686 tests (7 new), clean
+`nx lint`, clean `tsc --build` (app + spec). No backend change.
+
+A Lab or Radiology Technician had a permission granting them the ability to originate a
+requisition, and zero in-app path to ever use it — the only screens that existed
+(`lab-requisitions-list`, `radiology-requisitions-list`) list requisitions that already exist, with
+no create action anywhere.
+
+- `frontend/apps/staff-console/src/app/orders/order-detail.{ts,html}`
+- `frontend/apps/staff-console/src/app/lab/lab-api.service.ts`
+- `frontend/apps/staff-console/src/app/radiology/radiology-api.service.ts`, `radiology.model.ts`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
