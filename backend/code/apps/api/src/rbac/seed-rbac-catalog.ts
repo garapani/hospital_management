@@ -553,6 +553,11 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Receptionist / Front Desk', permissionName: 'billing.read' },
   { roleName: 'Billing/Accounts Staff', permissionName: 'billing.manage' },
   { roleName: 'Billing/Accounts Staff', permissionName: 'billing.read' },
+  // PRD §6.1: read-only scope also includes "Patient (demographics)" — never granted (found live
+  // during the 2026-09-02 role-based review). Without it the invoice-list patient-search filter
+  // silently returns nothing, and clicking a patient name from an invoice bounces the user to
+  // /login (permissionGuard's reject-to-login behavior), which reads as a session bug.
+  { roleName: 'Billing/Accounts Staff', permissionName: 'patients.read' },
   { roleName: 'Auditor/Compliance', permissionName: 'billing.read' },
   { roleName: 'Super Admin', permissionName: 'reporting.read' },
   { roleName: 'Hospital Admin', permissionName: 'reporting.read' },

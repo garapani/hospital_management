@@ -158,6 +158,7 @@ describe('seedRbacCatalog (integration)', () => {
     const readMappings = await ctx.dataSource.getRepository(RolePermission).find({ where: { permissionId: readPerm.id } });
     const readRoles = await ctx.dataSource.getRepository(Role).find({ where: { id: In(readMappings.map((m: RolePermission) => m.roleId)) } });
     expect(readRoles.map((r: Role) => r.name).sort()).toEqual([
+      'Billing/Accounts Staff',
       'Doctor',
       'Hospital Admin',
       'Lab Technician',
