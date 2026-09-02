@@ -34,4 +34,40 @@ export class ResolveDirectoryDto {
   @ArrayMaxSize(MAX_IDS)
   @IsUUID('4', { each: true })
   itemIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_IDS)
+  @IsUUID('4', { each: true })
+  orderItemIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_IDS)
+  @IsUUID('4', { each: true })
+  testIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_IDS)
+  @IsUUID('4', { each: true })
+  imagingItemIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_IDS)
+  @IsUUID('4', { each: true })
+  invoiceIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_IDS)
+  @IsUUID('4', { each: true })
+  employeeIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_IDS)
+  @IsUUID('4', { each: true })
+  departmentIds?: string[];
 }
