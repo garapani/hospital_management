@@ -4,6 +4,14 @@
 audit by design — re-run rather than trust blindly once the picture shifts).
 **Refresh:** 2026-08-24 (DeepSeek Harness end-to-end MVP review — module inventory verified against
 `apps/api/src`, the live route surface, the full test suite, and `pending-tasks.md` check-offs).
+**Refresh:** 2026-09-02 — re-ran against current `apps/api/src` (module dir listing + `AppModule`
+wiring) and cross-checked against `pending-tasks.md`/`review-comments.md`, which had drifted far
+ahead of this file since 08-24 (a full role-based product review 2026-09-01, plus a backlog-
+clearance pass 2026-09-02 that closed every remaining `review-comments.md` finding except two
+deliberately-scoped-out ones — see "2026-09-01/02" section below). Found and fixed one internal
+inconsistency in this file itself: the summary table's `ssu` row still said "no frontend page"
+while the 2026-08-30 section further down already noted the frontend was confirmed built — the
+table just never got updated to match. `pending-tasks.md` is 100% checked off as of this refresh.
 
 Audit target: `new/code/apps/api/src/*` against `PRD.md` §5 (module descriptions) and §8 (phase
 table). `pending-tasks.md` only tracks work from PRD Phase 2 onward; Phase 0/1 modules were built
@@ -47,7 +55,8 @@ earlier and never got checklist entries — the table below is the authoritative
 | `fraction` | Phase 5 | Yes | Done | Revenue-share rules + entries vs real invoices |
 | `helpdesk` | Phase 6 | Yes | Done | Ticketing lifecycle |
 | `marketing` | Phase 6 | Yes | Done | Referral sources + patient referrals |
-| `ssu` | Phase 6 | Yes | Done — backend only | **M1:** no frontend page (only backend-complete module missing one) |
+| `ssu` | Phase 6 | Yes | Done | Frontend page confirmed built as of 2026-08-30 (`ssu-list.ts`/`.html`) — **M1 resolved**, this row was stale until this refresh |
+| `directory` | N/A (cross-cutting) | Yes | Done | Added 2026-09-01/02: `POST /directory/resolve` bulk id→name lookup (patient/doctor/ward/bed/item), backing the frontend's `<hms-entity-name>` component — the app-wide fix for raw-UUID-as-display findings across nine+ screens |
 | `notifications` | Phase 6 | Yes | Done (in-app slice) | CRUD + summary + subscribers; no email/SMS/push channel |
 | `document-and-print` | Phase 6 | No | Partial | PDF export exists via `@hospital/pdf` (lab/radiology/reporting); no module for stickers/print |
 | `dicom` | Phase 2 | No | **Not started** | Needs scoping (`claude-code-tasks.md` 2.10) |
@@ -96,10 +105,17 @@ frontend features — full write-ups with acceptance criteria live in `claude-co
 
 - **DICOM** (needs scoping), **Verification** (overlaps insurance), **Document & Print module**
   (PDF export exists; no sticker/print surface), **full Notification channels** (in-app only).
-- **Patient-portal frontend** (backend Phase 1 done; app scaffold empty) — needs a scope decision.
-- **SSU frontend page** — backend done, page missing.
+- **Patient-portal frontend** (backend Phase 1 done; app scaffold empty — confirmed still empty as
+  of 2026-09-02, only config files under `apps/patient-portal/`, no `src/app/*` screens) — needs a
+  scope decision.
 - Ops-readiness items tracked in `claude-code-tasks.md` 2.1–2.4 (load test/sizing, OTel tracing +
   Grafana/Loki, per-tenant connection caps, WAL/PITR + self-owned-server runbook).
+- **Two deliberately-deferred UI items** (not missing modules, just narrow scoped-out gaps — see
+  `review-comments.md`'s "Shell chrome" and "No allergy field" findings): a per-route page title
+  (needs a routing convention every future screen must follow — reserved for the heavyweight
+  pipeline, not a review-fix pass) and an active drug-allergy interaction check at prescribing time
+  (allergy capture/display exists; the check itself needs a real drug/allergen taxonomy neither
+  `patient.allergies` nor `Prescription.medicationName` currently has — both are free text).
 
 ## Phase 2+ module pass (2026-08-30)
 
@@ -125,3 +141,50 @@ all properly guarded (payroll/ward-supply invariants service-enforced); pipe-lev
 for RunPayrollDto (month/year/percents) and ward-supply quantities. **Still not started**
 (scoping notes only): verification (overlaps insurance checkCoverage), dicom, document-and-print
 (PDF export exists).
+
+## 2026-09-01/02 role-based workflow review + backlog clearance
+
+A product-intent review of `apps/staff-console` walked as a Doctor/Nurse/Receptionist would use it
+day to day (not a code-correctness pass), followed by a live QA session against the deployed QA
+environment (Playwright-driven, both Platform Admin and Demo Hospital tenants), followed by a
+sweep clearing every remaining item `review-comments.md` had marked `Deferred`. Net effect:
+`pending-tasks.md` is 100% checked off and `review-comments.md` has no open findings left except
+two deliberately-scoped-out ones (see "What's genuinely not built" above).
+
+Headline additions/fixes, most PRD-relevant first:
+- **Billing:** Record Payment + Cancel Invoice + Record Return UI (previously view-only); a
+  reviewed diff caught and fixed a real double-refund race (collapsing a mutation and its
+  post-save refetch into one error handler let a "failed" return actually be retried and applied
+  twice).
+- **Front-desk queue:** a real `CheckedIn` appointment status (+ `Complete`/`no-show` transitions),
+  making a token/queue view possible for the first time (filter the existing appointment list to
+  `CheckedIn`).
+- **Patient safety:** allergy capture + a persistent chart banner (data capture/visibility only —
+  an active interaction check at prescribing time is the one deliberately-deferred clinical item).
+- **Nurse daily workflow:** ward-scoped row-level access (PRD §6.2's "Nurse can only write vitals
+  for patients on their assigned ward," previously unenforced), a Ward Board (occupancy grid +
+  ward/bed picker replacing raw UUIDs), an Admission→Nursing/MAR deep link, and shift-handoff
+  notes (previously entirely unsupported).
+- **App-wide raw-UUID display**: the new `directory` module (table above) + `<hms-entity-name>`
+  resolves patient/doctor/ward/bed/item ids to names across essentially every screen that
+  previously showed a bare UUID — Admissions, Appointments, Billing, Fraction, Insurance,
+  Maternity, Orders, OT, Vaccination, Ward Supply, Purchase Orders, Requisitions.
+- **Role-scoped `/dashboard`**: today's-work summary per role (Receptionist/Doctor/Nurse), replacing
+  the previous landing on an unfiltered hospital-wide list screen.
+- **Reliability fixes with live regression coverage**: a lazy-table paginator race (stale response
+  overwriting a newer one) and the same race one level down in cascading category→sub-category→item
+  selects, both fixed via `switchMap`-cancellation with a Subject-controlled-ordering test proving
+  the fix (Development-Standards.md §120/§125/§126).
+- **Auth/shell**: a real display name in the JWT (staff-only, not patient — see
+  Development-Standards.md §126 for why) replacing role-derived avatar initials; a live, previously
+  untested `atob()`-only base64-decode bug (non-ASCII names → mojibake) found and fixed by the same
+  change; outside-click/Escape close on the header dropdowns.
+- **Blank-optional-field 400s**: an audit of every `@IsOptional()` + format-validator DTO field
+  against its frontend form found and fixed live instances beyond the original Patient-module bug
+  (Employee email, Maternity EDD) — the family-shared-phone registration scenario prompted the
+  original find.
+
+Not re-litigated here since it's already accurate: the Phase 2+ module pass above (uuid validation
+sweep) and the "genuinely not built" list — DICOM, Verification, Document & Print (sticker/print
+surface), full notification channels (in-app only), and the patient-portal frontend all remain
+correctly out of MVP scope, not oversights.
