@@ -828,6 +828,15 @@ was found during.
 - `backend/code/apps/api/src/fixed-assets/fixed-assets.service.integration-spec.ts:142`
 - `backend/code/apps/api/src/cssd/cssd.service.integration-spec.ts:345`
 
+**Resolved (2026-09-02):** found actually failing (not just theoretically due to fail) during a
+full clean `nx test api` run while auditing MVP status end-to-end — the calendar caught up to both
+hardcoded literals. Took the "recompute from `Date.now()`" option over freezing the clock:
+`fixed-assets`' test now calls the same `computeStraightLineValuation` the service itself uses,
+with `asOf` defaulting to `new Date()`, to derive the expected valuation instead of a frozen
+literal — still catches a real regression in the formula, just not via an expectation that rots.
+`cssd`'s test computes its "fresh" cycle's `completedAt`/`sterileExpiryAt` from `Date.now()` (1 day
+ahead for the expiry) instead of a hardcoded future date. Both verified green.
+
 ### Module group: financial (`billing`, `accounting`, `payroll`, `fixed-assets`, `insurance`)
 
 ### High: Invoice list pagination is dead — the frontend reads `result.total` but the API returns `{ data, meta: { total } }`
