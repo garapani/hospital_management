@@ -622,6 +622,12 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Super Admin', permissionName: 'inventory.read' },
   { roleName: 'Hospital Admin', permissionName: 'inventory.read' },
   { roleName: 'Inventory/Store Manager', permissionName: 'inventory.read' },
+  // PRD §6.1: "Inventory" is this role's full-access module, and catalog management (add a
+  // category/sub-category/item/vendor) is the one PRD-promised capability that had neither the
+  // grant nor any frontend UI (found live during the 2026-09-02 role-based review) — previously
+  // Super Admin/Hospital Admin only, which is wrong: a store manager who can never add a new SKU
+  // or vendor has to go through an admin for routine catalog upkeep.
+  { roleName: 'Inventory/Store Manager', permissionName: 'inventory.catalog.manage' },
   { roleName: 'Super Admin', permissionName: 'inventory.purchase-order.create' },
   { roleName: 'Hospital Admin', permissionName: 'inventory.purchase-order.create' },
   { roleName: 'Inventory/Store Manager', permissionName: 'inventory.purchase-order.create' },

@@ -2014,6 +2014,29 @@ sample/scan had no permission-level path, ever, to see what was ordered or whose
 `docker compose -f docker-compose.prod.yml --profile seed run --rm seed-rbac` reseeded against any
 already-provisioned tenant before Lab/Radiology Technician accounts there see the new access.
 
+### High: Inventory catalog management — the PRD-promised capability with neither the RBAC grant nor any frontend UI
+
+**Resolved (2026-09-02):** granted `inventory.catalog.manage` to `Inventory/Store Manager` (was
+Super Admin/Hospital Admin only) and added Add Category / Add Sub-category / Add Item to the
+Inventory Items screen, and Add Vendor to Purchase Orders (where vendors are actually consumed,
+not a standalone vendor screen — none exists and this finding didn't ask for one). All four use
+backend endpoints that already fully existed and were already tested
+(`inventory-catalog.controller.ts`), just never called from any frontend. Frontend: 660 tests
+(11 new), clean `nx lint`, clean `tsc --build` (app + spec). Scoped to create-only, matching the
+actual gap identified — deactivate/reactivate/edit-item already exist as backend endpoints but
+weren't part of this finding and are left for their own item if wanted.
+
+Backend fully supports catalog CRUD (`POST categories`/`sub-categories`/`items`/`vendors`, all
+gated `inventory.catalog.manage`), but that permission was granted only to Super Admin/Hospital
+Admin, and no frontend screen anywhere called any of the four create endpoints regardless — a
+store manager onboarding a new supplier or adding a new SKU had no in-app path to do it at all,
+not "buttons that 403," but buttons that didn't exist.
+
+- `backend/code/apps/api/src/inventory/inventory-catalog.controller.ts`
+- `backend/code/apps/api/src/rbac/seed-rbac-catalog.ts` (Inventory/Store Manager grant block)
+- `frontend/apps/staff-console/src/app/inventory/inventory-item-list/inventory-item-list.{ts,html}`
+- `frontend/apps/staff-console/src/app/inventory/purchase-order-list/purchase-order-list.{ts,html}`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
