@@ -189,6 +189,20 @@ scope, not merely lower priority.
       restore → active, purge guards (active refused, wrong confirm refused) + schema/role/row
       gone, audit delete record survives, demo unaffected. Backend suite 653, frontend 320.
       See `Development-Standards.md` §47.
+- [ ] **Prod compose secrets are hardcoded, not env-required.** `docker-compose.prod.yml:8,41,73`
+      set `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `JWT_SECRET` to literal plaintext defaults
+      (`hospital_db_pwd`, `hospital_dev_password`, `dev-secret-key-at-least-32-chars-long-12345`)
+      with no `${VAR:?required}` guard — a prod deploy that forgets to override `.env` silently
+      ships with dev-grade secrets. Fix: `${VAR:?Error: VAR is required}` interpolation or Docker
+      secrets, no literal fallback. Found in the 2026-09-03 external review.
+- [ ] **Public schema over-grant on tenant roles.** Migration `0093-initial-platform-schema.ts:429-430`
+      runs `REVOKE USAGE ON SCHEMA public FROM PUBLIC; GRANT ALL ON SCHEMA public TO PUBLIC;` — a
+      raw pg_dump artifact that self-contradicts (revoke then immediately re-grant to PUBLIC).
+      Lower severity than it first reads: `tenant-provisioning.service.ts:42-92` already scopes
+      each tenant role to `NOLOGIN` + `USAGE`/`ALL` on its own schema only, so this isn't the
+      tenant role's actual grant path — but the stray `GRANT ALL ON SCHEMA public TO PUBLIC` is
+      still live and should be removed/tightened so no future role accidentally inherits it. Found
+      in the 2026-09-03 external review.
 
 ## Phase 2 — Guardrails while the backlog grows
 
@@ -204,6 +218,14 @@ scope, not merely lower priority.
    Redis + MinIO + API with a published port, plus a one-shot `migrate` service); `Deployment-Guide.md`
    documents the containerized path. Also fixed the Runbook's `afterTransactionCommit`/rollback-sandbox claims, which
    don't exist anywhere in the codebase.
+- [ ] **Unpaginated endpoints audit.** 8 list endpoints still return unbounded arrays instead of
+      `@hospital/pagination`'s `PaginationQueryDto`/`paginate()`: `GET /vitals/patient/:patientId`,
+      `GET /inventory/sub-categories/:subCategoryId/items`,
+      `GET /inventory/categories/:categoryId/sub-categories`, `GET /inventory/vendors`,
+      `GET /departments`, `GET /wards`, `GET /wards/:wardId/beds`, `GET /tenants`,
+      `GET /platform/billing/subscriptions`. Same risk pattern as the pagination work already done
+      elsewhere in this doc — a long-admitted patient or a large pharmacy subcategory returns
+      hundreds/thousands of rows unbounded. Found in the 2026-09-03 external review.
 
 ## Phase 3 — Production-readiness ops
 
@@ -237,6 +259,30 @@ scope, not merely lower priority.
    explicitly deferred rather than left as an oversight.
 9. **Reference server sizing + load test** (new-features.md #8) — only meaningful once
    observability (item 6) and pooling (item 7) are in place to measure against.
+- [ ] **Audit-subscriber connection pool contention.** Unlike `ReportingSubscriber` (already
+      isolated on its own `REPORTING_DATA_SOURCE` pool, see item 6), `PersistingAuditEventPublisher`
+      (`persisting-audit-event-publisher.ts:26-28`) calls `runInTenantSchema()` with no override,
+      taking a second connection from the same main pool (item 7, max 20) while the triggering
+      business transaction still holds its own — under enough concurrent write load this can
+      starve the pool. Fix: either move audit writes onto their own dedicated pool (matching the
+      reporting pattern already in place) or make them use the caller's `event.manager` if the
+      ordering allows it. Found in the 2026-09-03 external review.
+- [ ] **Global exception filter + correlation-id response header.** `main.ts` registers no
+      `app.useGlobalFilters` — there's no `HttpExceptionFilter` anywhere in the codebase, so
+      unhandled DB errors (statement timeout `57014`, unique violation `23505`) fall through to
+      Nest's default generic 500 instead of a consistent error payload. Separately,
+      `TenantContextMiddleware` reads an inbound `x-correlation-id` but never calls
+      `res.setHeader` to echo it back, so a client can't correlate a failed request against server
+      logs. Found in the 2026-09-03 external review.
+- [ ] **Backup script/Runbook point at dev compose, not prod.** `scripts/backup-db.sh:4-5` defaults
+      to `COMPOSE_FILE=docker-compose.dev.yml`/`POSTGRES_SERVICE=api-postgres`, and `Runbook.md`'s
+      restore section (lines 104-146) references the same dev names — but `docker-compose.prod.yml`'s
+      actual Postgres service/container is `postgres`/`hospital-postgres`. Item 8 above documents
+      the backup/restore *procedure* as done; this is a naming-mismatch correction on top of it,
+      not a new capability — a prod restore following the Runbook literally would target the wrong
+      compose file. Also: no automated nightly backup cron container exists in
+      `docker-compose.prod.yml` itself (backups rely on `scripts/backup-db.sh` being invoked
+      externally, e.g. host cron). Found in the 2026-09-03 external review.
 
 ## Phase 4 — Complete near-finished features
 
@@ -252,6 +298,14 @@ scope, not merely lower priority.
     `@hospital/pdf` lib — a landscape events table via a pure, unit-tested document builder
     (`reporting-events-pdf-document.ts`), matching the Lab/Radiology report builders' brand/style
     vocabulary. 6 new tests (3 pure builder + 3 export). See `Development-Standards.md` §49.
+- [ ] **Billing: invoice PDF/print.** The invoice detail screen (`invoice-detail.ts`, frontend)
+      supports recording payments/cancellations but has no print/download action, and no
+      billing/accounting controller renders a per-invoice PDF — distinct from the Reporting/
+      Accounting *report* exports (trial balance, income statement, etc.) shipped this session,
+      which don't cover a single patient invoice. Indian hospitals need a printed receipt at the
+      billing counter for insurance reimbursement/tax proof. Fix: a `renderInvoicePdf` endpoint via
+      the existing `@hospital/pdf` lib, mirroring the Lab/Radiology report PDF pattern, plus a
+      "Print Invoice" button. Found in the 2026-09-03 external review.
 
 ## Phase 5 — New platform capabilities
 
@@ -560,6 +614,28 @@ Follow the PRD's own phase ordering as-is:
   `notifications` table migration `0028`, and in-process subscribers wired for admission and
   appointment creation) shipped in `a203100` + `93df331`; no email/SMS/push channel exists yet,
   and the frontend has a notifications feature folder but no routed page yet.
+- [ ] **Cashier shift open/close + day-end reconciliation.** No `CashierShift`/settlement entity,
+  service, or endpoint exists. Hospital billing-desk cashiers handling 8-hour shifts of
+  cash/UPI/card need: open shift with a float amount, accept payments through the shift, submit a
+  physical cash-denomination count + card/UPI slip count at close, and a day-end reconciliation
+  report flagging overage/shortage before handoff to accounts. Found in the 2026-09-03 external
+  review.
+- [ ] **Payment transaction reference fields.** `payment.entity.ts`/`RecordPaymentDto` have no
+  `transactionReference`/`upiRefNumber`/`bankName`/`chequeNumber` fields — bank reconciliation and
+  finance audit can't match a hospital payment record against the corresponding bank-statement
+  line. Found in the 2026-09-03 external review.
+- [ ] **Global patient search (Ctrl+K).** No command-palette/spotlight component exists in
+  `staff-console`. Receptionists/triage nurses handling queues and phone calls currently must
+  navigate to the patients list and filter — a top-bar spotlight search over `/patients?q=`/
+  `/directory/resolve` (phone, UHID, name) from any screen would remove that detour. Found in the
+  2026-09-03 external review.
+- [ ] **Unified doctor consultation pad.** The OPD clinical workflow is split across 4 separate
+  routes (`/clinical/patients/:id`, `/clinical/vitals`, `/clinical/encounters`, `/clinical/orders`)
+  with no single-screen view — a doctor must leave the encounter, re-search the patient, and order
+  tests/prescriptions separately; prescriptions are plain text with no pharmacy stock check. This
+  is a larger UX redesign, not a small gap — worth scoping as its own design pass (patient summary
+  + SOAP notes/diagnosis + order/prescription drawer in one screen) rather than a quick fix. Found
+  in the 2026-09-03 external review.
 
 ## Dependencies worth calling out explicitly
 
