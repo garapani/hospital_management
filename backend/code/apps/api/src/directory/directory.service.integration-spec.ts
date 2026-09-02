@@ -1,6 +1,7 @@
 import { DirectoryService } from './directory.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
+import { PdfService } from '@hospital/pdf';
 import { MasterDataService } from '../master-data/master-data.service.js';
 import { InventoryCatalogService } from '../inventory/inventory-catalog.service.js';
 import {
@@ -20,7 +21,7 @@ describe('DirectoryService (integration)', () => {
     ctx = await setupTenantTestContext({ namePrefix: 'directory', seedRbac: true });
     directoryService = new DirectoryService(ctx.tenantConnection);
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
-    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, ctx.accountsService);
+    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, ctx.accountsService, new PdfService());
     masterDataService = new MasterDataService(ctx.tenantConnection);
     inventoryCatalogService = new InventoryCatalogService(ctx.tenantConnection);
   });

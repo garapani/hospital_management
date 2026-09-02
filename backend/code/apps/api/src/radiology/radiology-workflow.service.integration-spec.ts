@@ -38,6 +38,7 @@ describe('RadiologyWorkflowService (integration)', () => {
       ctx.tenantConnection,
       new PatientNumberGeneratorService(ctx.tenantConnection),
       new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext),
+      new PdfService(),
     );
   });
 

@@ -3,6 +3,7 @@ import { VitalsService } from './vitals.service.js';
 import { PatientsService } from '../../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../../patients/patient-number-generator.service.js';
 import { AccountsService } from '../../accounts/accounts.service.js';
+import { PdfService } from '@hospital/pdf';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -20,7 +21,7 @@ describe('VitalsService (integration)', () => {
     tenantB = await ctx.createTenant();
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
-    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
+    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext), new PdfService());
     vitalsService = new VitalsService(ctx.tenantConnection, ctx.tenantContext);
   });
 

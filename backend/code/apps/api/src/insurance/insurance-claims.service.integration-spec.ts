@@ -7,6 +7,7 @@ import { InvoicesService } from '../billing/invoices.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { AccountingService } from '../accounting/accounting.service.js';
 import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
+import { PdfService } from '@hospital/pdf';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -24,7 +25,7 @@ describe('InsuranceClaimsService (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'insurance' });
-    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
+    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext), new PdfService());
     invoicesService = new InvoicesService(
       ctx.tenantConnection,
       ctx.tenantContext,

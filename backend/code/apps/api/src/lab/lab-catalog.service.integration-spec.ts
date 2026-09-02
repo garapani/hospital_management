@@ -25,7 +25,7 @@ describe('LabCatalogService catalog update/deactivate (integration)', () => {
     ctx = await setupTenantTestContext({ namePrefix: 'lab_catalog_gap' });
     catalogService = new LabCatalogService(ctx.tenantConnection);
     ordersService = new OrdersService(ctx.tenantConnection);
-    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
+    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext), new PdfService());
     labWorkflowService = new LabWorkflowService(
       ctx.tenantConnection,
       new LabRequisitionNumberGeneratorService(ctx.tenantConnection),

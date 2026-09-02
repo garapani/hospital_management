@@ -8,6 +8,7 @@ import { AccountingService } from '../accounting/accounting.service.js';
 import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
 import { JournalEntry } from '../accounting/entities/journal-entry.entity.js';
 import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
+import { PdfService } from '@hospital/pdf';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -27,7 +28,7 @@ describe('InvoicesService (integration)', () => {
     tenantB = await ctx.createTenant();
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
-    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
+    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext), new PdfService());
     accountingService = new AccountingService(ctx.tenantConnection, new JournalNumberGeneratorService(ctx.tenantConnection), ctx.tenantContext);
     invoicesService = new InvoicesService(ctx.tenantConnection, ctx.tenantContext, accountingService);
     depositsService = new DepositsService(ctx.tenantConnection, ctx.tenantContext, accountingService);
@@ -686,6 +687,7 @@ describe('InvoicesService (integration)', () => {
         ctx.tenantConnection,
         new PatientNumberGeneratorService(ctx.tenantConnection),
         new AccountsService(ctx.tenantConnection, ctx.dataSource, reportCtx.tenantContext),
+        new PdfService(),
       );
       const inReport = <T>(work: () => Promise<T>): Promise<T> =>
         reportCtx.tenantContext.run({ tenantId: reportCtx.tenantId, correlationId: 'report' }, work);

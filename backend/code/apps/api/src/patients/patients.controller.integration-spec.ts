@@ -245,6 +245,40 @@ describe('PatientsController (integration)', () => {
     });
   });
 
+  describe('HTTP GET /api/patients/:id/id-label.pdf', () => {
+    it('exports a printable label as application/pdf starting with the PDF magic bytes', async () => {
+      const createRes = await request(app.getHttpServer())
+        .post('/api/patients')
+        .set('Authorization', `Bearer ${fullPermToken}`)
+        .send({
+          firstName: 'Priya',
+          lastName: 'Sharma',
+          gender: 'Female',
+          dateOfBirth: '1992-07-04',
+          bloodGroup: 'B+',
+        });
+      const patientId = createRes.body.id;
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/patients/${patientId}/id-label.pdf`)
+        .set('Authorization', `Bearer ${readOnlyToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('application/pdf');
+      expect(response.headers['content-disposition']).toContain('inline');
+      expect(Buffer.isBuffer(response.body)).toBe(true);
+      expect(response.body.subarray(0, 5).toString('ascii')).toBe('%PDF-');
+    });
+
+    it('returns 404 for a non-existent patient id', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/patients/00000000-0000-0000-0000-000000000000/id-label.pdf')
+        .set('Authorization', `Bearer ${readOnlyToken}`);
+
+      expect(response.status).toBe(404);
+    });
+  });
+
   describe('HTTP PATCH /api/patients/:id', () => {
     it('updates patient details', async () => {
       const createRes = await request(app.getHttpServer())

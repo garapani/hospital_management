@@ -34,7 +34,7 @@ describe('RadiologyCatalogService catalog update/deactivate (integration)', () =
       new PdfService(),
       new ObjectStorageService(),
     );
-    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
+    patientsService = new PatientsService(ctx.tenantConnection, new PatientNumberGeneratorService(ctx.tenantConnection), new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext), new PdfService());
   });
 
   afterAll(() => teardownTenantTestContext(ctx));

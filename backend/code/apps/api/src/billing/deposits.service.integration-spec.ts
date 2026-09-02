@@ -7,6 +7,7 @@ import { AccountsService } from '../accounts/accounts.service.js';
 import { AccountingService } from '../accounting/accounting.service.js';
 import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
 import { LEDGER_ACCOUNT_IDS } from '../accounting/ledger-account-codes.js';
+import { PdfService } from '@hospital/pdf';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -25,7 +26,7 @@ describe('DepositsService (integration)', () => {
     tenantB = await ctx.createTenant();
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
-    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
+    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext), new PdfService());
     accountingService = new AccountingService(ctx.tenantConnection, new JournalNumberGeneratorService(ctx.tenantConnection), ctx.tenantContext);
     depositsService = new DepositsService(ctx.tenantConnection, ctx.tenantContext, accountingService);
   });

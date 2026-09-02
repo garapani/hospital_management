@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { PatientsService } from './patients.service.js';
 import { CreatePatientDto } from './dto/create-patient.dto.js';
@@ -28,6 +28,16 @@ export class PatientsController {
   @RequirePermission('patients.read')
   async findAll(@Query() query: SearchPatientsDto) {
     return this.patientsService.findAll(query);
+  }
+
+  // Must precede @Get(':id') so the literal 'id-label.pdf' segment isn't captured as an id.
+  @Get(':id/id-label.pdf')
+  @RequirePermission('patients.read')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Content-Disposition', 'inline; filename="patient-id-label.pdf"')
+  async idLabelPdf(@Param('id') id: string): Promise<StreamableFile> {
+    const buffer = await this.patientsService.renderIdLabelPdf(id);
+    return new StreamableFile(buffer);
   }
 
   @Get(':id')

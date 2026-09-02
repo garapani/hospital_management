@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PatientNumberGeneratorService } from './patient-number-generator.service.js';
 import { PatientsService } from './patients.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
+import { PdfService } from '@hospital/pdf';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -17,7 +18,7 @@ describe('PatientsService (integration)', () => {
     ctx = await setupTenantTestContext({ namePrefix: 'patients_svc' });
     const generatorService = new PatientNumberGeneratorService(ctx.tenantConnection);
     accountsService = new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext);
-    service = new PatientsService(ctx.tenantConnection, generatorService, accountsService);
+    service = new PatientsService(ctx.tenantConnection, generatorService, accountsService, new PdfService());
   });
 
   afterAll(() => teardownTenantTestContext(ctx));

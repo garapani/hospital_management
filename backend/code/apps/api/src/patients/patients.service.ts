@@ -13,6 +13,8 @@ import { SearchPatientsDto } from './dto/search-patients.dto.js';
 import { CreatePortalInviteDto } from './dto/create-portal-invite.dto.js';
 import { CheckDuplicatesDto } from './dto/check-duplicates.dto.js';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
+import { PdfService } from '@hospital/pdf';
+import { buildPatientIdLabelDocument } from './patient-id-label-document.js';
 
 @Injectable()
 export class PatientsService {
@@ -20,6 +22,7 @@ export class PatientsService {
     private readonly tenantConnection: TenantConnectionService,
     private readonly patientNumberGenerator: PatientNumberGeneratorService,
     private readonly accountsService: AccountsService,
+    private readonly pdfService: PdfService,
   ) {}
 
   private async findDuplicates(manager: EntityManager, dto: CheckDuplicatesDto): Promise<Patient[]> {
@@ -149,6 +152,26 @@ export class PatientsService {
       }
       return patient;
     });
+  }
+
+  /**
+   * Not mirrored to object storage like the Lab/Radiology verified-report PDFs: those are
+   * permanent clinical records worth archiving, this is a live, always-regeneratable document —
+   * reprinting a lost wristband is just calling this endpoint again.
+   */
+  async renderIdLabelPdf(id: string): Promise<Buffer> {
+    const patient = await this.findOne(id);
+    const fullName = [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(' ');
+    return this.pdfService.render(
+      buildPatientIdLabelDocument({
+        patientId: patient.id,
+        patientNo: patient.patientNo,
+        fullName,
+        gender: patient.gender,
+        dateOfBirth: patient.dateOfBirth ? new Date(patient.dateOfBirth).toISOString().slice(0, 10) : null,
+        bloodGroup: patient.bloodGroup,
+      }),
+    );
   }
 
   async update(id: string, dto: UpdatePatientDto): Promise<Patient> {

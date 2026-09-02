@@ -9,6 +9,7 @@ import { Admission } from './entities/admission.entity.js';
 import { BedTransfer } from './entities/bed-transfer.entity.js';
 import { DischargeSummary } from './entities/discharge-summary.entity.js';
 import { AccountsService } from '../accounts/accounts.service.js';
+import { PdfService } from '@hospital/pdf';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -29,7 +30,7 @@ describe('AdmissionsService (integration)', () => {
     ctx2 = await ctx.createTenant();
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
-    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext));
+    patientsService = new PatientsService(ctx.tenantConnection, patientSequence, new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext), new PdfService());
     masterDataService = new MasterDataService(ctx.tenantConnection);
     appointmentsService = new AppointmentsService(ctx.tenantConnection);
     triageService = new TriageService(ctx.tenantConnection, ctx.tenantContext);

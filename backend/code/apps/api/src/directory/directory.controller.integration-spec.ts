@@ -9,6 +9,7 @@ import { DirectoryModule } from './directory.module.js';
 import { createApiValidationPipe } from '../app/api-validation-pipe.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
+import { PdfService } from '@hospital/pdf';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -30,7 +31,7 @@ describe('DirectoryController (integration)', () => {
     token = await signTestToken({ sub: 'directory-controller-user', hospitalId: ctx.tenantId });
 
     const patientSequence = new PatientNumberGeneratorService(ctx.tenantConnection);
-    const patientsService = new PatientsService(ctx.tenantConnection, patientSequence, ctx.accountsService);
+    const patientsService = new PatientsService(ctx.tenantConnection, patientSequence, ctx.accountsService, new PdfService());
     const patient = await ctx.inTenant(() =>
       patientsService.create({ firstName: 'Ctrl', lastName: 'Test', gender: 'Male', phoneNumber: '9990000099' }),
     );

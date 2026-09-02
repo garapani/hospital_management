@@ -7,6 +7,7 @@ import { OrdersService } from '../orders/orders.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
+import { PdfService } from '@hospital/pdf';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -36,6 +37,7 @@ describe('InventoryCatalogService catalog update/deactivate (integration)', () =
       ctx.tenantConnection,
       new PatientNumberGeneratorService(ctx.tenantConnection),
       new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext),
+      new PdfService(),
     );
   });
 

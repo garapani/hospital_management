@@ -5,6 +5,7 @@ import { AppModule } from '../app/app.module.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
+import { PdfService } from '@hospital/pdf';
 import { signTestToken } from '../testing/test-jwt.js';
 import {
   setupTenantTestContext,
@@ -30,6 +31,7 @@ describe('PatientPortalController (integration)', () => {
       ctx.tenantConnection,
       new PatientNumberGeneratorService(ctx.tenantConnection),
       new AccountsService(ctx.tenantConnection, ctx.dataSource, ctx.tenantContext),
+      new PdfService(),
     );
     const patient = await ctx.tenantContext.run(
       { tenantId: ctx.tenantId, accountId: '00000000-0000-4000-8000-0000000000e4', correlationId: 'test' },
