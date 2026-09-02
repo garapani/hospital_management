@@ -112,6 +112,38 @@ describe('RadiologyWorkflowService (integration)', () => {
     });
   });
 
+  describe('patient identity (found live during the 2026-09-02 role-based review)', () => {
+    it('exposes patientId (resolved via the order item) on both findOne and findAll, not just the PDF path', async () => {
+      const item = await makeImagingItem('patient-identity');
+      const patient = await ctx.inTenant(() =>
+        patientsService.create({
+          firstName: 'Identity',
+          lastName: 'Check',
+          dateOfBirth: '1990-01-01',
+          gender: 'Female',
+          phoneNumber: '4460000099',
+        }),
+      );
+      const order = await ctx.inTenant(() =>
+        ordersService.create({
+          patientId: patient.id,
+          orderedBy: DOCTOR_ID,
+          items: [{ itemType: 'Radiology', itemDescription: 'Chest X-Ray' }],
+        }),
+      );
+      const orderItem = order.items[0];
+      const requisition = await ctx.inTenant(() =>
+        workflowService.createRequisition({ orderItemId: orderItem.id, imagingItemId: item.id }),
+      );
+
+      const found = await ctx.inTenant(() => workflowService.findOne(requisition.id));
+      expect(found.patientId).toBe(patient.id);
+
+      const list = await ctx.inTenant(() => workflowService.findAll({ orderItemId: orderItem.id }));
+      expect(list.data[0].patientId).toBe(patient.id);
+    });
+  });
+
   describe('status machine', () => {
     it('walks Pending -> Scanned -> ReportEntered -> Verified, completing the order item', async () => {
       const item = await makeImagingItem('walk');

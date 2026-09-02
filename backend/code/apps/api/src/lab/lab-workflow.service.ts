@@ -147,13 +147,21 @@ export class LabWorkflowService {
     });
   }
 
-  async findOne(id: string): Promise<LabRequisition> {
+  async findOne(id: string): Promise<LabRequisition & { patientId: string | null }> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const requisition = await manager.getRepository(LabRequisition).findOne({ where: { id } });
       if (!requisition) {
         throw new NotFoundException(`Lab requisition ${id} not found`);
       }
-      return requisition;
+      // Same join shape as renderReportPdf below — patientId was previously fetched only for the
+      // PDF path and never exposed via the JSON API a Lab Technician's worklist actually uses, so
+      // there was no on-screen confirmation of whose sample a Verify sign-off applied to (found
+      // live during the 2026-09-02 role-based review).
+      const orderRows = await manager.query(
+        `SELECT o."patientId" FROM orders o JOIN order_items oi ON oi."orderId" = o.id WHERE oi.id = $1`,
+        [requisition.orderItemId],
+      );
+      return { ...requisition, patientId: orderRows[0]?.patientId ?? null };
     });
   }
 
@@ -163,8 +171,10 @@ export class LabWorkflowService {
    * just one order item's history (code-review-findings-2026-08-25 lab P2: there was previously no
    * way to find a requisition without already knowing its order item id).
    */
-  async listByOrderItem(query: SearchLabRequisitionsDto): Promise<PaginatedResponseDto<LabRequisition>> {
-    return this.tenantConnection.runInTenantSchema((manager) => {
+  async listByOrderItem(
+    query: SearchLabRequisitionsDto,
+  ): Promise<PaginatedResponseDto<LabRequisition & { patientId: string | null }>> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
       const qb = manager.getRepository(LabRequisition).createQueryBuilder('req');
       if (query.orderItemId) {
         qb.andWhere('req.orderItemId = :orderItemId', { orderItemId: query.orderItemId });
@@ -173,7 +183,23 @@ export class LabWorkflowService {
         qb.andWhere('req.status = :status', { status: query.status });
       }
       qb.orderBy('req.createdAt', 'DESC');
-      return paginate(qb, query);
+      const result = await paginate(qb, query);
+      if (result.data.length === 0) {
+        return { ...result, data: [] };
+      }
+      // One bulk lookup for the whole page rather than one query per row — same ANY($1) shape
+      // directory.service.ts's bulk resolver already uses for this exact class of problem.
+      const orderRows: Array<{ orderItemId: string; patientId: string }> = await manager.query(
+        `SELECT oi.id AS "orderItemId", o."patientId" AS "patientId"
+         FROM order_items oi JOIN orders o ON o.id = oi."orderId"
+         WHERE oi.id = ANY($1)`,
+        [result.data.map((r) => r.orderItemId)],
+      );
+      const patientIdByOrderItem = new Map(orderRows.map((r) => [r.orderItemId, r.patientId]));
+      return {
+        ...result,
+        data: result.data.map((r) => ({ ...r, patientId: patientIdByOrderItem.get(r.orderItemId) ?? null })),
+      };
     });
   }
 

@@ -116,17 +116,27 @@ export class RadiologyWorkflowService {
     });
   }
 
-  async findOne(id: string): Promise<RadiologyRequisition> {
+  async findOne(id: string): Promise<RadiologyRequisition & { patientId: string | null }> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const requisition = await manager.getRepository(RadiologyRequisition).findOne({ where: { id } });
       if (!requisition) {
         throw new NotFoundException(`Radiology requisition ${id} not found`);
       }
-      return requisition;
+      // Same join shape as renderReportPdf below — patientId was previously fetched only for the
+      // PDF path and never exposed via the JSON API a Radiology Technician's worklist actually
+      // uses, so there was no on-screen confirmation of whose scan a Verify sign-off applied to
+      // (found live during the 2026-09-02 role-based review).
+      const orderRows = await manager.query(
+        `SELECT o."patientId" FROM orders o JOIN order_items oi ON oi."orderId" = o.id WHERE oi.id = $1`,
+        [requisition.orderItemId],
+      );
+      return { ...requisition, patientId: orderRows[0]?.patientId ?? null };
     });
   }
 
-  async findAll(query: ListRadiologyRequisitionDto): Promise<PaginatedResponseDto<RadiologyRequisition>> {
+  async findAll(
+    query: ListRadiologyRequisitionDto,
+  ): Promise<PaginatedResponseDto<RadiologyRequisition & { patientId: string | null }>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const qb = manager.getRepository(RadiologyRequisition).createQueryBuilder('requisition')
         .leftJoinAndSelect('requisition.orderItem', 'orderItem')
@@ -144,7 +154,23 @@ export class RadiologyWorkflowService {
         qb.andWhere('requisition.imagingItemId = :imagingItemId', { imagingItemId: query.imagingItemId });
       }
 
-      return paginate(qb, { page: query.page, limit: query.limit });
+      const result = await paginate(qb, { page: query.page, limit: query.limit });
+      if (result.data.length === 0) {
+        return { ...result, data: [] };
+      }
+      // One bulk lookup for the whole page rather than one query per row — same ANY($1) shape
+      // directory.service.ts's bulk resolver already uses for this exact class of problem.
+      const orderRows: Array<{ orderItemId: string; patientId: string }> = await manager.query(
+        `SELECT oi.id AS "orderItemId", o."patientId" AS "patientId"
+         FROM order_items oi JOIN orders o ON o.id = oi."orderId"
+         WHERE oi.id = ANY($1)`,
+        [result.data.map((r) => r.orderItemId)],
+      );
+      const patientIdByOrderItem = new Map(orderRows.map((r) => [r.orderItemId, r.patientId]));
+      return {
+        ...result,
+        data: result.data.map((r) => ({ ...r, patientId: patientIdByOrderItem.get(r.orderItemId) ?? null })),
+      };
     });
   }
 

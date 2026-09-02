@@ -134,6 +134,36 @@ describe('LabWorkflowService.listByOrderItem (integration)', () => {
     expect(result.meta.total).toBe(1);
   });
 
+  it('exposes patientId (resolved via the order item) on both findOne and the worklist, not just the PDF path', async () => {
+    const test = await makeTest('patient-identity');
+    const patient = await ctx.inTenant(() =>
+      patientsService.create({
+        firstName: 'Identity',
+        lastName: 'Check',
+        dateOfBirth: '1990-01-01',
+        gender: 'Female',
+        phoneNumber: '4450000093',
+      }),
+    );
+    const order = await ctx.inTenant(() =>
+      ordersService.create({
+        patientId: patient.id,
+        orderedBy: DOCTOR_ID,
+        items: [{ itemType: 'Lab', itemDescription: 'CBC' }],
+      }),
+    );
+    const orderItem = order.items[0];
+    const requisition = await ctx.inTenant(() =>
+      labWorkflowService.createRequisition({ orderItemId: orderItem.id, testId: test.id, specimenType: 'Blood' }),
+    );
+
+    const found = await ctx.inTenant(() => labWorkflowService.findOne(requisition.id));
+    expect(found.patientId).toBe(patient.id);
+
+    const worklist = await ctx.inTenant(() => labWorkflowService.listByOrderItem({ orderItemId: orderItem.id }));
+    expect(worklist.data[0].patientId).toBe(patient.id);
+  });
+
   it('listResultsByRequisition returns the entered results for a requisition (frontend review 2026-08-30: verification was previously blind — no read path for entered values existed)', async () => {
     const test = await makeTest('list-results');
     const component = await ctx.inTenant(() => catalogService.listComponentsByTest(test.id));
