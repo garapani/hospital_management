@@ -1498,6 +1498,16 @@ navigating away. Verified live for all three roles with real fixture data. The `
 unreachability for these roles is unaffected by this change — still a separate, open item if it
 ever needs addressing (the new dashboard covers the "daily work summary" need directly instead).
 
+**Closed (2026-09-02), not a gap:** re-checked against `PRD.md` §6.1's role-scope table while
+working the pending-tasks queue top-to-bottom — Reporting/Dashboard (read-only) is granted to
+Auditor/Compliance only; Doctor, Nurse, and Receptionist have no Reporting/Dashboard entry in
+either the full-access or read-only column of that table at all. `/reporting` being structurally
+unreachable to these three roles is therefore the PRD's own intentional design, not an
+under-provisioned RBAC grant — and the underlying user need this finding actually pointed at (a
+role-appropriate "my day" summary) was already resolved by the `/dashboard` feature landing in the
+same review pass. No RBAC or routing change made; granting `reporting.read` to these roles would
+go against the documented role scope, not fix a bug.
+
 Doctor lands on the full patient roster (`/clinical/patients`), Nurse on the full triage list (`/clinical/triage`), Receptionist on the full appointment list (`/clinical/appointments`) — all unfiltered, hospital-wide list/search screens, not a "your day" summary (today's appointments, your pending tasks, unread alerts). The one dashboard-shaped screen in the app (`/reporting`, gated by `reporting.read`) is granted only to Super Admin, Hospital Admin, and Auditor/Compliance in `seed-rbac-catalog.ts` — structurally unreachable by any of these three roles even by direct navigation (the route guard redirects to `/login`, the same failure mode as the root-redirect finding above).
 
 - `frontend/apps/staff-console/src/app/login/login.ts:26-33`
