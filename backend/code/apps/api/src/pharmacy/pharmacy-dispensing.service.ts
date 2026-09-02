@@ -13,6 +13,8 @@ import { StockTransaction } from '../inventory/entities/stock-transaction.entity
 import { ListPharmacyDispensingDto } from './dto/list-pharmacy-dispensing.dto.js';
 import { ListPendingPharmacyItemsDto } from './dto/list-pending-pharmacy-items.dto.js';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
+import { PdfService } from '@hospital/pdf';
+import { buildPharmacyDispensingLabelDocument } from './pharmacy-dispensing-label-document.js';
 
 export interface CreateDispensingInput {
   orderItemId: string;
@@ -40,6 +42,7 @@ export class PharmacyDispensingService {
     private readonly ordersService: OrdersService,
     private readonly fefoStockDecrement: FefoStockDecrementService,
     private readonly tenantContext: TenantContextService,
+    private readonly pdfService: PdfService,
   ) {}
 
   /**
@@ -326,5 +329,45 @@ export class PharmacyDispensingService {
       dispensing.reversalReason = input.reversalReason ?? null;
       return dispensingRepository.save(dispensing);
     });
+  }
+
+  /**
+   * Not mirrored to object storage: same reasoning as the patient ID / lab / radiology labels
+   * (Development-Standards.md §129) — a live, always-regeneratable document, printed to identify
+   * a dispensed medication packet, available before dispensing (not just after) since that's when
+   * it needs to be attached to the packet.
+   */
+  async renderDispensingLabelPdf(id: string): Promise<Buffer> {
+    const item = await this.tenantConnection.runInTenantSchema(async (manager) => {
+      const dispensing = await manager.getRepository(PharmacyDispensing).findOne({ where: { id } });
+      if (!dispensing) {
+        throw new NotFoundException(`Pharmacy dispensing ${id} not found`);
+      }
+
+      const inventoryItem = await this.inventoryCatalogService.getItem(dispensing.inventoryItemId);
+
+      const orderRows = await manager.query(
+        `SELECT o."patientId" FROM orders o JOIN order_items oi ON oi."orderId" = o.id WHERE oi.id = $1`,
+        [dispensing.orderItemId],
+      );
+      const patient = orderRows.length > 0
+        ? await manager.query(`SELECT "firstName", "lastName", "patientNo" FROM patients WHERE id = $1`, [orderRows[0].patientId])
+        : [];
+      const patientName = patient.length > 0 ? `${patient[0].firstName} ${patient[0].lastName}` : 'Unknown';
+      const patientNo = patient[0]?.patientNo ?? '';
+
+      return buildPharmacyDispensingLabelDocument({
+        dispensingId: dispensing.id,
+        dispensingNumber: dispensing.dispensingNumber,
+        patientName,
+        patientNo,
+        drugName: inventoryItem.name,
+        quantity: dispensing.quantity,
+        unitOfMeasure: inventoryItem.unitOfMeasure,
+        dispensedAt: dispensing.dispensedAt?.toISOString() ?? null,
+      });
+    });
+
+    return this.pdfService.render(item);
   }
 }

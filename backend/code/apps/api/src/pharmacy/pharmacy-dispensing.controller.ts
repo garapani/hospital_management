@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Patch, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { PharmacyDispensingService } from './pharmacy-dispensing.service.js';
 import { CreatePharmacyDispensingDto } from './dto/create-pharmacy-dispensing.dto.js';
@@ -30,6 +30,16 @@ export class PharmacyDispensingController {
   @RequirePermission('pharmacy.read')
   async findPendingItems(@Query() query: ListPendingPharmacyItemsDto) {
     return this.pharmacyDispensingService.listPendingItems(query);
+  }
+
+  // Must precede @Get(':id') so the literal 'dispensing-label.pdf' segment isn't captured as an id.
+  @Get(':id/dispensing-label.pdf')
+  @RequirePermission('pharmacy.read')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Content-Disposition', 'inline; filename="pharmacy-dispensing-label.pdf"')
+  async dispensingLabelPdf(@Param('id') id: string): Promise<StreamableFile> {
+    const buffer = await this.pharmacyDispensingService.renderDispensingLabelPdf(id);
+    return new StreamableFile(buffer);
   }
 
   @Get(':id')

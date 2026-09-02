@@ -32,6 +32,7 @@ describe('InventoryCatalogService catalog update/deactivate (integration)', () =
       ordersService,
       new FefoStockDecrementService(),
       ctx.tenantContext,
+      new PdfService(),
     );
     patientsService = new PatientsService(
       ctx.tenantConnection,

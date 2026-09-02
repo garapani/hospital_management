@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PharmacyDispensingService } from './pharmacy-dispensing.service.js';
 import { PharmacyDispensingNumberGeneratorService } from './pharmacy-dispensing-number-generator.service.js';
 import { InventoryCatalogService } from '../inventory/inventory-catalog.service.js';
@@ -35,6 +35,7 @@ describe('PharmacyDispensingService (integration)', () => {
       ordersService,
       new FefoStockDecrementService(),
       ctx.tenantContext,
+      new PdfService(),
     );
     patientsService = new PatientsService(
       ctx.tenantConnection,
@@ -170,6 +171,27 @@ describe('PharmacyDispensingService (integration)', () => {
       const result = await ctx.inTenant(() => dispensingService.listPendingItems({ page: 1, limit: 50 }));
 
       expect(result.data.map((r) => r.id)).not.toContain(labItem.id);
+    });
+  });
+
+  describe('renderDispensingLabelPdf', () => {
+    it('renders a printable label as a PDF buffer, available before dispensing', async () => {
+      const item = await makeDrugItem('label');
+      const orderItem = await makeOrderItem('4470000040');
+      const dispensing = await ctx.inTenant(() =>
+        dispensingService.createDispensing({ orderItemId: orderItem.id, inventoryItemId: item.id, quantity: 2 }),
+      );
+
+      const buffer = await ctx.inTenant(() => dispensingService.renderDispensingLabelPdf(dispensing.id));
+
+      expect(Buffer.isBuffer(buffer)).toBe(true);
+      expect(buffer.subarray(0, 5).toString('ascii')).toBe('%PDF-');
+    });
+
+    it('rejects a non-existent dispensing id', async () => {
+      await expect(
+        ctx.inTenant(() => dispensingService.renderDispensingLabelPdf('00000000-0000-0000-0000-000000000000')),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
