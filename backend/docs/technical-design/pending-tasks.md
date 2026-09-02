@@ -525,9 +525,12 @@ Follow the PRD's own phase ordering as-is:
   (`GET /radiology/requisitions/:id/requisition-label.pdf`) — same small-label pattern, QR-encoded
   requisitionId, available before collection/scan (that's when the label actually gets attached to
   the tube/envelope). `openPdfBlobInNewTab()` extracted to `shared/pdf-blob.util.ts` now that three
-  screens (Patient Detail, Lab/Radiology Requisition Detail) share it. **Not done:** Pharmacy
-  dispensing label (same pattern, one more module), Excel export (no dependency chosen yet), and
-  the full Reporting/Dashboard aggregation UI. **Also found, not fixed:** the Lab/Radiology
+  screens (Patient Detail, Lab/Radiology Requisition Detail) share it. **Third slice done
+  (2026-09-02):** Pharmacy dispensing label (`GET /pharmacy/dispensings/:id/dispensing-label.pdf`)
+  — same pattern, QR-encoded dispensingId, available before dispensing. All four label types
+  named in the 2026-09-02 role-based review are now shipped. **Not done:** Excel export (no
+  dependency chosen yet) and the full Reporting/Dashboard aggregation UI — both still open, neither
+  blocked on anything. **Also found, not fixed:** the Lab/Radiology
   `report.pdf` and Reporting CSV/PDF export endpoints (all shipped earlier) have no frontend button
   anywhere calling them — a pre-existing gap, out of scope for this pass, worth its own item.
   **Helpdesk**, **Marketing
