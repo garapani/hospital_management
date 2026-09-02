@@ -160,7 +160,9 @@ describe('seedRbacCatalog (integration)', () => {
     expect(readRoles.map((r: Role) => r.name).sort()).toEqual([
       'Doctor',
       'Hospital Admin',
+      'Lab Technician',
       'Nurse',
+      'Radiology Technician',
       'Receptionist / Front Desk',
       'Super Admin',
     ]);
@@ -319,8 +321,10 @@ describe('seedRbacCatalog (integration)', () => {
     expect(readRoles.map((r) => r.name).sort()).toEqual([
       'Doctor',
       'Hospital Admin',
+      'Lab Technician',
       'Nurse',
       'Pharmacist',
+      'Radiology Technician',
       'Receptionist / Front Desk',
       'Super Admin',
     ]);

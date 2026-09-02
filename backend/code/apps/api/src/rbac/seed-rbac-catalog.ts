@@ -593,6 +593,12 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Super Admin', permissionName: 'lab.result.verify' },
   { roleName: 'Hospital Admin', permissionName: 'lab.result.verify' },
   { roleName: 'Lab Technician', permissionName: 'lab.result.verify' },
+  // PRD §6.1: Lab Technician's read-only scope is "Order, Patient (demographics only)" alongside
+  // primary Lab rights — never actually granted (found live during the 2026-09-02 role-based
+  // review; patients.read only returns demographic fields, no clinical data, matching "demographics
+  // only").
+  { roleName: 'Lab Technician', permissionName: 'order.read' },
+  { roleName: 'Lab Technician', permissionName: 'patients.read' },
   { roleName: 'Super Admin', permissionName: 'radiology.catalog.manage' },
   { roleName: 'Hospital Admin', permissionName: 'radiology.catalog.manage' },
   { roleName: 'Super Admin', permissionName: 'radiology.read' },
@@ -608,6 +614,9 @@ const ROLE_PERMISSION_MAPPINGS: RolePermissionMapping[] = [
   { roleName: 'Super Admin', permissionName: 'radiology.report.verify' },
   { roleName: 'Hospital Admin', permissionName: 'radiology.report.verify' },
   { roleName: 'Radiology Technician', permissionName: 'radiology.report.verify' },
+  // PRD §6.1: same "Order, Patient (demographics only)" read scope as Lab Technician above.
+  { roleName: 'Radiology Technician', permissionName: 'order.read' },
+  { roleName: 'Radiology Technician', permissionName: 'patients.read' },
   { roleName: 'Super Admin', permissionName: 'inventory.catalog.manage' },
   { roleName: 'Hospital Admin', permissionName: 'inventory.catalog.manage' },
   { roleName: 'Super Admin', permissionName: 'inventory.read' },
