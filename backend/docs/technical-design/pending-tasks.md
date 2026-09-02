@@ -259,14 +259,18 @@ scope, not merely lower priority.
    explicitly deferred rather than left as an oversight.
 9. **Reference server sizing + load test** (new-features.md #8) — only meaningful once
    observability (item 6) and pooling (item 7) are in place to measure against.
-- [ ] **Audit-subscriber connection pool contention.** Unlike `ReportingSubscriber` (already
-      isolated on its own `REPORTING_DATA_SOURCE` pool, see item 6), `PersistingAuditEventPublisher`
-      (`persisting-audit-event-publisher.ts:26-28`) calls `runInTenantSchema()` with no override,
-      taking a second connection from the same main pool (item 7, max 20) while the triggering
-      business transaction still holds its own — under enough concurrent write load this can
-      starve the pool. Fix: either move audit writes onto their own dedicated pool (matching the
-      reporting pattern already in place) or make them use the caller's `event.manager` if the
-      ordering allows it. Found in the 2026-09-03 external review.
+- [x] **Audit-subscriber connection pool contention.** **Resolved (2026-09-03):** unlike
+      `ReportingSubscriber` (already isolated on its own `REPORTING_DATA_SOURCE` pool, see item 6),
+      `PersistingAuditEventPublisher` called `runInTenantSchema()` with no override, taking a
+      second connection from the same main pool (item 7, max 20) while the triggering business
+      transaction still held its own. Fixed by mirroring the reporting pattern exactly: a new
+      `audit-data-source.ts` (`AUDIT_DATA_SOURCE` token, `max: 3`/`connectionTimeoutMillis: 2000`,
+      maps only `AuditRecord`), wired into `AuditModule` via an async factory provider +
+      `onModuleDestroy` cleanup, injected into `PersistingAuditEventPublisher` and passed as
+      `runInTenantSchema`'s second argument. 3 new pinning tests (dedicated pool config, routing
+      through the dedicated pool not the main one, fails-fast-on-exhaustion) added to
+      `persisting-audit-event-publisher.integration-spec.ts`; full suite green. See
+      `Development-Standards.md` §132. Found in the 2026-09-03 external review.
 - [ ] **Global exception filter + correlation-id response header.** `main.ts` registers no
       `app.useGlobalFilters` — there's no `HttpExceptionFilter` anywhere in the codebase, so
       unhandled DB errors (statement timeout `57014`, unique violation `23505`) fall through to

@@ -4912,3 +4912,37 @@ lib and a service-boundary pattern worth reusing:
   `fixture.detectChanges()` outright. Scope it: check the tag argument, return the fake anchor only
   for `'a'`, delegate every other tag to the real `document.createElement.bind(document)` captured
   before the spy replaces it.
+
+## 132. A second `TypeORM afterInsert` subscriber taking a second pooled connection needs its own dedicated pool too, not just the first one
+
+An external review (2026-09-03) flagged connection-pool starvation risk in `PersistingAuditEventPublisher`
+and `ReportingSubscriber`'s publisher as if it were one undifferentiated problem. It wasn't: the
+reporting side was already fixed this way (`REPORTING_DATA_SOURCE`, a dedicated bounded pool — see
+`reporting-data-source.ts`) precisely because of this failure mode, but `PersistingAuditEventPublisher`
+still called `runInTenantSchema()` with no override, taking its second connection from the *same*
+main pool (`DB_POOL_MAX`, default 20) a live business transaction was still holding. Under enough
+concurrent write load — every `.save()` on an audited entity fires this — that starves the pool:
+node-postgres defaults to `connectionTimeoutMillis: 0` (wait indefinitely), so exhaustion doesn't
+error, it just hangs every in-flight request until `DB_STATEMENT_TIMEOUT_MS` eventually trips.
+
+Fix mirrored the reporting pattern exactly rather than inventing a new one: `audit-data-source.ts`'s
+`createAuditDataSource()` builds a second `DataSource` mapping only `AuditRecord`, capped at
+`max: 3` with `connectionTimeoutMillis: 2000` (short and bounded on purpose — an audit write is
+best-effort, so failing fast beats an unbounded wait); `AuditModule` provides it via an async
+factory under an `AUDIT_DATA_SOURCE` DI token and tears it down in `onModuleDestroy`;
+`PersistingAuditEventPublisher` takes it as a constructor dependency and passes it as
+`runInTenantSchema`'s second argument (`dataSourceOverride`) instead of relying on the default.
+
+Two things worth generalizing for the *next* subscriber that fires `runInTenantSchema` off a TypeORM
+hook: (1) grep for existing dedicated-pool tokens (`REPORTING_DATA_SOURCE`, `AUDIT_DATA_SOURCE`)
+before assuming the main pool is fine — a hook firing on every write of some entity is exactly the
+shape that causes this; (2) a publisher that's directly `new`'d in a lightweight integration spec
+(not resolved through Nest DI) needs the spec updated to construct and initialize its own throwaway
+copy of the dedicated `DataSource` too — `persisting-audit-event-publisher.integration-spec.ts` now
+creates and destroys its own `createAuditDataSource()` instance in `beforeAll`/`afterAll`, matching
+what the reporting spec already did via full `AppModule` bootstrap + `app.get(REPORTING_DATA_SOURCE)`.
+Pin the routing itself, not just that the write succeeds: a `jest.spyOn(tenantConnection,
+'runInTenantSchema')` assertion that the dedicated `DataSource` was actually passed as the second
+argument is the only thing that would catch a future edit silently dropping it and reintroducing the
+starvation risk — every other test in both files exercises the publisher without checking which pool
+served the write, so all of them stay green even if that argument is deleted.
