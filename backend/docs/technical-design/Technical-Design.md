@@ -183,9 +183,27 @@ compose: DB port **5433** (compose host port is now 5435 — export `DB_PORT` wh
 Redis port **6380** (see `apps/api/src/database/data-source.ts` and the throttler comments in
 `app.module.ts`). Swagger: `http://localhost:3005/api/docs`.
 
+**Container names differ from compose service names** (`docker ps`/`docker start` need the
+`container_name:`, not the service key): `api-postgres` → `api-postgres-dev`, `api-redis` →
+`api-redis-dev`, `api-minio` → `api-minio-dev`, `api` → `api-dev`. `docker-compose.dev.yml` maps
+Postgres to host port **5435** (not the code default 5433 above) — a container that's `Exited` (a
+previous session's `docker compose down` or host reboot) surfaces as `password authentication
+failed`, not `connection refused`, if something else happens to be listening on 5433/5432; `docker
+start api-postgres-dev` before running an integration spec locally, and pass
+`DB_HOST=localhost DB_PORT=5435 DB_USERNAME=hospital_db_user DB_PASSWORD=hospital_db_password
+DB_DATABASE=hospital_db` (credentials from the compose file's `POSTGRES_*` env, also visible via
+`docker inspect api-postgres-dev --format '{{range .Config.Env}}{{println .}}{{end}}'`) if not
+exporting them globally.
+
 Seeds (`apps/api/src/database/*-runner.ts`, run via `pnpm nx run api:seed-*`): RBAC permission
 catalog + demo roles, initial setup (platform + demo tenant), demo data/demo accounts, health
 packages catalog, ledger accounts. Rerunnable.
+
+**No project-level "boot the stack" skill exists yet** (only `resolve-pending-task` and
+`capture-feature-request` under `.claude/skills/` at writing time) — an agent session that needs to
+run integration specs or live-verify a UI change against a real backend has to rediscover the
+container names/ports above and the frontend's dev-server wiring from scratch each time. Worth
+capturing as a `run` skill once it recurs enough to be worth the setup.
 
 ## 9. Testing strategy
 
