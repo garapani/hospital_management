@@ -4839,3 +4839,13 @@ context to do better than a raw id:
   covers (journal entries, helpdesk tickets, tenants, …), so this is a deliberately bounded,
   partial win — falls back to the raw id for an unmapped table, not full audit-log entity
   resolution (a materially bigger feature, not attempted here).
+
+**Correction (2026-09-02):** `tsc --build apps/staff-console/tsconfig.app.json` — this session's
+own verification step for every frontend change — does **not** type-check Angular templates; it
+only checks the `.ts` files. Binding an optional-chained value (`targetCase()?.patientId`, typed
+`string | undefined`) to `<hms-entity-name [id]="...">`'s required `string` input compiled clean
+under `tsc --build` and broke only at `nx build` (Angular's real AOT compiler, which does
+type-check templates) — caught after the fact, from a real CI/build failure, not this session's
+own checks. `tsc --build` stays the fast day-to-day check; run `nx build <app>` too before calling
+a change done whenever it touches a template property binding (`[x]="..."`), not just plain
+interpolation (`{{ x }}`) — interpolation coerces to string and is far more forgiving.
