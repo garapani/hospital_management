@@ -1266,6 +1266,23 @@ Of ~20 lazy `p-table`s in the app, `employees` and `notifications` never bind `[
 
 **Deferred (2026-08-30):** (a) `userInitials` still derives from `roles[0]`, not a real name — the JWT (`AccessTokenClaims`) carries only `sub`/`hospitalId`/`roles`/`permissions`, no display name or email at all, so every admin's initials being identical is a genuine data-availability gap, not a bug in how the frontend reads the claims; fixing it needs a backend/JWT change (embedding a name, or a `/auth/me` endpoint), which is its own decision. (b) The hardcoded "Dashboard" header title is unchanged — no route in `app.routes.ts` carries a `title`, and adding one to every route (plus the chrome's `Router.events` wiring to read it) is exactly the kind of "every future screen must follow this convention" decision this project's own fast-track/heavyweight split reserves for the heavyweight pipeline, not a review-fix pass. (c) Outside-click/`Escape`-to-close on the three header dropdowns is not implemented — no existing dropdown in the app has this pattern to copy; scoping it (a directive? per-dropdown listeners?) is a small design decision worth its own pass across all of them rather than one-off here.
 
+**Resolved (2026-09-02), (a) and (c):** (a) added `displayName` to the access-token JWT
+(`AuthService.buildAccessPayload`), sourced from `accounts.displayName` — staff accounts only,
+deliberately: a patient token carrying the patient's real name would newly assert "this named
+individual is a patient here" in a readable (base64, not encrypted) JWT, and nothing in the
+not-yet-built patient portal consumes it. `userInitials`/a new `displayName` computed on
+`ShellChrome` use it, falling back to `roles[0]` for a still-live pre-existing token issued before
+the claim existed. A code review of the diff (this touches auth, so run at high effort per this
+repo's risk gate) caught that `decodeAccessToken`'s `atob()`-only base64 decode yields Latin-1, not
+UTF-8 — every claim before `displayName` happened to be ASCII in practice, so this was a live but
+unexercised bug; fixed to re-decode via `TextDecoder`, otherwise a name like "डॉ. रमेश" would have
+rendered as mojibake in the exact header this fix was adding. (c) added a
+`@HostListener('document:click'/'document:keydown.escape')` on `ShellChrome`, scoped per-dropdown
+via `@ViewChild` + `ElementRef.contains()`, so the user menu and notifications panel close on an
+outside click or Escape, not only their own toggle button. (b) remains deferred, unchanged from
+2026-08-30's reasoning — still a heavyweight-pipeline decision, not a review-fix pass. Backend: 48
+auth tests. Frontend: 637 tests, clean `tsc --build` (app + spec).
+
 ### Low: Dead code and hygiene — orphaned `marketing/` module, stray generator directories, self-defeating purge confirmation
 
 (1) `marketing/` contains only an API service and model — no component, no route, zero references anywhere else in `src/app`. (2) `frontend/apps/staff-console/src/app/apps/staff-console/` is a nested tree of empty directories left over from a generator run against the wrong `cwd`. (3) `TenantDetail.purge()` validates the typed hospital ID client-side and then sends `current.hospitalId` — not the user's typed confirmation string — as the `confirmHospitalId` body field, so the backend's server-side typed-confirmation check for an irreversible schema drop is auto-satisfied by the client and provides no independent protection.

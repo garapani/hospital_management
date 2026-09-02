@@ -4672,3 +4672,37 @@ would apply the action again), split the two calls. The `this.invoice()?.id === 
 `refreshInvoice` also protects against a route change landing mid-flight: without it, a late
 refresh response for the previous invoice could overwrite whatever the `paramMap` subscription has
 since loaded for a new one.
+
+## 126. A UI-display-only claim in the JWT is a real design choice, not a free add — and check the frontend's own base64 decoder before adding a non-ASCII value to any claim
+
+Adding `displayName` to the access token (`AuthService.buildAccessPayload`) so the shell header
+could show a real name instead of `roles[0]`-derived initials, a review of the diff (run at high
+effort — this touches auth) raised two points worth keeping as defaults for the next "just for
+display" claim:
+
+- **Scope it to the account types that actually consume it.** `displayName` is staff-only, not
+  `accountType === 'patient'` too, even though `Account.displayName` is populated for both. A
+  patient token carrying the patient's real name would newly assert "this named individual is a
+  patient at hospital X" in a readable (base64, not encrypted — anyone holding the token can read
+  every claim) blob, a stronger disclosure than the existing opaque `sub`/`patientId` claims — and
+  nothing in `apps/patient-portal` (no source files exist yet) consumes it. Don't ship an exposure
+  for a consumer that doesn't exist; gate a new UI-only claim by account type if any account type
+  has no use for it.
+- **A signed, non-revocable, sent-on-every-request credential is the wrong place for anything that
+  can change and needs to be corrected promptly.** A renamed account won't show the new name until
+  the 15-minute access token naturally expires, with no way to force it. `displayName` was judged
+  worth that tradeoff (low-stakes, cosmetic, already-short TTL) — but it's a real one, and the
+  alternative (`GET /accounts/me`, cached in `AuthService` at session start) is worth reaching for
+  once a *second* "just for display" field wants added (email, avatar URL, department), not
+  waiting until the JWT is bloated with several of them.
+
+Separately, and specific to any claim carrying real human names in an India-market EMR:
+`decodeAccessToken` (`libs/auth/src/lib/decode-access-token.ts`) decoded the JWT payload with
+`atob()` alone, which yields a Latin-1 binary string, while the backend signs UTF-8 bytes
+(`jsonwebtoken` → `Buffer.from(JSON.stringify(payload))`). Every claim before `displayName` was
+ASCII in practice (UUIDs, tenant slugs, seeded English role/permission names), so this was a live
+bug with zero test coverage until the first claim that routinely isn't ASCII landed — "डॉ. रमेश"
+decoded to Latin-1-per-byte mojibake, corrupting the exact header the fix was adding. Fixed via
+`new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0)))`. Any new frontend code
+that decodes a JWT payload directly (rather than going through this shared helper) needs the same
+fix — `atob()` is not a safe UTF-8-string decoder on its own.
