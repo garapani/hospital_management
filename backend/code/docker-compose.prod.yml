@@ -5,7 +5,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: hospital_db_user
-      POSTGRES_PASSWORD: hospital_db_pwd
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?Error: DB_PASSWORD environment variable is required}"
       POSTGRES_DB: hospital_db
     volumes:
       - ../../../../data/hospital/postgresql:/var/lib/postgresql/data
@@ -37,8 +37,8 @@ services:
     restart: always
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: hospital_dev
-      MINIO_ROOT_PASSWORD: hospital_dev_password
+      MINIO_ROOT_USER: "${OBJECT_STORAGE_ACCESS_KEY:?Error: OBJECT_STORAGE_ACCESS_KEY environment variable is required}"
+      MINIO_ROOT_PASSWORD: "${OBJECT_STORAGE_SECRET_KEY:?Error: OBJECT_STORAGE_SECRET_KEY environment variable is required}"
     volumes:
       - ../../../../data/hospital/minio:/data
     networks:
@@ -62,15 +62,15 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: hospital_db_user
-      DB_PASSWORD: hospital_db_pwd
+      DB_PASSWORD: "${DB_PASSWORD:?Error: DB_PASSWORD environment variable is required}"
       DB_DATABASE: hospital_db
       REDIS_HOST: redis
       REDIS_PORT: 6379
       OBJECT_STORAGE_ENDPOINT: minio
       OBJECT_STORAGE_PORT: 9000
-      OBJECT_STORAGE_ACCESS_KEY: hospital_dev
-      OBJECT_STORAGE_SECRET_KEY: hospital_dev_password
-      JWT_SECRET: dev-secret-key-at-least-32-chars-long-12345
+      OBJECT_STORAGE_ACCESS_KEY: "${OBJECT_STORAGE_ACCESS_KEY:?Error: OBJECT_STORAGE_ACCESS_KEY environment variable is required}"
+      OBJECT_STORAGE_SECRET_KEY: "${OBJECT_STORAGE_SECRET_KEY:?Error: OBJECT_STORAGE_SECRET_KEY environment variable is required}"
+      JWT_SECRET: "${JWT_SECRET:?Error: JWT_SECRET environment variable is required}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,7 +92,7 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: hospital_db_user
-      DB_PASSWORD: hospital_db_pwd
+      DB_PASSWORD: "${DB_PASSWORD:?Error: DB_PASSWORD environment variable is required}"
       DB_DATABASE: hospital_db
     depends_on:
       postgres:
@@ -113,7 +113,7 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: hospital_db_user
-      DB_PASSWORD: hospital_db_pwd
+      DB_PASSWORD: "${DB_PASSWORD:?Error: DB_PASSWORD environment variable is required}"
       DB_DATABASE: hospital_db
     depends_on:
       postgres:
@@ -134,15 +134,15 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: hospital_db_user
-      DB_PASSWORD: hospital_db_pwd
+      DB_PASSWORD: "${DB_PASSWORD:?Error: DB_PASSWORD environment variable is required}"
       DB_DATABASE: hospital_db
       REDIS_HOST: redis
       REDIS_PORT: 6379
       OBJECT_STORAGE_ENDPOINT: minio
       OBJECT_STORAGE_PORT: 9000
-      OBJECT_STORAGE_ACCESS_KEY: hospital_dev
-      OBJECT_STORAGE_SECRET_KEY: hospital_dev_password
-      JWT_SECRET: dev-secret-key-at-least-32-chars-long-12345
+      OBJECT_STORAGE_ACCESS_KEY: "${OBJECT_STORAGE_ACCESS_KEY:?Error: OBJECT_STORAGE_ACCESS_KEY environment variable is required}"
+      OBJECT_STORAGE_SECRET_KEY: "${OBJECT_STORAGE_SECRET_KEY:?Error: OBJECT_STORAGE_SECRET_KEY environment variable is required}"
+      JWT_SECRET: "${JWT_SECRET:?Error: JWT_SECRET environment variable is required}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -181,15 +181,15 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: hospital_db_user
-      DB_PASSWORD: hospital_db_pwd
+      DB_PASSWORD: "${DB_PASSWORD:?Error: DB_PASSWORD environment variable is required}"
       DB_DATABASE: hospital_db
       REDIS_HOST: redis
       REDIS_PORT: 6379
       OBJECT_STORAGE_ENDPOINT: minio
       OBJECT_STORAGE_PORT: 9000
-      OBJECT_STORAGE_ACCESS_KEY: hospital_dev
-      OBJECT_STORAGE_SECRET_KEY: hospital_dev_password
-      JWT_SECRET: dev-secret-key-at-least-32-chars-long-12345
+      OBJECT_STORAGE_ACCESS_KEY: "${OBJECT_STORAGE_ACCESS_KEY:?Error: OBJECT_STORAGE_ACCESS_KEY environment variable is required}"
+      OBJECT_STORAGE_SECRET_KEY: "${OBJECT_STORAGE_SECRET_KEY:?Error: OBJECT_STORAGE_SECRET_KEY environment variable is required}"
+      JWT_SECRET: "${JWT_SECRET:?Error: JWT_SECRET environment variable is required}"
     ports:
       - '3000:3000'
     depends_on:
