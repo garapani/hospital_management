@@ -2037,6 +2037,26 @@ not "buttons that 403," but buttons that didn't exist.
 - `frontend/apps/staff-console/src/app/inventory/inventory-item-list/inventory-item-list.{ts,html}`
 - `frontend/apps/staff-console/src/app/inventory/purchase-order-list/purchase-order-list.{ts,html}`
 
+### Medium: Billing/Accounts Staff missing their PRD-mandated Patient read access — silently breaks patient search and looks like a session bug
+
+**Resolved (2026-09-02):** granted `patients.read` in `seed-rbac-catalog.ts`. No frontend change
+needed — the invoice-list patient-search filter and the patient-chart link both already worked
+correctly, they were just blocked by the missing grant. Backend: 60 rbac/packages tests, clean
+`nx run api:typecheck`.
+
+PRD §6.1 lists "Read-only: Patient (demographics)" for this role; never seeded. Two concrete,
+user-visible breaks: (1) the invoice list's "Search for a patient" filter calls `patientsApi.search`,
+whose error handler has no toast — for this role it silently returned nothing on every keystroke,
+indistinguishable from "no matching patients." (2) the patient-name link on both the invoice list
+and invoice detail routes to `/clinical/patients/:id`, guarded by `permissionGuard` — a failed
+guard check redirects straight to `/login`, not an access-denied page, so a fully-authenticated
+Billing/Accounts Staff user clicking their own invoice's patient name got bounced to the login
+form, reading as "I got logged out" rather than a permissions gap.
+
+- `backend/code/apps/api/src/rbac/seed-rbac-catalog.ts` (Billing/Accounts Staff grant block)
+- `frontend/apps/staff-console/src/app/billing/invoice-list/invoice-list.ts`
+- `frontend/libs/auth/src/lib/auth.guard.ts`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
