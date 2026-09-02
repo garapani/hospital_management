@@ -4516,6 +4516,19 @@ later response that resolved first" for the exact shape. A component doing this 
 in its spec file may newly need `provideRouter([])` too, if a previously always-empty table now
 renders rows containing a `routerLink`.
 
+**Same pattern, second application (2026-09-02):** the deferred "cascading-select loads have no
+request-ordering guard" finding (`review-comments.md`) was this exact shape one level down — a
+category pick triggering a sub-category fetch, a sub-category pick triggering an item fetch, both
+plain `.subscribe()` with no cancellation, across four files
+(`inventory-item-list.ts`/`purchase-order-list.ts`/`stock-requisition-list.ts`/
+`ward-supply-console.ts`). One addition worth carrying forward: route the *empty*-selection case
+(user clears the `p-select`) through the same `switchMap` too, mapped to `EMPTY`, rather than
+special-casing it before the `Subject.next()` call — a bare early-return on empty still lets a
+stale in-flight request for the *previous* selection resolve after the clear and silently
+repopulate a field the user just emptied. Routing every value (including `''`) through the
+`switchMap` means `EMPTY` naturally cancels whatever was still in flight, the same way a new real
+value would.
+
 ## 121. Duplicate a backend validation/scoring function client-side only when there's a real doc string to pin it to — and it's fine to ship untested-live when the only path to live data is seeding a whole workflow by hand
 
 `lab-requisition-detail.ts`'s new `isValueAbnormal`/`isNumericComponent` duplicate the backend's

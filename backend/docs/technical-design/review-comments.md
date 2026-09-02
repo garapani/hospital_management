@@ -1113,6 +1113,19 @@ scope.
 
 **Deferred (2026-08-30):** the cascading-select request-ordering guard (`switchMap`/an in-flight token on `onCategoryChange`/`onSubCategoryChange` and their PO/ward-supply/requisition-dialog equivalents) is not added — it's a narrow race window (two category picks within one round-trip) with no user-visible incident on record, and every affected call site would need the same treatment; better scoped as a single follow-up pass across all of them than done piecemeal here.
 
+**Resolved (2026-09-02):** took that single follow-up pass — applied the `switchMap`-cancellation
+pattern (Development-Standards.md §120, originally built for the lazy-table paginator race) to
+`onCategoryChange`/`onSubCategoryChange` (and their `onLineCategoryChange`/`onLineSubCategoryChange`
+dialog equivalents) in `inventory-item-list.ts`, `purchase-order-list.ts`,
+`stock-requisition-list.ts`, and `ward-supply-console.ts`. Each method now pushes onto a private
+`Subject<string>` piped through `switchMap` in the constructor instead of firing a bare
+`.subscribe()`, so a newer category/sub-category pick cancels whatever lookup was still in flight
+outright, and clearing the select (empty string) also cancels via the same `switchMap` (routed to
+`EMPTY`) rather than only the non-empty path. Regression tests use per-response `Subject`s (not
+`of()`, which resolves synchronously and can't expose an ordering bug) to resolve a later pick's
+response before an earlier one's and assert the later one wins — one per file, matching the
+paginator fix's test-coverage shape. Full suite: 630 tests, clean `tsc --build` (app + spec).
+
 ### Module group: admin & platform (`admin-dashboard`, `tenants`, `users`, `employees`, `audit`, `notifications`, `helpdesk`, `branding`, `marketing`, `reporting`, `change-password`, `login`, `shell`, `fraction`)
 
 ### High: Tenant detail's package selector races the tenant load and can pre-select the wrong edition
