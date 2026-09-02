@@ -1957,6 +1957,38 @@ Development-Standards.md for the general shape of that gotcha, same family as §
 Full suite (637 tests) and clean `tsc --build` after every change; `nx lint staff-console` now
 passes with zero problems.
 
+### Module group: full role-based review — 2026-09-02 (the nine PRD roles not yet walked this way)
+
+The 2026-09-01 review covered Doctor/Nurse/Receptionist end to end. This pass does the same "walk
+a day in this role's shoes" exercise for the remaining nine PRD §6.1 roles: Lab Technician,
+Radiology Technician, Pharmacist, Billing/Accounts Staff, Inventory/Store Manager, HR/Payroll
+Admin, Helpdesk Agent, Auditor/Compliance, Hospital Admin, Super Admin. 15 findings total; fixed
+one by one, most severe/highest-leverage first (per the human partner's direction — record as
+resolved, top-to-bottom, rather than a batch).
+
+### High: Six roles could never reach any screen through a normal login — a shared bug in the landing-route resolver, not per-role
+
+**Resolved (2026-09-02):** added all six roles to both `ROLE_LANDING_ROUTES` and
+`TENANT_LANDING_CANDIDATES` in `login.ts` (the latter also fixes `root-redirect.guard.ts`, which
+reuses the same `resolveTenantLandingUrl()` for a bare `/` hit). Found a stale test in both
+`login.spec.ts` and `root-redirect.guard.spec.ts` that had encoded Lab Technician's dead-end as
+*expected* behavior (`'sends a tenant user with no matching role or permission to /login...'` used
+`roles: ['Lab Technician']` as its example) — fixed to use a genuinely unmapped role instead.
+Frontend: 650 tests, clean `tsc --build` (app + spec), clean `nx lint`.
+
+Inventory/Store Manager, HR/Payroll Admin, Lab Technician, Radiology Technician, Pharmacist, and
+Helpdesk Agent were never added to either table when their screens shipped. Every login for these
+six roles authenticated successfully (a valid in-memory token was already issued), then dead-ended
+on "Your account has no accessible screens yet. Contact your administrator." — a false message,
+since `/inventory`, `/employees`, `/clinical/lab`, `/clinical/radiology`, `/clinical/pharmacy`, and
+`/helpdesk` all work fine once reached by direct URL. This blocked 6 of ~13 roles' first-ever login
+experience and reads as "my account is broken," not "the app has a routing gap" — the highest-
+leverage single fix in this review, since one shared root cause (not six separate bugs) blocked
+nearly half the role table.
+
+- `frontend/apps/staff-console/src/app/login/login.ts:26-52`
+- `frontend/apps/staff-console/src/app/root-redirect.guard.ts:24-27`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
