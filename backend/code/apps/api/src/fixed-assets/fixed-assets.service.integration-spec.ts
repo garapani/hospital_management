@@ -135,14 +135,28 @@ describe('FixedAssetsService (integration)', () => {
 
   it('computes straight-line depreciation on read', async () => {
     const category = await makeCategory('depreciation');
-    const asset = await makeAsset(category.id, { purchaseCost: 120000, usefulLifeYears: 10, purchaseDate: '2024-01-01' });
+    const purchaseDate = '2024-01-01';
+    const purchaseCost = 120000;
+    const usefulLifeYears = 10;
+    const asset = await makeAsset(category.id, { purchaseCost, usefulLifeYears, purchaseDate });
 
-    // Purchase 2024-01-01, read as of the run date (2026-08) -> 31 full months in service.
+    // Recomputed from the actual run date rather than a hardcoded literal — the previous
+    // hardcoded "31 months as of 2026-08" rotted the moment the calendar ticked into September
+    // (review-comments.md "Two integration specs assert a hardcoded elapsed-time value against
+    // the real wall clock"). computeStraightLineValuation is the same function the service calls,
+    // so this still catches a real regression in the formula, just not via a frozen expectation.
+    const expected = computeStraightLineValuation({
+      purchaseDate,
+      purchaseCost,
+      usefulLifeYears,
+      salvageValue: 0,
+    });
+
     const valuation = await ctx.inTenant(() => fixedAssetsService.getAssetValuation(asset.id));
-    expect(valuation.monthsInService).toBe(31);
-    expect(valuation.annualDepreciation).toBe(12000);
-    expect(valuation.accumulatedDepreciation).toBe(31000);
-    expect(valuation.bookValue).toBe(89000);
+    expect(valuation.monthsInService).toBe(expected.monthsInService);
+    expect(valuation.annualDepreciation).toBe(expected.annualDepreciation);
+    expect(valuation.accumulatedDepreciation).toBe(expected.accumulatedDepreciation);
+    expect(valuation.bookValue).toBe(expected.bookValue);
   });
 
   it('caps accumulated depreciation at cost minus salvage', () => {

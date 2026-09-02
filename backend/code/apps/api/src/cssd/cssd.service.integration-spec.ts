@@ -339,11 +339,17 @@ describe('CssdService (integration)', () => {
     expect(expired.lastCompletedAt?.toISOString()).toBe('2026-08-26T10:00:00.000Z');
     expect(expired.sterileExpiryAt?.toISOString()).toBe('2026-08-25T10:00:00.000Z');
 
-    // A fresh latest cycle flips it back to sterile.
-    await rawInsert('2026-08-27T10:00:00Z', '2026-09-01T10:00:00Z');
+    // A fresh latest cycle flips it back to sterile. Computed relative to the actual run time
+    // rather than a hardcoded future literal — the previous hardcoded '2026-09-01' rotted the
+    // moment the calendar caught up to it (review-comments.md "Two integration specs assert a
+    // hardcoded elapsed-time value against the real wall clock"). completedAt just needs to be
+    // later than the other two raw-inserted rows above (both in 2026-08); Date.now() always is.
+    const freshCompletedAt = new Date();
+    const freshExpiryAt = new Date(freshCompletedAt.getTime() + 24 * 60 * 60 * 1000);
+    await rawInsert(freshCompletedAt.toISOString(), freshExpiryAt.toISOString());
     const sterile = await ctx.inTenant(() => cssdService.getSterility(instrument.id));
     expect(sterile.isSterile).toBe(true);
-    expect(sterile.sterileExpiryAt?.toISOString()).toBe('2026-09-01T10:00:00.000Z');
+    expect(sterile.sterileExpiryAt?.toISOString()).toBe(freshExpiryAt.toISOString());
   });
 
   it('derives operatedBy from the authenticated principal, ignoring spoofed values', async () => {
