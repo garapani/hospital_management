@@ -189,12 +189,25 @@ scope, not merely lower priority.
       restore → active, purge guards (active refused, wrong confirm refused) + schema/role/row
       gone, audit delete record survives, demo unaffected. Backend suite 653, frontend 320.
       See `Development-Standards.md` §47.
-- [ ] **Prod compose secrets are hardcoded, not env-required.** `docker-compose.prod.yml:8,41,73`
-      set `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `JWT_SECRET` to literal plaintext defaults
-      (`hospital_db_pwd`, `hospital_dev_password`, `dev-secret-key-at-least-32-chars-long-12345`)
-      with no `${VAR:?required}` guard — a prod deploy that forgets to override `.env` silently
-      ships with dev-grade secrets. Fix: `${VAR:?Error: VAR is required}` interpolation or Docker
-      secrets, no literal fallback. Found in the 2026-09-03 external review.
+- [x] **Prod compose secrets are hardcoded, not env-required.** **Resolved (2026-09-03):** every
+      secret-bearing field across all 6 services (`POSTGRES_PASSWORD`/`DB_PASSWORD`,
+      `MINIO_ROOT_USER`/`PASSWORD`, `OBJECT_STORAGE_ACCESS_KEY`/`SECRET_KEY`, `JWT_SECRET`) now
+      uses `${VAR:?Error: VAR environment variable is required}` mandatory interpolation instead
+      of a literal plaintext default (`hospital_db_pwd`, `hospital_dev_password`,
+      `dev-secret-key-at-least-32-chars-long-12345`) — verified with `docker compose config` both
+      with the vars set (parses clean) and unset (fails immediately with the required-variable
+      error, doesn't silently start). MinIO's bootstrap creds now derive from the same
+      `OBJECT_STORAGE_ACCESS_KEY`/`SECRET_KEY` the API already required at boot (one source of
+      truth, matching what `Deployment-Guide.md` §9 already claimed but the compose file didn't
+      actually do — it had no `${VAR}` interpolation at all, so the documented `.env` file was
+      never actually reaching the containers). `Deployment-Guide.md` §3's `.env` template updated
+      to list `OBJECT_STORAGE_ACCESS_KEY`/`SECRET_KEY`, which it hadn't before. **Operational
+      note, not yet actioned:** because the compose file never read `.env` for these fields before
+      this fix, the live `newgenworks.in` deployment (§9) has been running on the literal hardcoded
+      values above, not whatever the server's `.env` contains — those values are also in this
+      repo's git history. Rotating the live DB/MinIO/JWT secrets on that server is a follow-up the
+      human partner needs to do (and is outside what an agent should do unilaterally against a
+      shared production box). Found in the 2026-09-03 external review.
 - [ ] **Public schema over-grant on tenant roles.** Migration `0093-initial-platform-schema.ts:429-430`
       runs `REVOKE USAGE ON SCHEMA public FROM PUBLIC; GRANT ALL ON SCHEMA public TO PUBLIC;` — a
       raw pg_dump artifact that self-contradicts (revoke then immediately re-grant to PUBLIC).

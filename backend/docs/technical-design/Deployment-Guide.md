@@ -31,7 +31,20 @@ DB_DATABASE=hospital_db
 
 # Security
 JWT_SECRET=your_super_secret_production_key_here
+
+# Object storage (MinIO) — also drives MinIO's own bootstrap creds in docker-compose.prod.yml,
+# one source of truth (see §9 below)
+OBJECT_STORAGE_ACCESS_KEY=your_object_storage_access_key
+OBJECT_STORAGE_SECRET_KEY=your_object_storage_secret_key
 ```
+
+**`docker-compose.prod.yml` has no hardcoded secret fallbacks** — every secret-bearing field
+(`DB_PASSWORD`/`POSTGRES_PASSWORD`, `JWT_SECRET`, `OBJECT_STORAGE_ACCESS_KEY`/`SECRET_KEY`, which
+also drive MinIO's `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`) uses `${VAR:?Error: ...}` mandatory
+interpolation, sourced from the `.env` file in the same directory as the compose file (Docker
+Compose's own default `.env` loading — no extra flag needed). Running any `docker compose -f
+docker-compose.prod.yml ...` command without that `.env` populated fails immediately with a clear
+"environment variable is required" error rather than silently starting with a dev-grade default.
 
 ## 4. Building the Application
 The project is managed via Nx. To build the production bundle:
