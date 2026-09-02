@@ -2081,6 +2081,30 @@ sweep that covered nine other screens but never touched lab/radiology/pharmacy.
 - `frontend/apps/staff-console/src/app/lab/lab-requisitions-list/`, `lab-requisition-detail/`
 - `frontend/apps/staff-console/src/app/radiology/radiology-requisitions-list.*`, `radiology-requisition-detail.*`
 
+### High: Auditor/Compliance's `billing.read` grant was unreachable — Invoices route/nav gated on `billing.manage`
+
+**Resolved (2026-09-02):** added `BILLING_READ` to `libs/auth/src/lib/permissions.ts` and swapped
+`app.routes.ts`'s two Invoices routes plus `app-shell.html`'s nav link from `BILLING_MANAGE` to
+`BILLING_READ`. Every role holding `billing.manage` already holds `billing.read` too
+(`seed-rbac-catalog.ts`), so this is additive-only — no existing role's access changes, only
+Auditor/Compliance (the one role with `billing.read` but not `billing.manage`) newly gets in. The
+write actions on both screens (Record Payment/Cancel/Return) already independently check
+`billing.manage` via their own `hasPermission()` computeds, so a read-only visitor correctly sees
+no mutating controls. Frontend: 660 tests, clean `nx lint`, clean `tsc --build` (app + spec).
+
+- `frontend/libs/auth/src/lib/permissions.ts`
+- `frontend/apps/staff-console/src/app/app.routes.ts`
+- `frontend/apps/staff-console/src/app/shell/app-shell.html`
+
+### Medium: Frontend never adopted the dedicated `audit.read` permission — resolved alongside the Invoices fix above
+
+**Resolved (2026-09-02):** added `AUDIT_READ` and swapped the `admin/audit` route plus its nav
+link (and the "Administration" section's visibility OR-chain) from `REPORTING_READ`/
+`reporting.read` to `AUDIT_READ`/`audit.read`. No live behavior change today — Super Admin,
+Hospital Admin, and Auditor/Compliance hold both permissions — but restores the decoupling the
+backend permission exists for, so a future role granted only one of the two is gated correctly
+instead of by the wrong one.
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
