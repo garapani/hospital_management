@@ -151,6 +151,7 @@ export class AuthService {
       account.accountType,
       account.patientId,
       account.wardId,
+      account.displayName,
     );
 
     const accessToken = await this.jwtService.signAsync(payload, { expiresIn: ACCESS_TOKEN_TTL });
@@ -282,6 +283,7 @@ export class AuthService {
       found.account.accountType,
       found.account.patientId,
       found.account.wardId,
+      found.account.displayName,
     );
 
     const accessToken = await this.jwtService.signAsync(accessPayload, { expiresIn: ACCESS_TOKEN_TTL });
@@ -304,6 +306,7 @@ export class AuthService {
     accountType: 'staff' | 'patient',
     patientId: string | null,
     wardId: string | null,
+    displayName: string,
   ) {
     return {
       sub: accountId,
@@ -316,6 +319,15 @@ export class AuthService {
       // optional-string shape (auth-context.middleware.ts) for the common staff-account case.
       patientId: patientId ?? undefined,
       wardId: wardId ?? undefined,
+      // UI-display only — no guard/middleware reads this, so it deliberately never reaches
+      // RequestContext (auth-context.middleware.ts). Lets the staff-console shell show a real
+      // name instead of deriving initials from roles[0] (review-comments.md "Shell chrome ships
+      // mock placeholder identity"). Staff-only, deliberately: accountType === 'patient' means
+      // this token now asserts "this named individual is a patient at hospital X" in a readable
+      // (base64, not encrypted) blob — a stronger disclosure than the existing opaque `sub`/
+      // `patientId` claims, and nothing in `apps/patient-portal` (no source files exist yet)
+      // consumes it, so there's no reason to carry it for that account type.
+      displayName: accountType === 'staff' ? displayName : undefined,
     };
   }
 }

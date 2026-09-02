@@ -74,6 +74,7 @@ describe('AuthService (integration)', () => {
     >;
     expect(decoded['roles']).toEqual(['Doctor']);
     expect(decoded['hospitalId']).toBe(ctx.tenantId);
+    expect(decoded['displayName']).toBe('Dr. Carol');
   });
 
   it('returns invalidCredentials for a wrong password without revealing which field was wrong', async () => {
@@ -243,6 +244,8 @@ describe('AuthService (integration)', () => {
     if ('accessToken' in refreshResult) {
       expect(typeof refreshResult.refreshToken).toBe('string');
       expect(refreshResult.refreshToken).not.toBe(loginResult.refreshToken);
+      const decoded = jwtService.decode(refreshResult.accessToken) as Record<string, unknown>;
+      expect(decoded['displayName']).toBe('Refresh User');
     }
   });
 
@@ -513,6 +516,10 @@ describe('AuthService (integration)', () => {
       expect(decoded['patientId']).toBe(patientId);
       expect(decoded['permissions']).toEqual([]);
       expect(decoded['roles']).toEqual([]);
+      // displayName is staff-only — a patient token deliberately does not carry the patient's
+      // real name, since nothing in the (not-yet-built) patient portal consumes it and doing so
+      // would assert "this named individual is a patient here" in a readable JWT for no reason.
+      expect(decoded['displayName']).toBeUndefined();
     });
   });
 });
