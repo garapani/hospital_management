@@ -2122,6 +2122,28 @@ Purge, but operationally the highest-frequency high-stakes action a Super Admin 
 
 - `frontend/apps/staff-console/src/app/tenants/tenant-detail/tenant-detail.{ts,html}`
 
+### Medium: Order List was a dead end for Pharmacist — its only entry point required patient search they don't have
+
+**Resolved (2026-09-02):** added `canSearchPatients` (from `patients.read`) to `OrderList` and
+gated the patient-search box and results table on it; a user without the permission now sees an
+explanatory message instead of a search box that always 403s. No backend change — `Order.list()`
+staying patient-scoped by design was out of scope here (it's shared by Doctor/Nurse/Receptionist,
+all of whom do hold `patients.read`); this is a frontend-only graceful-degradation fix, matching
+the same "don't present an interaction that silently fails" principle applied to Helpdesk further
+down this list. Frontend: 666 tests (2 new), clean `nx lint`, clean `tsc --build` (app + spec).
+
+Pharmacist holds `order.read` (PRD §6.1's "Inventory, Order" read scope) but deliberately not
+`patients.read` — Patient isn't in that role's PRD row, unlike Billing/Accounts Staff above. But
+`OrdersService.list()` hard-requires a `patientId` (`requireParam`), and the only way the Order
+List screen ever populates one is its patient-search picker, which calls `GET /patients` —
+gated on `patients.read`. Every search a Pharmacist typed there silently returned nothing, making
+the one screen their `order.read` grant unlocks permanently unusable. (Pharmacist's actual daily
+dispensing work already has its own unaffected path via `GET /pharmacy/dispensings`, gated only on
+`pharmacy.read` and supporting a `status` filter with no patient lookup required — the raw-UUID
+`orderItemId`/`inventoryItemId` inputs on that Add Dispensing modal are a separate, still-open gap.)
+
+- `frontend/apps/staff-console/src/app/orders/order-list.{ts,html}`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
