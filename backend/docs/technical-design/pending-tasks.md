@@ -513,7 +513,19 @@ Follow the PRD's own phase ordering as-is:
   salary (the payroll base), searchable/paginated list, soft-delete. Permissions
   `employee.read`/`employee.manage` → HR/Payroll Admin, Hospital Admin, Super Admin. Migration
   `0041`; 8 tests.
-- Phase 6: Document and Print, full Reporting/Dashboard — not started. **Helpdesk**, **Marketing
+- Phase 6: Document and Print, full Reporting/Dashboard — **first slice done (2026-09-02):**
+  patient ID label printing — `GET /patients/:id/id-label.pdf` (a 4in x 2in wristband/file-folder
+  label: name, patient number, gender/DOB, blood group, QR-encoded patientId), `patients.read`-
+  gated, via the existing `@hospital/pdf` lib (no new dependency — pdfmake's built-in QR support,
+  no separate barcode library needed). Frontend: a "Print ID Label" button on Patient Detail opens
+  it in a new tab for the browser's native print dialog. This is also the first binary (non-JSON)
+  download anywhere in this frontend — `ApiClientService` gained `getBlob()` for it, additive, every
+  existing `get<T>()` caller unaffected. **Not done:** Lab/Radiology/Pharmacy specimen and
+  dispensing labels (same rendering pattern, different data — a follow-up item), Excel export (no
+  dependency chosen yet), and the full Reporting/Dashboard aggregation UI. **Also found, not
+  fixed:** the Lab/Radiology `report.pdf` and Reporting CSV/PDF export endpoints (all shipped
+  earlier) have no frontend button anywhere calling them — a pre-existing gap, out of scope for
+  this pass, worth its own item. **Helpdesk**, **Marketing
   & Referral**, and **Social Service Unit are done (2026-08-20)**.
   - **Marketing & Referral:** referral-source catalog (typed, soft-delete) + patient referral
     records (source must be active, optional referring doctor, actor-derived recordedBy).

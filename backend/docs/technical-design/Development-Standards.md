@@ -4762,3 +4762,32 @@ else. Fixed two ways:
   stub (`hasPermission: () => bool`) can't catch a mistake here, since it can't tell "checks the
   right permission" apart from "checks nothing at all"; give the stub `(p: string) => p === '...'`
   so it actually distinguishes.
+
+## 129. Printable labels: a custom pdfmake pageSize, built-in QR (no barcode dependency), and the frontend's first binary download
+
+Building the patient ID label (`patient-id-label-document.ts`, `PatientsService.renderIdLabelPdf`)
+established three things every future label (Lab/Radiology specimen, Pharmacy dispensing —
+`pending-tasks.md`'s Document & Print entry) can reuse directly:
+
+- **A label is not a report page.** `PdfDocumentDefinition.pageSize` takes `{ width, height }` in
+  points (72pt/in) — a 4in x 2in pre-cut label is `{ width: 288, height: 144 }`, with small margins
+  (`pageMargins: [10, 10, 10, 10]`). Every prior `@hospital/pdf` consumer (Lab/Radiology reports,
+  Reporting exports) implicitly defaults to A4; a label needs this set explicitly or pdfmake
+  renders it as a full A4 page with the label content stranded in one corner.
+- **pdfmake has built-in QR support** (`{ qr: 'content', fit: 100 }`) — no barcode library needed
+  for a scan-to-look-up use case. Encode whatever value the app actually looks records up by
+  (here, `patientId` — every screen's `routerLink`/API call already keys off it), not a
+  human-friendly number printed as text alongside it for staff to read.
+- **`ApiClientService.getBlob()`** (new, additive — `get<T>()` unaffected) is this frontend's first
+  binary-download method: `responseType: 'blob'`, same tenant-header/error-handling as `get()`.
+  The consuming component (`patient-detail.ts`'s `printIdLabel()`) opens the blob via
+  `URL.createObjectURL()` + `window.open(url, '_blank')` rather than forcing a `<a download>` —
+  the point is printing (Ctrl+P in the browser's own PDF viewer), not saving a file. Revoke the
+  object URL after a short delay (10s), not immediately — revoking synchronously can race the new
+  tab's own fetch of the blob URL on some browsers.
+
+**Also found while building this, not fixed:** Lab/Radiology's `report.pdf` and Reporting's
+CSV/PDF export endpoints (all shipped earlier sessions) have no frontend button anywhere calling
+them — confirmed via `grep -rli pdf src/app` returning nothing before this item. Pre-existing gap,
+out of scope here, but the fix is now a known one-line addition using this same `getBlob()` +
+`window.open()` pattern once picked up as its own item.
