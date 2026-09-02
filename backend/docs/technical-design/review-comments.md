@@ -699,6 +699,18 @@ All 16 `error:` handlers across lab/radiology/pharmacy do nothing but reset a lo
 
 The result inputs are plain `pInputText` with no `type`, no `inputmode`, no numeric parsing and no comparison against `referenceRangeLow`/`referenceRangeHigh`. `EnterResultDto.isAbnormal` exists on the client but is never populated. A potassium value fat-fingered as `55` against a `3.5–5.0` range saves without any warning; units are shown but not enforced or appended.
 
+**Resolved:** found already implemented while working the pending-tasks queue top-to-bottom
+(2026-09-02) — the doc entry above was simply never updated when the fix landed. `lab.model.ts`
+gained `hasNumericRange`/`computeIsAbnormal` (a documented, deliberate client-side duplicate of the
+backend's `computeIsAbnormal` — see Development-Standards.md §121 for why that's an accepted
+exception here). `LabRequisitionDetail.isNumericComponent`/`isValueAbnormal` drive the entry
+dialog: the result input switches `[type]`/`[inputmode]` between `number`/`decimal` and `text`
+based on whether the component has a numeric range, and an inline warning renders live via
+`isValueAbnormal()` as the value is typed, mirroring the read-only view's `isAbnormal` badge before
+the round trip instead of only after. Covered by `lab-requisition-detail.spec.ts` ("flags a value
+outside the numeric reference range as abnormal at entry time, before saving", "never flags a
+qualitative component... as abnormal").
+
 - `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:110-123`
 - `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.ts:105-114`
 - `frontend/apps/staff-console/src/app/lab/lab-api.service.ts:81-86`
