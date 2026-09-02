@@ -1065,6 +1065,16 @@ Purchase Order/requisition detail and Ward Supply show bare Vendor/Item/Departme
 
 **Deferred (2026-08-30):** item names and units of measure in PO/requisition/ward-supply are still raw ids/unit-less — there is no `GET /inventory/items/:id` (or bulk lookup) endpoint; items are only reachable through the category→sub-category drill-down, so resolving an arbitrary item id to a name would mean either a new backend endpoint or fetching the entire catalog client-side. Flagging as a backend gap rather than working around it blindly.
 
+**Resolved (2026-09-02), item-name half only:** the `POST /directory/resolve` bulk lookup built for
+the app-wide raw-UUID sweep (§1559) already grew an `item` type (added for Ward Supply,
+2026-09-01) — reused it here rather than building a new endpoint. `purchase-order-detail.html`'s
+line-item table and Receive dialog, and `stock-requisition-detail.html`'s line-item table and
+Fulfill dialog, now render `<hms-entity-name type="item" [id]="line.itemId">` instead of the raw
+id. Frontend: full suite (597 tests), clean `tsc --build`. Unit-of-measure display is still not
+implemented — `DirectoryResolveResult.items` only carries `displayName`, not
+`InventoryItem.unitOfMeasure`; left open as its own follow-up rather than widening this fix's
+scope.
+
 ### Low: Cascading-select loads have no request-ordering guard, and two `paramMap` subscriptions are never torn down
 
 `onCategoryChange`/`onSubCategoryChange` and their PO-dialog equivalents fire a fresh HTTP call with no `switchMap` and no in-flight token, so a slow earlier response can overwrite a fast later one. Both detail components subscribe to `route.paramMap` without `takeUntilDestroyed()`, unlike `billing/invoice-detail.ts` which they were modelled on.
