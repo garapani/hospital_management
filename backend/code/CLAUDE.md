@@ -24,6 +24,12 @@
 
 ## Project-Specific Conventions (Hospital EMR Backend)
 
+**Quick-understanding docs (start here):** `../docs/technical-design/Technical-Design.md`
+(architecture: tenancy, request lifecycle, auth, cross-cutting) and
+`../docs/technical-design/Module-Reference.md` (per-module code map: routes, key files,
+permissions, seeds). Read Technical-Design.md first, then Module-Reference.md when touching a
+specific module.
+
 Lessons from building the shared libraries (`@hospital/tenant-context`, `@hospital/auth-guards`, `@hospital/audit-emitter`) — apply these to every future service in this monorepo.
 
 ### Process & Planning
@@ -49,8 +55,8 @@ Lessons from building the shared libraries (`@hospital/tenant-context`, `@hospit
 
 ### Workspace layout
 
-- Monorepo tool: Nx (chosen over Turborepo for native `affected` detection and NestJS generators) — pnpm workspaces, package manager pinned via `packageManager` in `new/code/package.json`.
-- Shared libraries live at `new/code/libs/<name>`, importable as `@hospital/<name>` (the `pnpm-workspace.yaml` `packages:` glob includes `libs/*`).
+- Monorepo tool: Nx (chosen over Turborepo for native `affected` detection and NestJS generators) — pnpm workspaces, package manager pinned via `packageManager` in `backend/code/package.json`.
+- Shared libraries live at `backend/code/libs/<name>`, importable as `@hospital/<name>` (the `pnpm-workspace.yaml` `packages:` glob includes `libs/*`).
 - When generating a new library via `nx g @nx/js:library`, **delete the generator's default scaffold files** (e.g. `foo.ts`/`foo.spec.ts`) once real implementation files exist — they're not meant to ship.
 - A library that imports from another workspace library needs an explicit `"@hospital/<other-lib>": "workspace:*"` entry in its own `package.json` — TypeScript path mapping alone isn't sufficient for reliable resolution across libraries.
-- CI (`new/code/.github/workflows/ci.yml`) only runs `test` and `typecheck` currently — `lint`/`build`/`e2e` are intentionally omitted (no ESLint config or build targets exist yet) rather than left in as silent no-ops. Add them back only once real targets exist for them.
+- CI (`backend/code/.github/workflows/ci.yml`) only runs `test` and `typecheck` currently — `lint`/`build`/`e2e` are intentionally omitted (no ESLint config or build targets exist yet) rather than left in as silent no-ops. Add them back only once real targets exist for them.

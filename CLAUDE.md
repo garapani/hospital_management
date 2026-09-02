@@ -1,12 +1,12 @@
 # new_hospital
 
 Greenfield NestJS/Nx modular-monolith re-platform of the legacy ASP.NET Core "Danphe EMR"
-hospital system, targeting the India hospital market. `new/docs/technical-design/PRD.md` is the
+hospital system, targeting the India hospital market. `backend/docs/technical-design/PRD.md` is the
 source of truth for scope and product phasing — read it, don't take this file's word over it.
 
 ## Repo Layout
 
-- **`new/docs/technical-design/`** — the living planning/standards docs:
+- **`backend/docs/technical-design/`** — the living planning/standards docs:
   - `PRD.md` — product requirements, source of truth for scope/phasing.
   - `Development-Standards.md` — coding conventions, architecture rules, testing standards; gets a
     new section every time a pending-task pipeline run establishes a new pattern.
@@ -24,22 +24,25 @@ source of truth for scope and product phasing — read it, don't take this file'
   - `new-features.md` / `review-comments.md` — the gap list and file:line evidence that
     `pending-tasks.md` sequences. Findings in `review-comments.md` are marked resolved in place
     when fixed, never deleted — it's a historical record.
-  - `Deployment-Guide.md`, `Runbook.md`, `Technical-Design.md` — deployment/ops/architecture
-    reference docs, kept in sync with `new/code` as it evolves.
+  - `Technical-Design.md` — the backend architecture reference (the quick-understanding starting
+    point); `Module-Reference.md` — the per-module/code map of the backend. `Deployment-Guide.md`
+    and `Runbook.md` cover deployment/ops. All are kept in sync with `backend/code` as it evolves.
   - `claude-code-tasks.md` — actionable task backlog for Claude Code sessions (in-flight work,
     pending tasks, cleanups, improvements, each with context/what-to-do/verify/test). Start here
     when picking up development work; it supersedes this file for task sequencing.
-- **`new/docs/superpowers/specs/`** and **`new/docs/superpowers/plans/`** — the design/implementation
+- **`backend/docs/superpowers/specs/`** and **`backend/docs/superpowers/plans/`** — the design/implementation
   pipeline output for every `pending-tasks.md` item resolved so far (see below). Filenames follow
   `YYYY-MM-DD-<topic>-design.md` (specs) and `YYYY-MM-DD-<topic>.md` (plans).
-- **`new/code/`** — the actual Nx monorepo (`apps/api`, `libs/*` as `@hospital/*` packages). See
-  `new/code/CLAUDE.md` for its conventions (TypeScript/module-resolution quirks, protected-config
-  handling, workspace layout) — that file is authoritative for anything under `new/code`; don't
+- **`backend/code/`** — the actual Nx monorepo (`apps/api`, `libs/*` as `@hospital/*` packages). See
+  `backend/code/CLAUDE.md` for its conventions (TypeScript/module-resolution quirks, protected-config
+  handling, workspace layout) — that file is authoritative for anything under `backend/code`; don't
   duplicate or second-guess it here.
-- **`old/`** — the legacy ASP.NET Core system (`old/hospital-management-emr`), present on disk but
-  currently **untracked** in this repo's git history (`git status` shows `?? old/`). Reference-only
-  for understanding domain scope and legacy DB-field shapes — explicitly **not** a parity contract;
-  the PRD and the specs/plans pipeline are what defines what actually gets built.
+- **`frontend/`** — the Angular/Nx staff-console (its own independent git repo,
+  `hospital_management_frontend`). Quick-understanding docs: `frontend/docs/Architecture.md` and
+  `frontend/docs/Module-Reference.md`; conventions in `frontend/CLAUDE.md`.
+- **Layout history:** the docs/code tree was renamed from `new/` to `backend/` on 2026-08-27, so
+  older docs and CLAUDE.md files that still say `new/docs/...` or `new/code/...` mean
+  `backend/docs/...` / `backend/code/...`. The legacy `old/` ASP.NET tree is no longer on disk.
 
 ## The Development Pipeline
 
