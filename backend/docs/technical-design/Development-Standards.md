@@ -4313,6 +4313,16 @@ shared mechanism instead:
   shape as "a spec is missing a `DirectoryResolverService` provider," not an `ApiClientService`
   problem.
 
+**Correction (2026-09-02):** `EntityName`'s original template rendered the resolved name followed
+by the raw UUID in a small mono suffix (`{{ name }} ({{ id }})`) — a debugging affordance from
+when the component was first built, apparently never removed, which shipped the exact raw-UUID
+display this component exists to eliminate to every one of its consumers (found live across
+Nursing, OT, Admissions, and tenant history). Fixed: the success branch now renders only the
+resolved name; `DirectoryResolverService.formatName()` appends a patient's `patientNo` (the one
+type with a second human-readable identifier worth showing — matching every patient-search
+picker's own `patientLabel()` format), every other type shows the bare `displayName`. The raw-id
+fallback stays, but only for the case resolution genuinely fails.
+
 ## 114. A server-searched `p-select` for large-cardinality pickers (patients), not a bulk-loaded one (2026-09-01)
 
 The Appointments Doctor/Department pickers (§ the resolved "raw-UUID text inputs" finding)

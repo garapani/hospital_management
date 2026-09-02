@@ -2252,6 +2252,24 @@ undone frontend work — left for its own item if wanted, not attempted here.
 
 - `backend/docs/technical-design/mvp-status.md` (marketing row)
 
+### High: `hms-entity-name` showed the raw UUID next to every resolved name, app-wide
+
+**Resolved (2026-09-02):** found live on Nursing, OT, Admissions, and Admission Detail (reported
+across several screenshots — the exact same rendering on every one: `Name (uuid)`). Root cause was
+in the shared component itself, not any individual screen: `EntityName`'s success branch appended
+the raw id in a mono span after the resolved name — apparently a debugging aid from when the
+component was first built (Development-Standards.md §113) that was never removed before shipping.
+Fixed at the source so every consumer picks it up at once:
+the component's success branch now renders only the name, and `DirectoryResolverService` formats
+a patient's resolved name as `displayName (patientNo)` — matching what every patient-search picker
+in this app already shows — while every other type (doctor, ward, bed, item) shows the bare name.
+The raw-id fallback is unchanged for the case resolution genuinely fails. Frontend: 698 tests (1
+new), clean `nx lint`, clean `tsc --build` (app + spec). See Development-Standards.md's correction
+note on the original `EntityName` entry.
+
+- `frontend/apps/staff-console/src/app/directory/entity-name.ts`
+- `frontend/apps/staff-console/src/app/directory/directory-resolver.service.ts`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
