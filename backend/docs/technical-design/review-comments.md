@@ -1989,6 +1989,31 @@ nearly half the role table.
 - `frontend/apps/staff-console/src/app/login/login.ts:26-52`
 - `frontend/apps/staff-console/src/app/root-redirect.guard.ts:24-27`
 
+### High: Lab Technician and Radiology Technician are missing `order.read`/`patients.read` — contradicts their explicit PRD read scope
+
+**Resolved (2026-09-02):** granted both permissions to both roles in `seed-rbac-catalog.ts`.
+`patients.read` returns demographic fields only (no clinical data lives on the `Patient` entity
+itself — vitals/notes/prescriptions are separately-gated modules), matching the PRD's
+"demographics only" qualifier exactly. No frontend change was needed — `/clinical/orders` and
+`/clinical/patients` already gate on these exact permissions (route + nav), so both screens become
+reachable automatically for these two roles once a tenant reseeds RBAC. Two existing integration
+tests (`seed-rbac-catalog.integration-spec.ts`) exhaustively assert the role list per permission
+and needed updating to include the two roles. Backend: 47 rbac tests + 13 packages tests, clean
+`nx run api:typecheck`.
+
+PRD §6.1 lists "Order, Patient (demographics only)" as read-only scope for both roles; neither
+permission was ever seeded. Backend enforcement is strict (`patients.controller.ts` requires
+`patients.read` on both list/get endpoints), so this made patient/order context structurally
+unreachable, not just poorly surfaced — a Lab or Radiology Technician processing a
+sample/scan had no permission-level path, ever, to see what was ordered or whose sample it was.
+
+- `backend/code/apps/api/src/rbac/seed-rbac-catalog.ts` (Lab Technician / Radiology Technician grant blocks)
+- `backend/code/apps/api/src/patients/patients.controller.ts:27-34`
+
+**Operational note:** like the earlier `identity.accounts.directory` gap, this needs
+`docker compose -f docker-compose.prod.yml --profile seed run --rm seed-rbac` reseeded against any
+already-provisioned tenant before Lab/Radiology Technician accounts there see the new access.
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
