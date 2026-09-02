@@ -154,4 +154,38 @@ describe('Radiology report PDF export (integration)', () => {
     expect(response.status).toBe(409);
     expect(response.body.message).toMatch(/Report is only available for Verified requisitions/);
   });
+
+  it('exports a requisition label as application/pdf, available even before the scan happens', async () => {
+    const requisition = await ctx.inTenant(async () => {
+      const patient = await patientsService.create({
+        firstName: 'PDF',
+        lastName: 'LabelPatient',
+        dateOfBirth: '1978-11-02',
+        gender: 'Female',
+        phoneNumber: '4450000333',
+      });
+      const order = await ordersService.create({
+        patientId: patient.id,
+        orderedBy: DOCTOR_ID,
+        items: [{ itemType: 'Radiology', itemDescription: 'Chest X-Ray (label export)' }],
+      });
+      const type = await catalogService.createType({ name: 'X-Ray Label' });
+      const item = await catalogService.createItem({
+        imagingTypeId: type.id,
+        name: 'Chest X-Ray PA Label',
+        procedureCode: 'XR-CHEST-LABEL',
+        price: 500,
+      });
+      return workflowService.createRequisition({ orderItemId: order.items[0].id, imagingItemId: item.id });
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/radiology/requisitions/${requisition.id}/requisition-label.pdf`)
+      .set('Authorization', `Bearer ${radiologyToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toContain('application/pdf');
+    expect(Buffer.isBuffer(response.body)).toBe(true);
+    expect(response.body.subarray(0, 5).toString('ascii')).toBe('%PDF-');
+  });
 });

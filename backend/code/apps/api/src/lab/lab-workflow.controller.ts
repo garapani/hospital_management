@@ -47,6 +47,16 @@ export class LabWorkflowController {
     return new StreamableFile(buffer);
   }
 
+  /** Specimen label for the sample tube/container. Same precede-`:id` reasoning as report.pdf. */
+  @Get(':id/specimen-label.pdf')
+  @RequirePermission('lab.read')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Content-Disposition', 'inline; filename="lab-specimen-label.pdf"')
+  async specimenLabelPdf(@Param('id') id: string): Promise<StreamableFile> {
+    const buffer = await this.labWorkflowService.renderSpecimenLabelPdf(id);
+    return new StreamableFile(buffer);
+  }
+
   @Get(':id')
   @RequirePermission('lab.read')
   async findOne(@Param('id') id: string) {

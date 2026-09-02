@@ -17,6 +17,7 @@ import { LabCatalogService } from './lab-catalog.service.js';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 import { SearchLabRequisitionsDto } from './dto/search-lab-requisitions.dto.js';
 import { buildLabReportDocument } from './lab-report-document.js';
+import { buildLabSpecimenLabelDocument } from './lab-specimen-label-document.js';
 
 export interface CreateRequisitionInput {
   orderItemId: string;
@@ -444,6 +445,34 @@ export class LabWorkflowService {
         }
       }
       return buffer;
+    });
+  }
+
+  /**
+   * Not mirrored to object storage like renderReportPdf's verified report: this is a live,
+   * always-regeneratable document (same reasoning as the patient ID label,
+   * Development-Standards.md §129), not a permanent clinical record, and is printed before a
+   * result even exists.
+   */
+  async renderSpecimenLabelPdf(id: string): Promise<Buffer> {
+    const requisition = await this.findOne(id);
+    const patient = requisition.patientId ? await this.patientsService.findOne(requisition.patientId) : null;
+    const patientName = patient ? `${patient.firstName} ${patient.lastName}` : 'Unknown';
+    const patientNo = patient?.patientNo ?? '';
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const test = await manager.getRepository(LabTest).findOne({ where: { id: requisition.testId } });
+      return this.pdfService.render(
+        buildLabSpecimenLabelDocument({
+          requisitionId: requisition.id,
+          requisitionNumber: requisition.requisitionNumber,
+          patientName,
+          patientNo,
+          testName: test?.name ?? requisition.testId,
+          specimenType: requisition.specimenType,
+          collectedAt: requisition.sampleCollectedAt?.toISOString() ?? null,
+        }),
+      );
     });
   }
 }

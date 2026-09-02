@@ -18,6 +18,7 @@ import { RadiologyRequisitionNumberGeneratorService } from './radiology-requisit
 import { RadiologyCatalogService } from './radiology-catalog.service.js';
 import { ListRadiologyRequisitionDto } from './dto/list-radiology-requisition.dto.js';
 import { buildRadiologyReportDocument } from './radiology-report-document.js';
+import { buildRadiologyRequisitionLabelDocument } from './radiology-requisition-label-document.js';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 export interface CreateRequisitionInput {
@@ -328,6 +329,39 @@ export class RadiologyWorkflowService {
         }
       }
       return buffer;
+    });
+  }
+
+  /**
+   * Not mirrored to object storage like renderReportPdf's verified report: this is a live,
+   * always-regeneratable document (same reasoning as the patient ID / lab specimen labels,
+   * Development-Standards.md §129), printed to identify the patient/procedure before a report
+   * even exists.
+   */
+  async renderRequisitionLabelPdf(id: string): Promise<Buffer> {
+    const requisition = await this.findOne(id);
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const imagingItem = await manager
+        .getRepository(RadiologyImagingItem)
+        .findOne({ where: { id: requisition.imagingItemId } });
+
+      const patient = requisition.patientId
+        ? await manager.query(`SELECT "firstName", "lastName", "patientNo" FROM patients WHERE id = $1`, [requisition.patientId])
+        : [];
+      const patientName = patient.length > 0 ? `${patient[0].firstName} ${patient[0].lastName}` : 'Unknown';
+      const patientNo = patient[0]?.patientNo ?? '';
+
+      return this.pdfService.render(
+        buildRadiologyRequisitionLabelDocument({
+          requisitionId: requisition.id,
+          requisitionNumber: requisition.requisitionNumber,
+          patientName,
+          patientNo,
+          imagingItemName: imagingItem?.name ?? requisition.imagingItemId,
+          scannedAt: requisition.scannedAt?.toISOString() ?? null,
+        }),
+      );
     });
   }
 }

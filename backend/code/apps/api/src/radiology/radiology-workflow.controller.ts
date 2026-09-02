@@ -47,6 +47,16 @@ export class RadiologyWorkflowController {
     return new StreamableFile(buffer);
   }
 
+  /** Requisition label for film envelopes/paperwork. Same precede-`:id` reasoning as report.pdf. */
+  @Get(':id/requisition-label.pdf')
+  @RequirePermission('radiology.read')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Content-Disposition', 'inline; filename="radiology-requisition-label.pdf"')
+  async requisitionLabelPdf(@Param('id') id: string): Promise<StreamableFile> {
+    const buffer = await this.radiologyWorkflowService.renderRequisitionLabelPdf(id);
+    return new StreamableFile(buffer);
+  }
+
   @Get(':id')
   @RequirePermission('radiology.read')
   async findOne(@Param('id') id: string) {

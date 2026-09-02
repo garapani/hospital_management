@@ -160,4 +160,44 @@ describe('Lab report PDF export (integration)', () => {
     expect(response.status).toBe(409);
     expect(response.body.message).toMatch(/Report is only available for Verified requisitions/);
   });
+
+  it('exports a specimen label as application/pdf, available even before the sample is collected', async () => {
+    const requisition = await ctx.inTenant(async () => {
+      const patient = await patientsService.create({
+        firstName: 'PDF',
+        lastName: 'LabelPatient',
+        dateOfBirth: '1985-03-10',
+        gender: 'Male',
+        phoneNumber: '4450000223',
+      });
+      const order = await ordersService.create({
+        patientId: patient.id,
+        orderedBy: DOCTOR_ID,
+        items: [{ itemType: 'Lab', itemDescription: 'CBC (label export)' }],
+      });
+      const category = await catalogService.createCategory({ name: 'Label Category' });
+      const test = await catalogService.createTest({
+        categoryId: category.id,
+        name: 'CBC Label',
+        code: `CBC-LABEL-${++phoneSeq}`,
+        specimenType: 'Blood',
+        price: 150,
+      });
+      await catalogService.createComponent(test.id, { name: 'Hemoglobin', unit: 'g/dL' });
+      return labWorkflowService.createRequisition({
+        orderItemId: order.items[0].id,
+        testId: test.id,
+        specimenType: 'Blood',
+      });
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/lab/requisitions/${requisition.id}/specimen-label.pdf`)
+      .set('Authorization', `Bearer ${labToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toContain('application/pdf');
+    expect(Buffer.isBuffer(response.body)).toBe(true);
+    expect(response.body.subarray(0, 5).toString('ascii')).toBe('%PDF-');
+  });
 });
