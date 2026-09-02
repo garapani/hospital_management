@@ -87,7 +87,14 @@ scope, not merely lower priority.
       fills the demo tenant with a ward/beds, 3 patients, appointments, a visit record, an
       admission, completed lab/radiology/pharmacy on one order (real charge-capture → an unpaid
       invoice for staff to demo payment on), 2 employees and a payroll run; idempotent (skips when
-      the demo tenant already has patients).
+      the demo tenant already has patients). **Demo staff accounts extended (2026-09-02):** added
+      `demo.helpdesk` (Helpdesk Agent), `demo.hr` (HR/Payroll Admin), `demo.audit`
+      (Auditor/Compliance) — the three PRD roles the seeder had no working login for at all, found
+      while manually QA-ing the 2026-09-02 role-based review's fixes (Helpdesk Agent needed a real
+      account to exercise the new Assign/detail-view work). Staff-account creation is idempotent
+      per username regardless of business-data state, so `nx run api:seed-rbac` +
+      `nx run api:seed-demo-data` are both safe to rerun on an already-seeded tenant whenever new
+      RBAC grants or demo accounts land — confirmed live against the local dev DB.
 - [x] **Staff account creation: no hardcoded passwords, no Super Admin minting, working
       must-change flow** (2026-08-21) — `POST /accounts` validates the role at creation (unknown /
       cross-tenant Super Admin / not-enabled-for-tenant all 400; the HTTP controller forces the
