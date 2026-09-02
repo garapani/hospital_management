@@ -11,6 +11,7 @@ import { FefoStockDecrementService } from '../inventory/fefo-stock-decrement.ser
 import { StockBalance } from '../inventory/entities/stock-balance.entity.js';
 import { StockTransaction } from '../inventory/entities/stock-transaction.entity.js';
 import { ListPharmacyDispensingDto } from './dto/list-pharmacy-dispensing.dto.js';
+import { ListPendingPharmacyItemsDto } from './dto/list-pending-pharmacy-items.dto.js';
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 
 export interface CreateDispensingInput {
@@ -142,6 +143,39 @@ export class PharmacyDispensingService {
       }
 
       return paginate(qb, { page: query.page, limit: query.limit });
+    });
+  }
+
+  /**
+   * The Add Dispensing picker's source: order items awaiting dispensing, across all patients — a
+   * Pharmacist has no patient search access, so this is the only way they can find work without
+   * already knowing an order item's UUID (code-review-findings-2026-09-02 pharmacy: Add Dispensing
+   * required hand-typing both orderItemId and inventoryItemId). Same worklist shape as Lab/
+   * Radiology's `listByOrderItem`/`findAll` (status-filtered, patientId joined in bulk), scoped
+   * here to itemType 'Pharmacy' since that's the only kind of order item this screen ever acts on.
+   */
+  async listPendingItems(query: ListPendingPharmacyItemsDto): Promise<PaginatedResponseDto<OrderItem & { patientId: string | null }>> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const qb = manager.getRepository(OrderItem).createQueryBuilder('oi').where('oi.itemType = :itemType', { itemType: 'Pharmacy' });
+      if (query.status) {
+        qb.andWhere('oi.status = :status', { status: query.status });
+      }
+      qb.orderBy('oi.createdAt', 'DESC');
+      const result = await paginate(qb, query);
+      if (result.data.length === 0) {
+        return { ...result, data: [] };
+      }
+      const orderRows: Array<{ id: string; patientId: string }> = await manager.query(
+        `SELECT oi.id AS "id", o."patientId" AS "patientId"
+         FROM order_items oi JOIN orders o ON o.id = oi."orderId"
+         WHERE oi.id = ANY($1)`,
+        [result.data.map((r) => r.id)],
+      );
+      const patientIdByItem = new Map(orderRows.map((r) => [r.id, r.patientId]));
+      return {
+        ...result,
+        data: result.data.map((r) => ({ ...r, patientId: patientIdByItem.get(r.id) ?? null })),
+      };
     });
   }
 

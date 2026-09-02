@@ -6,6 +6,7 @@ import { DispenseDrugDto } from './dto/dispense-drug.dto.js';
 import { CancelPharmacyDispensingDto } from './dto/cancel-pharmacy-dispensing.dto.js';
 import { ReversePharmacyDispensingDto } from './dto/reverse-pharmacy-dispensing.dto.js';
 import { ListPharmacyDispensingDto } from './dto/list-pharmacy-dispensing.dto.js';
+import { ListPendingPharmacyItemsDto } from './dto/list-pending-pharmacy-items.dto.js';
 
 @Controller('pharmacy/dispensings')
 @UseGuards(PermissionGuard)
@@ -22,6 +23,13 @@ export class PharmacyDispensingController {
   @RequirePermission('pharmacy.read')
   async findAll(@Query() query: ListPharmacyDispensingDto) {
     return this.pharmacyDispensingService.findAll(query);
+  }
+
+  // Must precede @Get(':id') so the literal 'pending-items' segment isn't swallowed by the :id param.
+  @Get('pending-items')
+  @RequirePermission('pharmacy.read')
+  async findPendingItems(@Query() query: ListPendingPharmacyItemsDto) {
+    return this.pharmacyDispensingService.listPendingItems(query);
   }
 
   @Get(':id')

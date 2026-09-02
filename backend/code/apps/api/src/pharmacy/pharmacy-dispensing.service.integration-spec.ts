@@ -146,6 +146,31 @@ describe('PharmacyDispensingService (integration)', () => {
     });
   });
 
+  describe('listPendingItems', () => {
+    it('lists Pharmacy order items with patientId joined in, filterable by status', async () => {
+      const pending = await makeOrderItem('4470000030');
+      const labItem = await makeOrderItem('4470000031', 'Lab');
+
+      const result = await ctx.inTenant(() => dispensingService.listPendingItems({ status: 'Pending', page: 1, limit: 50 }));
+
+      const ids = result.data.map((r) => r.id);
+      expect(ids).toContain(pending.id);
+      expect(ids).not.toContain(labItem.id); // itemType filter always applies, even with a status filter
+
+      const found = result.data.find((r) => r.id === pending.id)!;
+      expect(found.patientId).toBeTruthy();
+      expect(found.itemDescription).toBe('Paracetamol 500mg');
+    });
+
+    it('excludes non-Pharmacy order items regardless of status filter', async () => {
+      const labItem = await makeOrderItem('4470000032', 'Lab');
+
+      const result = await ctx.inTenant(() => dispensingService.listPendingItems({ page: 1, limit: 50 }));
+
+      expect(result.data.map((r) => r.id)).not.toContain(labItem.id);
+    });
+  });
+
   describe('dispenseDrug — FEFO stock decrement', () => {
     it('consumes the nearer-expiry batch first, splitting across batches when needed', async () => {
       const item = await makeDrugItem('fefo');
