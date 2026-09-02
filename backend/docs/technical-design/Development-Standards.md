@@ -4737,3 +4737,28 @@ Two reusable fixes from that cleanup, worth keeping as the default pattern:
   declaration file. Give the property itself an explicit type annotation instead
   (`readonly x: WritableSignal<ChartOptions<'bar'>> = signal({...})`) so the declaration emitter
   has a name to write out rather than needing to spell the inferred structural type.
+
+## 128. A screen two permissions both need reachable, but for different things, needs `permissionGuard` OR semantics — and each UI affordance still gates on its own permission, not the route's
+
+`permissionGuard(permission: string)` only ever supported a single required permission. That's
+fine when one permission gates the whole screen, but breaks when a screen serves two audiences
+who need it for different reasons and hold different permissions for those reasons — Helpdesk:
+most staff roles hold `helpdesk.create` (raise a ticket) but not `helpdesk.read` (browse everyone
+else's), while Helpdesk Agent/Hospital Admin/Super Admin hold `helpdesk.read`/`helpdesk.manage`
+but — found live in the same pass — Helpdesk Agent does *not* hold `helpdesk.create`. Route-level
+gating on `helpdesk.read` alone made `/helpdesk` unreachable for the create-only majority; gating
+the New Ticket button and the ticket list/filters on that same single route-level permission (the
+easy mistake) would have made the button 403 for Helpdesk Agent and the list 403 for everyone
+else. Fixed two ways:
+
+- `permissionGuard` now accepts `string | string[]`, checked with OR semantics
+  (`permissions.some(p => hasPermission(p))`) — backward compatible, since a bare string
+  normalizes to a one-element array. Use the array form only when a route is genuinely reachable
+  for more than one reason; a route still gated by exactly one permission keeps passing a string.
+- Inside the component, each UI affordance gates on the *specific* permission it needs
+  (`canRead` for the list/filters/reload-after-create, `canCreate` for the New Ticket button), not
+  on "whichever permission got me onto this route." A component reachable via an OR'd route guard
+  should assume neither permission alone, and check both independently — a non-discriminating test
+  stub (`hasPermission: () => bool`) can't catch a mistake here, since it can't tell "checks the
+  right permission" apart from "checks nothing at all"; give the stub `(p: string) => p === '...'`
+  so it actually distinguishes.

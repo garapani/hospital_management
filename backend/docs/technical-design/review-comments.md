@@ -2167,6 +2167,44 @@ order item's id at all, hand-typed or otherwise.
 - `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-list.{ts,html}`
 - `frontend/apps/staff-console/src/app/pharmacy/pharmacy-dispensing-api.service.ts`
 
+### High: Helpdesk had no assign UI, showed neither requester nor description anywhere, had no detail view, and was unreachable for every create-only role
+
+**Resolved (2026-09-02):** four fixes, bundled because they all trace back to the same
+under-built module. (1) `listTickets`/`getTicket` now join `accounts.displayName` in for both
+`requesterAccountId` and `assigneeAccountId` — same raw-SQL bulk-join shape as lab/radiology's
+`patientId` fix above, needed because `/accounts/directory` (this app's only existing accountId
+resolver) requires knowing the account's role up front, which isn't knowable for an arbitrary
+ticket requester. (2) New `/helpdesk/:id` detail screen shows description, requester, assignee,
+category — none were shown anywhere before — and is where Assign now lives, via a picker merging
+`/accounts/directory` lookups across all three `helpdesk.manage`-holding roles (Helpdesk Agent,
+Hospital Admin, Super Admin), deduplicated by account id. `assign`/`start`/`resolve`/`close` were
+already implemented in `HelpdeskApiService` but `assign` had no caller anywhere in the UI. (3)
+`permissionGuard` gained OR semantics (Development-Standards.md §128) so `/helpdesk` is reachable
+by `helpdesk.create` alone — every staff role holds it, but only 3 roles hold `helpdesk.read`,
+so 10+ roles could never open the screen that grants them their only helpdesk access at all. (4)
+Found live while fixing (3): Helpdesk Agent holds `helpdesk.read`/`.manage` but not
+`.create` — gating the New Ticket button on the route's permission would have made it 403 for
+that exact role, so the button and the list/filters/reload-after-create each gate on their own
+specific permission now, not on "whichever permission got the user onto this route." Backend: 7
+helpdesk tests (1 new), clean `nx run api:typecheck`. Frontend: 680 tests (24 new across
+auth/helpdesk), clean `nx lint`, clean `tsc --build` (app + spec). Reviewed at high effort (touches
+the shared `permissionGuard` auth contract) — found and fixed the button/reload gating gap and a
+non-discriminating guard-spec stub before commit.
+
+Before this: a ticket's requester and description were invisible everywhere in the UI (the list
+showed only ticket#/title/priority/status), there was no way to assign a ticket to anyone despite
+the backend fully supporting it, there was no way to view a single ticket's full detail, and
+~10 of 13 PRD roles — everyone except Super Admin/Hospital Admin/Helpdesk Agent — landed on a
+dead 403 the moment they clicked the one Helpdesk link their role's permissions were supposed to
+grant them.
+
+- `backend/code/apps/api/src/helpdesk/helpdesk.service.ts`
+- `frontend/libs/auth/src/lib/auth.guard.ts`, `permissions.ts`
+- `frontend/apps/staff-console/src/app/app.routes.ts`, `shell/app-shell.html`
+- `frontend/apps/staff-console/src/app/helpdesk/helpdesk-list.{ts,html}`
+- `frontend/apps/staff-console/src/app/helpdesk/helpdesk-ticket-detail.{ts,html}` (new)
+- `frontend/apps/staff-console/src/app/helpdesk/helpdesk.model.ts`, `helpdesk-api.service.ts`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
