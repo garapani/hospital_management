@@ -520,12 +520,17 @@ Follow the PRD's own phase ordering as-is:
   no separate barcode library needed). Frontend: a "Print ID Label" button on Patient Detail opens
   it in a new tab for the browser's native print dialog. This is also the first binary (non-JSON)
   download anywhere in this frontend — `ApiClientService` gained `getBlob()` for it, additive, every
-  existing `get<T>()` caller unaffected. **Not done:** Lab/Radiology/Pharmacy specimen and
-  dispensing labels (same rendering pattern, different data — a follow-up item), Excel export (no
-  dependency chosen yet), and the full Reporting/Dashboard aggregation UI. **Also found, not
-  fixed:** the Lab/Radiology `report.pdf` and Reporting CSV/PDF export endpoints (all shipped
-  earlier) have no frontend button anywhere calling them — a pre-existing gap, out of scope for
-  this pass, worth its own item. **Helpdesk**, **Marketing
+  existing `get<T>()` caller unaffected. **Second slice done (2026-09-02):** Lab specimen label
+  (`GET /lab/requisitions/:id/specimen-label.pdf`) and Radiology requisition label
+  (`GET /radiology/requisitions/:id/requisition-label.pdf`) — same small-label pattern, QR-encoded
+  requisitionId, available before collection/scan (that's when the label actually gets attached to
+  the tube/envelope). `openPdfBlobInNewTab()` extracted to `shared/pdf-blob.util.ts` now that three
+  screens (Patient Detail, Lab/Radiology Requisition Detail) share it. **Not done:** Pharmacy
+  dispensing label (same pattern, one more module), Excel export (no dependency chosen yet), and
+  the full Reporting/Dashboard aggregation UI. **Also found, not fixed:** the Lab/Radiology
+  `report.pdf` and Reporting CSV/PDF export endpoints (all shipped earlier) have no frontend button
+  anywhere calling them — a pre-existing gap, out of scope for this pass, worth its own item.
+  **Helpdesk**, **Marketing
   & Referral**, and **Social Service Unit are done (2026-08-20)**.
   - **Marketing & Referral:** referral-source catalog (typed, soft-delete) + patient referral
     records (source must be active, optional referring doctor, actor-derived recordedBy).

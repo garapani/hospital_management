@@ -4780,11 +4780,12 @@ established three things every future label (Lab/Radiology specimen, Pharmacy di
   human-friendly number printed as text alongside it for staff to read.
 - **`ApiClientService.getBlob()`** (new, additive — `get<T>()` unaffected) is this frontend's first
   binary-download method: `responseType: 'blob'`, same tenant-header/error-handling as `get()`.
-  The consuming component (`patient-detail.ts`'s `printIdLabel()`) opens the blob via
-  `URL.createObjectURL()` + `window.open(url, '_blank')` rather than forcing a `<a download>` —
-  the point is printing (Ctrl+P in the browser's own PDF viewer), not saving a file. Revoke the
-  object URL after a short delay (10s), not immediately — revoking synchronously can race the new
-  tab's own fetch of the blob URL on some browsers.
+  **`shared/pdf-blob.util.ts`'s `openPdfBlobInNewTab()`** (extracted 2026-09-02 once three screens
+  — Patient Detail, Lab Requisition Detail, Radiology Requisition Detail — needed it) opens the
+  blob via `URL.createObjectURL()` + `window.open(url, '_blank')` rather than forcing a
+  `<a download>` — the point is printing (Ctrl+P in the browser's own PDF viewer), not saving a
+  file. Revoke the object URL after a short delay (10s), not immediately — revoking synchronously
+  can race the new tab's own fetch of the blob URL on some browsers.
 
 **Also found while building this, not fixed:** Lab/Radiology's `report.pdf` and Reporting's
 CSV/PDF export endpoints (all shipped earlier sessions) have no frontend button anywhere calling
