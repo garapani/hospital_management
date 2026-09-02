@@ -181,5 +181,34 @@ describe('TenantConnectionService (integration)', () => {
         ),
       ).rejects.toThrow(/permission denied for schema/i);
     });
+
+    it('cannot create objects directly in the public schema (migration 0099)', async () => {
+      // Pins the fix for the pg_dump-artifact over-grant in 0093 (REVOKE USAGE ... ; GRANT ALL ON
+      // SCHEMA public TO PUBLIC — the second statement undid the first and added CREATE on top).
+      // Every tenant role is `PUBLIC` for this purpose, so before 0099 any tenant connection could
+      // `CREATE TABLE public.<anything>` — schema pollution / a foothold outside its own schema.
+      await expect(
+        roleTenantContext.run({ tenantId, correlationId: 'test' }, () =>
+          roleConnectionService.runInTenantSchema((manager) =>
+            manager.query(`CREATE TABLE public.should_not_be_creatable (id int)`),
+          ),
+        ),
+      ).rejects.toThrow(/permission denied for schema/i);
+    });
+
+    it('can still resolve public-schema objects via search_path fallback (USAGE retained)', async () => {
+      // Positive control for the test above: 0099 revokes CREATE but deliberately keeps USAGE, so
+      // this must still succeed. Every tenant table's `id uuid DEFAULT gen_random_uuid()` depends
+      // on resolving pgcrypto's gen_random_uuid() (installed into `public` by migration 0093) via
+      // the `SET LOCAL search_path TO "<tenant_schema>", public` fallback — an over-correction that
+      // revoked USAGE too would break every tenant-schema INSERT relying on that default.
+      const id = await roleTenantContext.run({ tenantId, correlationId: 'test' }, () =>
+        roleConnectionService.runInTenantSchema(async (manager) => {
+          const rows = await manager.query(`SELECT gen_random_uuid() AS id`);
+          return rows[0].id as string;
+        }),
+      );
+      expect(id).toMatch(/^[0-9a-f-]{36}$/i);
+    });
   });
 });

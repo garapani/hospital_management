@@ -4,6 +4,7 @@ import { AddPatientAllergies3000000000001 } from './0095-add-patient-allergies.j
 import { AddAccountWard3000000000002 } from './0096-add-account-ward.js';
 import { AddPatientInsuranceInfo3000000000003 } from './0097-add-patient-insurance-info.js';
 import { CreateShiftHandoffNotes3000000000004 } from './0098-create-shift-handoff-notes.js';
+import { RestrictPublicSchemaGrants4000000000001 } from './0099-restrict-public-schema-grants.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -19,7 +20,10 @@ import { CreateShiftHandoffNotes3000000000004 } from './0098-create-shift-handof
 // at the end of the relevant array, never inserted mid-array; the name suffix's last-13-digit
 // timestamp must stay unique and the modern (3-prefix) block ascending (both enforced by
 // index.spec.ts, code-review-findings-2026-08-25 database P3).
-export const PLATFORM_MIGRATIONS = [InitialPlatformSchema1000000000093];
+export const PLATFORM_MIGRATIONS = [
+  InitialPlatformSchema1000000000093,
+  RestrictPublicSchemaGrants4000000000001,
+];
 
 // Tenant-scoped migrations: create per-tenant-schema tables. Run once per tenant by
 // TenantProvisioningService (new tenants) and migrate-tenants.ts (backfilling existing ones).
