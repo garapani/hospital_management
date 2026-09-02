@@ -4612,3 +4612,50 @@ cleanup" isn't licence to also delete working-but-currently-unused functionality
 When the canonical file already has an HTTP-level `HttpTestingController` spec and the copy being
 deleted also does, move the deleted copy's spec to the canonical location rather than discarding it
 — don't leave the merged service with only the thinner of the two test files' coverage.
+
+## 125. Never chain a non-idempotent mutation's success into a refetch inside the same `.subscribe()` error branch
+
+Adding Cancel Invoice/Record Return to `invoice-detail.ts`, the original shape (matching the
+pre-existing Record Payment code it was modelled on) was:
+
+```ts
+this.invoicesApi.createReturn(id, dto)
+  .pipe(switchMap(() => this.invoicesApi.findOne(id)))
+  .subscribe({ next: (updated) => {...}, error: (err) => this.returnError.set(err.message) });
+```
+
+A `switchMap` chain collapses two different failure domains into one `error` handler: "the mutation
+itself failed" (nothing happened, safe to retry) and "the mutation succeeded but the follow-up
+`findOne()` failed" (money already moved server-side, retrying re-applies it). A code review of this
+change (run at high effort per this repo's Billing risk gate) caught that the second case reports a
+successful action as failed, and — because `InvoicesService.createReturn` has no idempotency key —
+a user retrying what they believe was a failed partial return applies it a second time (100 paid,
+return 40 succeeds, refetch 5xxs, "failed" shown, retry succeeds again → 80 refunded against 100
+collected). `cancel` happens to be retry-safe (the backend rejects a second cancel with a 409,
+"already cancelled") but still showed a false failure on the same refetch-error path.
+
+The fix: treat the mutation's own success as terminal — close the modal and toast success as soon
+as the mutation itself resolves — then run the refresh as a separate, independently-erroring
+subscription that only surfaces a "reload to see the latest" warning:
+
+```ts
+this.invoicesApi.createReturn(id, dto).subscribe({
+  next: () => { /* toast success, close modal */ this.refreshInvoice(id); },
+  error: (err) => this.returnError.set(err.message),
+});
+
+private refreshInvoice(id: string): void {
+  this.invoicesApi.findOne(id).subscribe({
+    next: (updated) => { if (this.invoice()?.id === id) this.invoice.set(updated); },
+    error: () => this.messageService.add({ severity: 'warn', summary: 'Refresh needed', ... }),
+  });
+}
+```
+
+Applies to any screen chaining a POST/PATCH mutation into a GET refetch via `switchMap` +
+one `.subscribe()` — check whether the mutation is idempotent server-side before deciding a
+collapsed error branch is safe. If it isn't (no unique constraint, no idempotency key, and a retry
+would apply the action again), split the two calls. The `this.invoice()?.id === id` guard in
+`refreshInvoice` also protects against a route change landing mid-flight: without it, a late
+refresh response for the previous invoice could overwrite whatever the `paramMap` subscription has
+since loaded for a new one.

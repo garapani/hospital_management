@@ -947,6 +947,29 @@ Every `<label>` in the accounting and fixed-assets modals is an orphan (no `for`
 
 **Deferred (2026-08-30):** the invoice detail screen still exposes none of the backend's `cancel`/`recordPayment`/`createReturn` actions and shows no balance-due figure — that's a feature addition (new buttons, confirm flows, a payment-recording form), not a bug fix, and sized for its own item in `pending-tasks.md` rather than folding into this review-implementation pass.
 
+**Resolved (2026-09-01), `recordPayment` half:** see the "Billing frontend has no payment/deposit
+recording UI at all" finding in the 2026-09-01 role-based review below — added Record Payment,
+an Outstanding-balance figure, and `InvoicesApiService.recordPayment()`.
+
+**Resolved (2026-09-02), `cancel`/`createReturn` half:** added "Cancel Invoice" and "Record
+Return" actions to `invoice-detail.html`, gated by new `canCancel`/`canReturn` computed signals
+that mirror `InvoicesService.cancel`/`createReturn`'s own eligibility rules (cancel: not
+Paid/Cancelled and `paidAmount === 0`; return: `paidAmount > 0`) for button visibility — the
+backend stays authoritative. A code review of the diff (money-adjacent, run at high effort per
+this repo's risk gate) found that collapsing each mutation and its post-save invoice refresh into
+one `switchMap`+`.subscribe()` reported a successful cancel/return as *failed* whenever only the
+refetch failed, and — because `createReturn` has no idempotency guard — a user retrying what they
+believed was a failed partial return would have applied it twice (100 paid, return 40 succeeds,
+refetch 5xxs, "failed" shown, retry succeeds again → 80 refunded against 100 collected). Fixed by
+splitting the mutation from its refresh: the mutation's own success is now terminal (toast fires,
+modal closes) and the refresh runs separately, surfacing only a "reload to see the latest" warning
+on failure. Applied the identical fix to the pre-existing Record Payment flow, which had the same
+shape. Also: all three modals now pin `[closable]`/`[closeOnEscape]` to their saving signal (an
+ESC/backdrop close mid-flight was silently discarding a failure banner nobody could see), and the
+Return dialog's amount field no longer defaults to the full paid amount (a refund shouldn't
+pre-fill the maximum-loss action as the zero-effort default). Frontend: 616 tests, clean
+`tsc --build` (app + spec).
+
 ### Module group: supply chain & master data (`inventory`, `ward-supply`, `global-catalog`, `master-data`)
 
 ### High: Partially-fulfilled requisitions can never be finished — Fulfill button is gated on `status === 'Pending'`
