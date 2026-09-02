@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EntityManager } from 'typeorm';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -30,6 +31,11 @@ export interface ListTicketsQuery extends PaginationQueryDto {
 }
 
 const PRIORITIES: HelpdeskTicketPriority[] = ['Low', 'Medium', 'High', 'Urgent'];
+
+export type HelpdeskTicketWithNames = HelpdeskTicket & {
+  requesterName: string | null;
+  assigneeName: string | null;
+};
 
 @Injectable()
 export class HelpdeskService {
@@ -167,8 +173,8 @@ export class HelpdeskService {
     });
   }
 
-  async listTickets(query: ListTicketsQuery = {}): Promise<PaginatedResponseDto<HelpdeskTicket>> {
-    return this.tenantConnection.runInTenantSchema((manager) => {
+  async listTickets(query: ListTicketsQuery = {}): Promise<PaginatedResponseDto<HelpdeskTicketWithNames>> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
       const qb = manager.getRepository(HelpdeskTicket).createQueryBuilder('ticket');
       if (query.status) {
         qb.andWhere('ticket.status = :status', { status: query.status });
@@ -187,17 +193,59 @@ export class HelpdeskService {
         });
       }
       qb.orderBy('ticket.createdAt', 'DESC');
-      return paginate(qb, query);
+      const result = await paginate(qb, query);
+      if (result.data.length === 0) {
+        return { ...result, data: [] };
+      }
+      const nameByAccountId = await this.bulkLookupAccountNames(manager, result.data);
+      return {
+        ...result,
+        data: result.data.map((ticket) => ({
+          ...ticket,
+          requesterName: nameByAccountId.get(ticket.requesterAccountId) ?? null,
+          assigneeName: ticket.assigneeAccountId ? nameByAccountId.get(ticket.assigneeAccountId) ?? null : null,
+        })),
+      };
     });
   }
 
-  async getTicket(id: string): Promise<HelpdeskTicket> {
+  async getTicket(id: string): Promise<HelpdeskTicketWithNames> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       const ticket = await manager.getRepository(HelpdeskTicket).findOne({ where: { id } });
       if (!ticket) {
         throw new NotFoundException(`Helpdesk ticket ${id} not found`);
       }
-      return ticket;
+      const nameByAccountId = await this.bulkLookupAccountNames(manager, [ticket]);
+      return {
+        ...ticket,
+        requesterName: nameByAccountId.get(ticket.requesterAccountId) ?? null,
+        assigneeName: ticket.assigneeAccountId ? nameByAccountId.get(ticket.assigneeAccountId) ?? null : null,
+      };
     });
+  }
+
+  /**
+   * Requester/assignee were previously exposed only as raw accountIds — nothing in this codebase's
+   * frontend resolves an accountId to a name outside `/accounts/directory`, which requires knowing
+   * the account's role up front (not knowable for an arbitrary requester). Joining displayName in
+   * here, the same way lab/radiology join patientId in, avoids needing a new generic resolver
+   * (code-review-findings-2026-09-02 helpdesk: requester/description never shown anywhere in the UI).
+   * Raw SQL, not a TypeORM relation, matching `assignTicket`'s existing accounts lookup above — no
+   * cross-module ORM relation between helpdesk and accounts.
+   */
+  private async bulkLookupAccountNames(
+    manager: EntityManager,
+    tickets: Pick<HelpdeskTicket, 'requesterAccountId' | 'assigneeAccountId'>[],
+  ): Promise<Map<string, string>> {
+    const accountIds = new Set<string>();
+    for (const ticket of tickets) {
+      accountIds.add(ticket.requesterAccountId);
+      if (ticket.assigneeAccountId) accountIds.add(ticket.assigneeAccountId);
+    }
+    const rows: Array<{ id: string; displayName: string }> = await manager.query(
+      `SELECT id, "displayName" FROM accounts WHERE id = ANY($1)`,
+      [Array.from(accountIds)],
+    );
+    return new Map(rows.map((r) => [r.id, r.displayName]));
   }
 }

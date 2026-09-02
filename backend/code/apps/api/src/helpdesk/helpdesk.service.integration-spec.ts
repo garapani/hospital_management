@@ -129,6 +129,24 @@ describe('HelpdeskService (integration)', () => {
     );
   });
 
+  it('joins requesterName/assigneeName from accounts.displayName, on both getTicket and listTickets', async () => {
+    const ticket = await makeTicket();
+    expect(ticket.assigneeAccountId).toBeNull();
+
+    const fetched = await ctx.inTenant(() => helpdeskService.getTicket(ticket.id));
+    expect(fetched.requesterName).toBe('Helpdesk Staff');
+    expect(fetched.assigneeName).toBeNull(); // no assignee yet
+
+    await ctx.inTenant(() => helpdeskService.assignTicket(ticket.id, STAFF_ID));
+    const reFetched = await ctx.inTenant(() => helpdeskService.getTicket(ticket.id));
+    expect(reFetched.assigneeName).toBe('Helpdesk Staff');
+
+    const list = await ctx.inTenant(() => helpdeskService.listTickets({ q: fetched.title }));
+    const listed = list.data.find((t) => t.id === ticket.id)!;
+    expect(listed.requesterName).toBe('Helpdesk Staff');
+    expect(listed.assigneeName).toBe('Helpdesk Staff');
+  });
+
   it('rejects assigning to a nonexistent or deactivated account', async () => {
     const ticket = await makeTicket();
 
