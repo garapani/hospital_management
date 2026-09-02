@@ -2228,6 +2228,30 @@ no create action anywhere.
 - `frontend/apps/staff-console/src/app/lab/lab-api.service.ts`
 - `frontend/apps/staff-console/src/app/radiology/radiology-api.service.ts`, `radiology.model.ts`
 
+### Low: PRD's standalone "Verification" module has no corresponding code — confirmed intentional, not a gap
+
+**Resolved (2026-09-02), doc-only:** no code change. `mvp-status.md` already documents this
+correctly and consistently (the module table, "What's genuinely not built," and the 2026-08-30
+deep-review follow-up all independently say the same thing): `verification`'s PRD-described scope
+— payer/eligibility verification — is functionally covered by `insurance`'s `checkCoverage`
+(policy/payer coverage check, already shipped and used from the Insurance frontend page), so a
+separate Verification module was never started and isn't planned as a distinct build. This finding
+confirms that reconciliation is a deliberate scope decision rather than an oversight nobody had
+looked at — no further action needed unless a future PRD revision asks for verification workflow
+(status tracking, response codes, retries) that `checkCoverage`'s simple point-check doesn't cover.
+
+### Low: Marketing & Referral has no frontend screen
+
+**Resolved (2026-09-02), doc-only:** confirmed as a known, tracked, non-urgent gap — not a
+regression. The backend `marketing` module (referral sources + patient referrals) has been done
+since Phase 6; a frontend scaffold existed briefly but was unused dead code (no component, no
+route) and was deleted in the 2026-08-30 hygiene pass, so no working screen was ever removed.
+`mvp-status.md`'s module table updated to say "Done (backend only)" instead of a bare "Done," so
+this doesn't read as frontend-complete on a future skim. Building the actual screen is real,
+undone frontend work — left for its own item if wanted, not attempted here.
+
+- `backend/docs/technical-design/mvp-status.md` (marketing row)
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.

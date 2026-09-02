@@ -54,7 +54,7 @@ earlier and never got checklist entries — the table below is the authoritative
 | `payroll` | Phase 5 | Yes | Done | Monthly payslips (Draft→Paid) |
 | `fraction` | Phase 5 | Yes | Done | Revenue-share rules + entries vs real invoices |
 | `helpdesk` | Phase 6 | Yes | Done | Ticketing lifecycle |
-| `marketing` | Phase 6 | Yes | Done | Referral sources + patient referrals |
+| `marketing` | Phase 6 | Yes | Done (backend only) | Referral sources + patient referrals. No frontend screen — the original frontend scaffold (API service + model, no component/route) was dead code, deleted 2026-08-30; a real screen was never built against it. Tracked, not urgent (2026-09-02 role-based review). |
 | `ssu` | Phase 6 | Yes | Done | Frontend page confirmed built as of 2026-08-30 (`ssu-list.ts`/`.html`) — **M1 resolved**, this row was stale until this refresh |
 | `directory` | N/A (cross-cutting) | Yes | Done | Added 2026-09-01/02: `POST /directory/resolve` bulk id→name lookup (patient/doctor/ward/bed/item), backing the frontend's `<hms-entity-name>` component — the app-wide fix for raw-UUID-as-display findings across nine+ screens |
 | `notifications` | Phase 6 | Yes | Done (in-app slice) | CRUD + summary + subscribers; no email/SMS/push channel |
