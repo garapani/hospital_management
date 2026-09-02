@@ -1918,6 +1918,45 @@ table now renders "QA Gauze Roll (uuid)" instead of a bare UUID.
 - `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.html`
 - `frontend/apps/staff-console/src/app/ward-supply/ward-supply-console.spec.ts`
 
+### Module group: MVP status re-audit + fine-tuning pass — 2026-09-02
+
+Prompted by "make sure everything works as expected, fine-tune where there's scope" — with the
+documented backlog (`pending-tasks.md`, and every finding above) fully cleared, this pass looked
+for issues *not yet captured* in either doc: a full clean `nx test api` run (not per-file, which
+is how everything had been verified all session) and `nx lint staff-console` (the frontend's
+`ci.yml` runs `lint test build typecheck e2e` via `nx run-many`, but with 6+ unpushed local
+commits at any given point this session, CI had not actually seen — or caught — any of it).
+
+### Low: Two wall-clock-dependent integration tests, already flagged as a ticking time bomb, finally rotted
+
+**Resolved (2026-09-02):** see the original finding above ("Two integration specs assert a
+hardcoded elapsed-time value against the real wall clock") — both `fixed-assets` and `cssd`'s
+tests were failing for real by the time of this audit, exactly as predicted when the finding was
+first written. Fixed as described there.
+
+### Low: `nx lint staff-console` had never actually been run — 21 problems across 15 files, two of them a same-day regression
+
+**Resolved (2026-09-02):** a `<label for="...">` whose paired control had been converted from an
+`<input>` to a read-only `<div>` earlier the same day (the PO/Requisition item-name fix) left two
+dangling `for` references — caught immediately by lint, which suggests running it routinely (not
+just at audit time) would be worth adding to this pipeline's per-item checklist going forward.
+Fixed those, plus 7 pre-existing instances of the same `label-has-associated-control` class across
+`accounting-console`, `invoice-list`, `encounter-list`, `helpdesk-list`, `nursing-console`,
+`ssu-list`, `tenant-detail` (either the label had no real control at all — converted to `<span>`
+— or it wrapped a PrimeNG custom element with no `inputId`/`for` pairing — added both, since
+Angular ESLint's rule doesn't credit implicit wrapping over a non-native custom element). Also
+fixed: a genuine `!=`/`!==` correctness smell (pre-existing, unrelated to today), three empty
+`error: () => {}` handlers standardized to the codebase's own established `() => undefined`
+no-op convention, `shell-chrome`'s deliberate event-delegation click handler on `<nav>`
+scope-disabled with a comment (adding real keyboard/focus semantics to a landmark element would
+have been worse a11y, not better), an unused `catch` binding, a non-null assertion replaced by
+narrowing a signal read into a local, and admin-dashboard's chart options typed via `chart.js`'s
+own `ChartOptions<'bar'>` instead of `any` (needed an explicit `WritableSignal` property
+annotation to dodge a non-portable inferred-type declaration-emit error — see
+Development-Standards.md for the general shape of that gotcha, same family as §122's).
+Full suite (637 tests) and clean `tsc --build` after every change; `nx lint staff-console` now
+passes with zero problems.
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.

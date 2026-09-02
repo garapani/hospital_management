@@ -4706,3 +4706,34 @@ decoded to Latin-1-per-byte mojibake, corrupting the exact header the fix was ad
 `new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0)))`. Any new frontend code
 that decodes a JWT payload directly (rather than going through this shared helper) needs the same
 fix — `atob()` is not a safe UTF-8-string decoder on its own.
+
+## 127. Run `nx lint` before considering a frontend item done, not just at audit time — and a third-party generic type in a signal needs an explicit annotation to declaration-emit cleanly
+
+`nx lint staff-console` had never actually been run as part of this pipeline's per-item checklist
+— `frontend/.github/workflows/ci.yml` does run `lint test build typecheck e2e` via
+`nx run-many`, but this session routinely sat on 5+ unpushed local commits at a time, so CI never
+saw (or caught) any of it. A 2026-09-02 audit ran it cold and found 21 problems across 15 files —
+most pre-existing, but two were a same-day regression (a `<label for="...">` left dangling after
+its paired `<input>` was converted to a read-only `<div>` earlier the same session). Add `nx lint`
+to the fast-track checklist (alongside test/typecheck) for any frontend item touching a
+`.html`/`.ts` file, the same way `tsc --build` already is — it would have caught the regression in
+the same commit that introduced it instead of a separate audit three commits later.
+
+Two reusable fixes from that cleanup, worth keeping as the default pattern:
+- **A `<label>` wrapping a PrimeNG custom element** (`p-select`, `p-checkbox`, `p-toggleswitch`,
+  …) is not credited as "associated" by `@angular-eslint/template/label-has-associated-control`
+  even when the control is a genuine nested interactive element — the rule only recognizes native
+  form elements via wrapping. Give the PrimeNG component an `inputId` (a dynamic one inside a
+  `@for` needs `[inputId]="'prefix-' + item.id"`, paired with `[attr.for]` on the label, not a
+  plain `for`) and keep the wrap; don't reach for `tabindex`/ARIA workarounds. A `<label>` with no
+  real control behind it at all (a plain section heading) should just be a `<span>`/`<div>`
+  instead — it was never actually labelling anything.
+- **A third-party library's deeply generic type inferred into a `signal<T>()` can fail to
+  declaration-emit** (`TS2883: The inferred type ... cannot be named without a reference to
+  '_DeepPartialObject' ... This is likely not portable`) under this project's
+  `composite`/`emitDeclarationOnly` tsconfig (§122's same family of gotcha, different trigger).
+  Chart.js's `ChartOptions<'bar'>` inside a signal hit this. The type argument on `signal<T>()`
+  itself doesn't fix it — TypeScript still has to *infer* the property's own type for the
+  declaration file. Give the property itself an explicit type annotation instead
+  (`readonly x: WritableSignal<ChartOptions<'bar'>> = signal({...})`) so the declaration emitter
+  has a name to write out rather than needing to spell the inferred structural type.
