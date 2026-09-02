@@ -2105,6 +2105,23 @@ Hospital Admin, and Auditor/Compliance hold both permissions — but restores th
 backend permission exists for, so a future role granted only one of the two is gated correctly
 instead of by the wrong one.
 
+### High: "Suspend Tenant" fired on a single click with zero confirmation — the one un-confirmed action with platform-wide blast radius
+
+**Resolved (2026-09-02):** added a `requestSuspend()`/`showSuspendConfirm` confirm dialog matching
+the exact pattern `tenant-detail.ts` already uses for Archive (a component-local signal + `p-dialog`,
+not `ConfirmationService`, since this component never injected it). Reactivate — Suspend's undo,
+restoring access rather than removing it — intentionally stays a single click, matching how
+Archive/Restore already treat "locks people out" vs "restores access" asymmetrically in this same
+component. Frontend: 662 tests (2 new), clean `nx lint`, clean `tsc --build` (app + spec).
+
+`suspend()` locks out every user of a hospital tenant the moment it's called (the success toast
+itself says "can no longer log in"), yet the button called it directly with no confirmation step —
+the one action in the Archive/Purge/package-change/cancel-subscription confirm-gated set that had
+been left out when that pattern was built. Not irreversible in the strict data-loss sense like
+Purge, but operationally the highest-frequency high-stakes action a Super Admin performs.
+
+- `frontend/apps/staff-console/src/app/tenants/tenant-detail/tenant-detail.{ts,html}`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
