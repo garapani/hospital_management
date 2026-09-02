@@ -457,10 +457,17 @@ Follow the PRD's own phase ordering as-is:
     statement (revenue − expenses = net income), and balance sheet (assets = liabilities + equity
     + retained earnings). Permissions `accounting.read`/`accounting.manage` wired to Billing/
     Accounts Staff, Hospital Admin, Super Admin. Migration `0035`; 7 integration tests (reports
-    tested hermetically in a dedicated tenant). Not done (future items): automatic journal posting
-    from Billing/charge-capture (ledger mapping — the old system's `DanpheEMR.AccTransfer`),
-    reversing/correcting posted journals, fiscal-year closing, account reconciliation, and a
-    frontend page.
+    tested hermetically in a dedicated tenant). **Frontend page found already shipped, and its
+    reports given CSV/PDF/Excel export (2026-09-02):** the "no frontend page" note below was stale
+    by the time this landed — `accounting-console.ts` (Chart of Accounts / Journal Entries /
+    Reports tabs) already existed. Added the missing piece: export buttons on the Reports tab,
+    routed to nine new `accounting.read`-gated endpoints (`reports/{trial-balance,income-statement,
+    balance-sheet}/export.{csv,pdf,xlsx}`), all passing the same from/to/asOf filters the on-screen
+    report already uses. `AccountingExportService` is deliberately a separate service from
+    `AccountingService` — see `Development-Standards.md`. Not done (future items): automatic
+    journal posting from Billing/charge-capture (ledger mapping — the old system's
+    `DanpheEMR.AccTransfer`), reversing/correcting posted journals, fiscal-year closing, account
+    reconciliation.
   done for its MVP register scope (2026-08-20):** `fixed-assets` module with asset categories +
   asset register (auto asset codes, purchase date/cost, supplier, department assignment,
   condition In Service/Under Repair/Retired), paginated list, update, soft-delete
@@ -528,12 +535,15 @@ Follow the PRD's own phase ordering as-is:
   screens (Patient Detail, Lab/Radiology Requisition Detail) share it. **Third slice done
   (2026-09-02):** Pharmacy dispensing label (`GET /pharmacy/dispensings/:id/dispensing-label.pdf`)
   — same pattern, QR-encoded dispensingId, available before dispensing. All four label types
-  named in the 2026-09-02 role-based review are now shipped. **Not done:** Excel export (no
-  dependency chosen yet) and the full Reporting/Dashboard aggregation UI — both still open, neither
-  blocked on anything. **Also found, not fixed:** the Lab/Radiology
-  `report.pdf` and Reporting CSV/PDF export endpoints (all shipped earlier) have no frontend button
-  anywhere calling them — a pre-existing gap, out of scope for this pass, worth its own item.
-  **Helpdesk**, **Marketing
+  named in the 2026-09-02 role-based review are now shipped. **Reporting fully closed out
+  (2026-09-02):** the Lab/Radiology `report.pdf` and Reporting CSV/PDF export endpoints (flagged
+  above as having no frontend button anywhere calling them) now have one — "View Report" on both
+  requisition detail screens (Verified-status only, matching the backend's own gate), and
+  CSV/PDF/Excel export buttons on the Reporting Dashboard's Events/Revenue panels. Excel export
+  shipped as a new `@hospital/excel` platform lib (exceljs-backed, mirrors `@hospital/pdf`'s
+  thin-wrapper shape) — also used for a third export format on the accounting reports below. The
+  full Reporting/Dashboard aggregation UI (charts/summaries beyond the existing event-counts and
+  revenue panels) remains open, not blocked on anything. **Helpdesk**, **Marketing
   & Referral**, and **Social Service Unit are done (2026-08-20)**.
   - **Marketing & Referral:** referral-source catalog (typed, soft-delete) + patient referral
     records (source must be active, optional referring doctor, actor-derived recordedBy).

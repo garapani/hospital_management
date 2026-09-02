@@ -644,6 +644,8 @@ OT and nursing guard concurrent row actions with a single shared signal, which o
 
 **Resolved (2026-08-30):** added `GET /lab/requisitions/:id/results` (`lab.read`) since no read path existed at all before this. `LabRequisitionDetail` now renders an "Entered Results" table (component, value, unit, reference range, abnormal flag) whenever status is `ResultsEntered` or `Verified`, and Verify now requires an explicit confirm step.
 
+**Also resolved (2026-09-02):** this finding's other named gap — `GET /lab/requisitions/:id/report.pdf` never called from the frontend — is now closed too. Both Lab and Radiology requisition detail screens gained a "View Report" button (Verified-status only, matching the backend's own gate), and the sibling Reporting-module gap (CSV/PDF export endpoints with no frontend button) was closed in the same pass — see `Development-Standards.md`.
+
 `LabRequisitionDetail` renders only a "Requisition Details" panel and a "Workflow" panel; there is no results table, and `LabApiService` has no method to read results back (only `enterResult`). The backend exposes `GET /lab/requisitions/:id/report.pdf` for exactly this, and it is never called from the frontend. A lab supervisor holding `lab.result.verify` opens a `ResultsEntered` requisition, sees no values, no units, no abnormal flags, and clicks "Verify Results" — an irreversible clinical sign-off performed on data they cannot see. This is the single most serious gap in the three modules; Radiology by contrast does render `reportText` before its verify button.
 
 - `frontend/apps/staff-console/src/app/lab/lab-requisition-detail/lab-requisition-detail.html:69-95`
