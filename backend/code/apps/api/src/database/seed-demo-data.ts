@@ -84,6 +84,9 @@ const DEMO_STAFF: Array<{
   { username: 'demo.inventory', roleName: 'Inventory/Store Manager', displayName: 'Demo Inventory Manager' },
   { username: 'demo.billing', roleName: 'Billing/Accounts Staff', displayName: 'Demo Billing Staff' },
   { username: 'demo.nurse', roleName: 'Nurse', displayName: 'Demo Nurse' },
+  { username: 'demo.helpdesk', roleName: 'Helpdesk Agent', displayName: 'Demo Helpdesk Agent' },
+  { username: 'demo.hr', roleName: 'HR/Payroll Admin', displayName: 'Demo HR/Payroll Admin' },
+  { username: 'demo.audit', roleName: 'Auditor/Compliance', displayName: 'Demo Auditor' },
 ];
 
 export function demoStaffPassword(): string {
