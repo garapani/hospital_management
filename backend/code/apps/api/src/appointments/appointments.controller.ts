@@ -42,6 +42,20 @@ export class AppointmentsController {
     return this.appointmentsService.checkIn(id);
   }
 
+  @Post(':id/complete')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('appointment.manage')
+  async completeAppointment(@Param('id') id: string) {
+    return this.appointmentsService.complete(id);
+  }
+
+  @Post(':id/no-show')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('appointment.manage')
+  async markAppointmentNoShow(@Param('id') id: string) {
+    return this.appointmentsService.markNoShow(id);
+  }
+
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)
   @RequirePermission('appointment.manage')

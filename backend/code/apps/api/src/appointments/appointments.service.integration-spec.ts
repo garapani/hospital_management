@@ -237,6 +237,67 @@ describe('AppointmentsService (integration)', () => {
     await expect(ctx.inTenant(() => appointmentsService.checkIn(fakeId))).rejects.toThrow(NotFoundException);
   });
 
+  it('completes a Scheduled appointment', async () => {
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Seen', lastName: 'ByDoctor', contactNumber: '5550000030',
+      appointmentDate: '2026-08-25', appointmentTime: '11:00', appointmentType: 'Consultation',
+    }));
+
+    const completed = await ctx.inTenant(() => appointmentsService.complete(created.id));
+    expect(completed.status).toBe('Completed');
+  });
+
+  it('completes a CheckedIn appointment', async () => {
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'CheckedIn', lastName: 'ThenSeen', contactNumber: '5550000031',
+      appointmentDate: '2026-08-25', appointmentTime: '11:30', appointmentType: 'Consultation',
+    }));
+    await ctx.inTenant(() => appointmentsService.checkIn(created.id));
+
+    const completed = await ctx.inTenant(() => appointmentsService.complete(created.id));
+    expect(completed.status).toBe('Completed');
+  });
+
+  it('rejects completing an appointment that is already Cancelled', async () => {
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Cancelled', lastName: 'CannotComplete', contactNumber: '5550000032',
+      appointmentDate: '2026-08-25', appointmentTime: '12:00', appointmentType: 'Consultation',
+    }));
+    await ctx.inTenant(() => appointmentsService.cancel(created.id, 'Patient no longer needs it'));
+
+    await expect(ctx.inTenant(() => appointmentsService.complete(created.id))).rejects.toThrow(ConflictException);
+  });
+
+  it('throws NotFoundException completing a non-existent appointment', async () => {
+    const fakeId = '33333333-3333-3333-3333-333333333333';
+    await expect(ctx.inTenant(() => appointmentsService.complete(fakeId))).rejects.toThrow(NotFoundException);
+  });
+
+  it('marks a Scheduled appointment as a no-show', async () => {
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Never', lastName: 'Arrived', contactNumber: '5550000033',
+      appointmentDate: '2026-08-25', appointmentTime: '12:30', appointmentType: 'Consultation',
+    }));
+
+    const noShow = await ctx.inTenant(() => appointmentsService.markNoShow(created.id));
+    expect(noShow.status).toBe('NoShow');
+  });
+
+  it('rejects marking an already-Completed appointment as a no-show', async () => {
+    const created = await ctx.inTenant(() => appointmentsService.create({
+      firstName: 'Already', lastName: 'Completed', contactNumber: '5550000034',
+      appointmentDate: '2026-08-25', appointmentTime: '13:00', appointmentType: 'Consultation',
+    }));
+    await ctx.inTenant(() => appointmentsService.complete(created.id));
+
+    await expect(ctx.inTenant(() => appointmentsService.markNoShow(created.id))).rejects.toThrow(ConflictException);
+  });
+
+  it('throws NotFoundException marking a non-existent appointment as a no-show', async () => {
+    const fakeId = '44444444-4444-4444-4444-444444444444';
+    await expect(ctx.inTenant(() => appointmentsService.markNoShow(fakeId))).rejects.toThrow(NotFoundException);
+  });
+
   it('still blocks double-booking a doctor slot once the original appointment is checked in', async () => {
     const doctorId = '00000000-0000-4000-8000-0000000000d4';
     const created = await ctx.inTenant(() => appointmentsService.create({

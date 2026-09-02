@@ -237,6 +237,36 @@ export class AppointmentsService {
     });
   }
 
+  async complete(id: string): Promise<Appointment> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repo = manager.getRepository(Appointment);
+      const appointment = await repo.findOne({ where: { id } });
+      if (!appointment) {
+        throw new NotFoundException(`Appointment ${id} not found`);
+      }
+      if (appointment.status !== 'Scheduled' && appointment.status !== 'CheckedIn') {
+        throw new ConflictException(`Appointment ${id} is ${appointment.status} and cannot be completed`);
+      }
+      appointment.status = 'Completed';
+      return repo.save(appointment);
+    });
+  }
+
+  async markNoShow(id: string): Promise<Appointment> {
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      const repo = manager.getRepository(Appointment);
+      const appointment = await repo.findOne({ where: { id } });
+      if (!appointment) {
+        throw new NotFoundException(`Appointment ${id} not found`);
+      }
+      if (appointment.status !== 'Scheduled' && appointment.status !== 'CheckedIn') {
+        throw new ConflictException(`Appointment ${id} is ${appointment.status} and cannot be marked as a no-show`);
+      }
+      appointment.status = 'NoShow';
+      return repo.save(appointment);
+    });
+  }
+
   async cancel(id: string, cancelledRemarks: string): Promise<Appointment> {
     if (!cancelledRemarks || cancelledRemarks.trim() === '') {
       throw new BadRequestException('cancelledRemarks is required');

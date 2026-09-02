@@ -289,6 +289,114 @@ describe('AppointmentsController (e2e)', () => {
     expect(res.status).toBe(HttpStatus.CONFLICT);
   });
 
+  it('completes a scheduled appointment via POST /appointments/:id/complete', async () => {
+    const createRes = await request(app.getHttpServer())
+      .post('/appointments')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({
+        firstName: 'Seen',
+        lastName: 'Today',
+        contactNumber: '5556667779',
+        appointmentDate: '2026-08-19',
+        appointmentTime: '16:00',
+        appointmentType: 'Checkup',
+      });
+    const appointmentId = createRes.body.id;
+
+    const res = await request(app.getHttpServer())
+      .post(`/appointments/${appointmentId}/complete`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({});
+
+    expect(res.status).toBe(HttpStatus.OK);
+    expect(res.body.status).toBe('Completed');
+  });
+
+  it('fails with 409 completing an appointment that is already cancelled', async () => {
+    const createRes = await request(app.getHttpServer())
+      .post('/appointments')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({
+        firstName: 'Cancelled',
+        lastName: 'Before',
+        contactNumber: '5556667780',
+        appointmentDate: '2026-08-19',
+        appointmentTime: '17:00',
+        appointmentType: 'Checkup',
+      });
+    const appointmentId = createRes.body.id;
+    await request(app.getHttpServer())
+      .post(`/appointments/${appointmentId}/cancel`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({ cancelledRemarks: 'No longer needed' });
+
+    const res = await request(app.getHttpServer())
+      .post(`/appointments/${appointmentId}/complete`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({});
+
+    expect(res.status).toBe(HttpStatus.CONFLICT);
+  });
+
+  it('marks a scheduled appointment as a no-show via POST /appointments/:id/no-show', async () => {
+    const createRes = await request(app.getHttpServer())
+      .post('/appointments')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({
+        firstName: 'Missed',
+        lastName: 'It',
+        contactNumber: '5556667781',
+        appointmentDate: '2026-08-19',
+        appointmentTime: '18:00',
+        appointmentType: 'Checkup',
+      });
+    const appointmentId = createRes.body.id;
+
+    const res = await request(app.getHttpServer())
+      .post(`/appointments/${appointmentId}/no-show`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({});
+
+    expect(res.status).toBe(HttpStatus.OK);
+    expect(res.body.status).toBe('NoShow');
+  });
+
+  it('fails with 409 marking an already-completed appointment as a no-show', async () => {
+    const createRes = await request(app.getHttpServer())
+      .post('/appointments')
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({
+        firstName: 'Already',
+        lastName: 'Seen',
+        contactNumber: '5556667782',
+        appointmentDate: '2026-08-19',
+        appointmentTime: '19:00',
+        appointmentType: 'Checkup',
+      });
+    const appointmentId = createRes.body.id;
+    await request(app.getHttpServer())
+      .post(`/appointments/${appointmentId}/complete`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({});
+
+    const res = await request(app.getHttpServer())
+      .post(`/appointments/${appointmentId}/no-show`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('x-tenant-id', ctx.tenantId)
+      .send({});
+
+    expect(res.status).toBe(HttpStatus.CONFLICT);
+  });
+
   it('fails with 400 when updating with invalid UUID', async () => {
     const createRes = await request(app.getHttpServer())
       .post('/appointments')
