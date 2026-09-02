@@ -4802,3 +4802,40 @@ CSV/PDF export endpoints (all shipped earlier sessions) have no frontend button 
 them — confirmed via `grep -rli pdf src/app` returning nothing before this item. Pre-existing gap,
 out of scope here, but the fix is now a known one-line addition using this same `getBlob()` +
 `window.open()` pattern once picked up as its own item.
+
+## 130. A raw-UUID sweep needs a broader grep than the one that found the original bug, and "no name to resolve" needs its own fix shape
+
+After fixing `EntityName`'s own display bug (§113's correction note), a follow-up sweep asked to
+visit every screen/role and eliminate remaining raw-UUID displays — found 9 more, not caught by
+the original component-level fix because they never went through `EntityName` at all (a bare
+`{{ x.someId }}` interpolation, or a raw id used as link text/page title). Two lessons:
+
+- **The find-them grep needs to catch an id-suffixed property anywhere inside an interpolation,
+  not just as its sole content.** `\{\{\s*[a-zA-Z_.]*[Ii]d\s*\}\}` (matches only `{{ x.fooId }}`)
+  missed `{{ x.fooId || 'N/A' }}` and `{{ x.fooId.slice(0, 8) }}`, both of which unconditionally
+  show a raw id text. The broader `\{\{[^}]*\.[a-zA-Z_]*[Ii]d[^}]*\}\}` catches both, but also
+  surfaces already-correct fallback patterns (`resolvedName() ?? entity.someId`, matching
+  `EntityName`'s own now-fixed behavior) — those aren't bugs, don't touch them.
+- **Not every raw id has a name to resolve.** Six new directory types (`orderItem`, `test`,
+  `imagingItem`, `invoice`, `employee`, `department`) covered most finds directly. The rest —
+  Order Detail's own id in its page title, and its `sourceAppointmentId`/`sourceAdmissionId`;
+  Maternity's admission link text — reference entities with no single human-readable name at all
+  (an Order or an Admission doesn't have one). The fix there isn't resolution, it's removing the
+  id from display entirely: drop it from the title, or turn it into a plain "View X" navigation
+  link (matching the pattern the Patient Record card on the same screen already used) — the id was
+  never meaningful to a reader, only to the link's `routerLink` target.
+
+**A third shape, found on Reporting Dashboard and Audit Trail:** neither screen's own raw id
+(`entityId`, `recordId`) is a directly resolvable reference — both are bare table PKs (an Order, a
+Payment, a journal entry row) with no name of their own. But both screens already carry enough
+context to do better than a raw id:
+- Reporting: `ReportingEvent.payload` already carries a patient/invoice/bed reference (built by
+  `ReportingSubscriber.buildPayload` at publish time) — `reportingEventSubjectRef(event)` maps
+  `eventType` to the right payload field and directory type, resolving that instead. Falls back to
+  the raw `entityId` for an event type it doesn't recognize.
+- Audit: `AuditRecord.recordId` **is** the referenced entity's own PK in `record.tableName` — no
+  payload-drilling needed, just a `tableName -> DirectoryEntityType` map
+  (`auditRecordDirectoryType()`). Audit records span far more tables than the directory resolver
+  covers (journal entries, helpdesk tickets, tenants, …), so this is a deliberately bounded,
+  partial win — falls back to the raw id for an unmapped table, not full audit-log entity
+  resolution (a materially bigger feature, not attempted here).

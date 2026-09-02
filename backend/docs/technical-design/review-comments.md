@@ -2270,6 +2270,35 @@ note on the original `EntityName` entry.
 - `frontend/apps/staff-console/src/app/directory/entity-name.ts`
 - `frontend/apps/staff-console/src/app/directory/directory-resolver.service.ts`
 
+### High: nine more raw-UUID displays found sweeping every screen/role after the `hms-entity-name` fix
+
+**Resolved (2026-09-02):** the `EntityName` component fix above only covered screens that actually
+used the component; a broader sweep (Development-Standards.md §130) found 9 more that bypassed it
+entirely — a bare `{{ x.someId }}` interpolation, or a raw id used as link text or a page title.
+Six new directory entity types (`orderItem`, `test`, `imagingItem`, `invoice`, `employee`,
+`department`) resolved most of them: Lab/Radiology requisition list+detail, Pharmacy dispensing
+detail, Payroll list, Fraction console, Appointment detail, Admin dashboard and Tenant detail
+history, SSU list's two confirmation dialogs. Two had no name to resolve at all (Order Detail's own
+id, its source-appointment/source-admission ids; Maternity's admission link) — turned into plain
+labels or "View X" navigation links instead, since the id itself was never meaningful to a reader.
+Backend: 4 directory integration tests (2 new), clean `nx run api:typecheck`. Frontend: 720 tests
+(21 new), clean `nx lint`, clean `tsc --build` (app + spec).
+
+**Also resolved, same pass — a different shape:** Reporting Dashboard and Audit Trail's own raw ids
+(`entityId`, `recordId`) aren't directly resolvable references — both are bare table PKs (an Order,
+a Payment, a journal entry) with no name of their own. Reporting's `reportingEventSubjectRef()`
+resolves the patient/invoice/bed reference already carried in each event's `payload` instead of the
+meaningless `entityId`. Audit's `auditRecordDirectoryType()` maps `record.tableName` to a directory
+type directly (recordId already **is** that entity's PK) for the ~11 tables the directory resolver
+covers, falling back to the raw id for the many it doesn't (journal entries, helpdesk tickets,
+tenants, …) — a deliberately bounded partial win, not full audit-log entity resolution.
+
+- `backend/code/apps/api/src/directory/directory.service.ts`, `dto/resolve-directory.dto.ts`
+- `frontend/apps/staff-console/src/app/directory/directory-api.service.ts`, `directory-resolver.service.ts`
+- `frontend/apps/staff-console/src/app/{lab,radiology,pharmacy,payroll,fraction,appointments,admin-dashboard,tenants,ssu,orders,maternity}/*`
+- `frontend/apps/staff-console/src/app/reporting/reporting.model.ts`, `reporting-dashboard/*`
+- `frontend/apps/staff-console/src/app/audit/audit.model.ts`, `audit-list.*`
+
 ## Open Question
 
 Are these documents meant to describe the implemented state today, or the intended target architecture? If they are target-state documents, the deployment guide and runbook still need to remain current-state accurate because operators and contributors will follow them literally.
