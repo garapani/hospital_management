@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PdfService } from '@hospital/pdf';
+import { ExcelService } from '@hospital/excel';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { ReportingEvent } from './entities/reporting-event.entity.js';
 import { PaginationQueryDto, PaginatedResponseDto, paginate } from '@hospital/pagination';
@@ -42,6 +43,7 @@ export class ReportingQueryService {
   constructor(
     private readonly tenantConnection: TenantConnectionService,
     private readonly pdfService: PdfService,
+    private readonly excelService: ExcelService,
   ) {}
 
   async listEvents(params: ListEventsParams): Promise<PaginatedResponseDto<ReportingEvent>> {
@@ -165,5 +167,40 @@ export class ReportingQueryService {
         to: params.to,
       }),
     );
+  }
+
+  /** Whole-set Excel export, same 10000-row cap as the CSV sibling (both materialize the full
+   *  matching set in memory). */
+  async exportEventsExcel(params: ListEventsParams): Promise<Buffer> {
+    const { data } = await this.listEvents({ ...params, page: 1, limit: 10000 });
+    return this.excelService.renderWorkbook([
+      {
+        name: 'Events',
+        columns: [
+          { header: 'ID', key: 'id', width: 36 },
+          { header: 'Occurred At', key: 'occurredAt', width: 24 },
+          { header: 'Event Type', key: 'eventType', width: 20 },
+          { header: 'Entity ID', key: 'entityId', width: 36 },
+          { header: 'Correlation ID', key: 'correlationId', width: 36 },
+          { header: 'Payload', key: 'payload', width: 50 },
+        ],
+        rows: data.map((e) => this.mapEventToExportRow(e)),
+      },
+    ]);
+  }
+
+  /** Excel export of the daily revenue aggregates. */
+  async exportRevenueExcel(params: DateRangeParams): Promise<Buffer> {
+    const rows = await this.getRevenue(params);
+    return this.excelService.renderWorkbook([
+      {
+        name: 'Revenue',
+        columns: [
+          { header: 'Date', key: 'date', width: 16 },
+          { header: 'Total Amount', key: 'totalAmount', width: 18 },
+        ],
+        rows: rows.map((r) => ({ date: r.date, totalAmount: r.totalAmount })),
+      },
+    ]);
   }
 }

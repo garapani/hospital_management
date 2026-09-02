@@ -6,6 +6,7 @@ import { ReportingQueryService } from './reporting-query.service.js';
 import { ReportingController } from './reporting.controller.js';
 import { TenantContextModule } from '@hospital/tenant-context';
 import { PdfModule } from '@hospital/pdf';
+import { ExcelModule } from '@hospital/excel';
 import { DatabaseModule } from '../database/database.module.js';
 import {
   REPORTING_DATA_SOURCE,
@@ -13,7 +14,7 @@ import {
 } from '../database/reporting-data-source.js';
 
 @Module({
-  imports: [TenantContextModule, DatabaseModule, PdfModule],
+  imports: [TenantContextModule, DatabaseModule, PdfModule, ExcelModule],
   controllers: [ReportingController],
   providers: [
     {

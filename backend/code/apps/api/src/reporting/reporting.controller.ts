@@ -55,4 +55,22 @@ export class ReportingController {
     const buffer = await this.reportingQueryService.exportEventsPdf(query);
     return new StreamableFile(buffer);
   }
+
+  @Get('events/export.xlsx')
+  @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  @Header('Content-Disposition', 'attachment; filename="reporting-events.xlsx"')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async exportEventsExcel(@Query() query: ListEventsQueryDto): Promise<StreamableFile> {
+    const buffer = await this.reportingQueryService.exportEventsExcel(query);
+    return new StreamableFile(buffer);
+  }
+
+  @Get('dashboard/revenue/export.xlsx')
+  @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  @Header('Content-Disposition', 'attachment; filename="revenue.xlsx"')
+  @RequirePermission(REQUIRED_PERMISSION)
+  async exportRevenueExcel(@Query() query: DateRangeQueryDto): Promise<StreamableFile> {
+    const buffer = await this.reportingQueryService.exportRevenueExcel(query);
+    return new StreamableFile(buffer);
+  }
 }

@@ -22,19 +22,22 @@
   ],
   "references": [
     {
-      "path": "../../libs/pdf/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/object-storage/tsconfig.lib.json"
-    },
-    {
       "path": "../../libs/tenant-context/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/pdf/tsconfig.lib.json"
     },
     {
       "path": "../../libs/pagination/tsconfig.lib.json"
     },
     {
       "path": "../../libs/observability/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/object-storage/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/excel/tsconfig.lib.json"
     },
     {
       "path": "../../libs/auth-guards/tsconfig.lib.json"

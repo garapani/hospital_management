@@ -1,4 +1,5 @@
 import { PdfService } from '@hospital/pdf';
+import { ExcelService } from '@hospital/excel';
 import { ReportingQueryService } from './reporting-query.service.js';
 import { ReportingEvent } from './entities/reporting-event.entity.js';
 import {
@@ -13,7 +14,7 @@ describe('reporting PDF export (integration)', () => {
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'reporting_pdf' });
-    reportingQueryService = new ReportingQueryService(ctx.tenantConnection, new PdfService());
+    reportingQueryService = new ReportingQueryService(ctx.tenantConnection, new PdfService(), new ExcelService());
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
