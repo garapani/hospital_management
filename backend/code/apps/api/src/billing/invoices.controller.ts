@@ -1,6 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Param,
+  Patch,
+  Post,
+  Query,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { InvoicesService } from './invoices.service.js';
+import { InvoiceExportService } from './invoice-export.service.js';
 import { CreateInvoiceDto } from './dto/create-invoice.dto.js';
 import { RecordPaymentDto } from './dto/record-payment.dto.js';
 import { CreateReturnDto } from './dto/create-return.dto.js';
@@ -10,7 +22,10 @@ import { ReRunChargeCaptureDto } from './dto/re-run-charge-capture.dto.js';
 @Controller('billing/invoices')
 @UseGuards(PermissionGuard)
 export class InvoicesController {
-  constructor(private readonly invoicesService: InvoicesService) {}
+  constructor(
+    private readonly invoicesService: InvoicesService,
+    private readonly invoiceExportService: InvoiceExportService,
+  ) {}
 
   @Post()
   @RequirePermission('billing.manage')
@@ -30,6 +45,17 @@ export class InvoicesController {
   @RequirePermission('billing.read')
   async list(@Query() query: ListInvoicesDto) {
     return this.invoicesService.list(query);
+  }
+
+  /** Printable invoice/receipt PDF. Must precede `@Get(':id')` so the literal `invoice.pdf`
+   *  segment isn't captured as an id. */
+  @Get(':id/invoice.pdf')
+  @RequirePermission('billing.read')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Content-Disposition', 'inline; filename="invoice.pdf"')
+  async invoicePdf(@Param('id') id: string): Promise<StreamableFile> {
+    const buffer = await this.invoiceExportService.renderInvoicePdf(id);
+    return new StreamableFile(buffer);
   }
 
   @Get(':id')
