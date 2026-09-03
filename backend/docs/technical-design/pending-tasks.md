@@ -390,6 +390,28 @@ scope, not merely lower priority.
       matching the Lab requisition detail screen's "View Report" button. 6 new tests (4 pure
       builder, 2 integration on the backend; 2 more on the frontend component); full suites green.
       Found in the 2026-09-03 external review.
+- [x] **GST IGST / place-of-supply split** (new-features.md #20, partial). **Resolved
+      (2026-09-03):** every taxed line used to split 50/50 into CGST+SGST unconditionally —
+      inter-state supplies were invoiced incorrectly (should charge IGST alone, no CGST/SGST, same
+      total rate). New `patient_addresses.stateCode` (2-digit GST code, mirrors the pre-existing
+      `billing_settings.stateCode`) + a pure `splitGstTax()` helper + `InvoicesService
+      .isInterStateSupply()` now determine place of supply by comparing the two; both the manual
+      invoice path (`create()`) and the shared auto-capture tail (`postChargeCapture`, behind Lab/
+      Radiology/Pharmacy completions and the pharmacy walk-in sale) use it. The determination is
+      snapshotted onto `Invoice.isInterStateSupply` at invoice-creation time, not recomputed per
+      line — a charge-capture invoice can accumulate lines across several separate completions
+      while it stays open, and without the snapshot a patient's address changing mid-invoice could
+      leave one invoice with a mix of CGST+SGST and IGST lines, which isn't a valid GST document (a
+      high-effort review caught this before it shipped — see Development-Standards.md §141). New
+      `invoice_items.igstAmount` column; invoice PDF/export gained an IGST column alongside
+      CGST/SGST. Migration `0104`; 4 new backend tests plus a pure unit spec for the split helper.
+      **Not done — explicitly out of scope for this pass:** no staff-console UI field to enter a
+      patient's `stateCode` (API-only for now — the feature has no effect on real traffic until
+      addresses actually carry a code; needs a `PatientAddress` frontend model + form field), no
+      states-master-catalog/validation beyond the 2-digit format regex (a typo'd code silently
+      flips the tax treatment), and — per new-features.md #20's original scope — HSN/SAC-driven
+      rate lookup and GSTR-1/3B-ready reporting remain unbuilt (this item covers only the IGST/
+      place-of-supply slice). Found in the 2026-09-03 external review.
 
 ## Phase 5 — New platform capabilities
 

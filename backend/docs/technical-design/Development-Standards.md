@@ -5280,3 +5280,52 @@ path (which worked first try):
    miss: `try`/`finally` would have caught it for free, but this function uses explicit release
    calls at each exit point instead (needed anyway to fix bug 1's ordering), so every new exit path
    needs its own explicit release — there's no `finally` silently covering for it.
+
+## 141. A per-line tax determination that can change between two writes to the same invoice needs to be snapshotted at invoice creation, not recomputed on every write
+
+Building GST IGST/place-of-supply support (pending-tasks.md Phase 4's "GST IGST / place-of-supply
+split," new-features.md #20) added `InvoicesService.isInterStateSupply(manager, patientId)` —
+compares the hospital's registered state (`billing_settings.stateCode`) against the patient's
+(new `patient_addresses.stateCode`) to decide whether a line's tax splits CGST+SGST (same state) or
+goes entirely to IGST (different states, no CGST/SGST). The first version called this fresh on
+every line, in both `InvoicesService.create()` (fine — one invoice, one patient, one call) and
+`postChargeCapture()` (the shared tail behind auto-capture from Lab/Radiology/Pharmacy completions
+and the pharmacy walk-in-sale path).
+
+**A high-effort review caught the bug this shape hides**: `postChargeCapture` appends a new line to
+whatever open invoice already exists for the patient (`Unpaid`/`PartiallyPaid`, found by patientId)
+rather than always creating a fresh one — a single invoice legitimately accumulates lines from
+several separate clinical completions over its open lifetime. Recomputing place of supply per line
+means the *same invoice* could end up with an early line taxed CGST+SGST and a later line taxed
+IGST if the patient's on-file address changed in between (front desk corrects a typo, adds a
+previously-missing address, etc.) — reachable in ordinary use, not a contrived race. That's not a
+valid GST document: one invoice has exactly one place of supply, always.
+
+**The fix**: `Invoice` gained an `isInterStateSupply` boolean column, computed once — at the moment
+the invoice is created (`create()`'s single invoice, or `postChargeCapture`'s `createCaptureInvoice`
+when no open invoice exists) — and read back (never recomputed) for every subsequent line, whether
+that's a later line in the same `create()` call or a later `postChargeCapture` append to the same
+open invoice. This has a secondary benefit the review also flagged: appending to an *existing* open
+invoice (the common case on a busy Lab/Radiology/Pharmacy day) now skips the `isInterStateSupply`
+lookup entirely — two fewer queries on a path that already holds the invoice row's
+`pessimistic_write` lock and a `charge_capture:<patientId>` advisory lock, both held for the
+duration of this method.
+
+A smaller, related bug in the same review pass: the patient-state lookup query
+(`SELECT "stateCode" FROM patient_addresses WHERE "patientId" = $1 ... ORDER BY "createdAt" ASC
+LIMIT 1`) had no tiebreaker, and every address a single `patients.service.ts` create/update call
+inserts shares that call's exact transaction timestamp (`patients.service.ts` recreates the whole
+address set in one transaction on update) — so for a patient with multiple addresses, which one
+"wins" was arbitrary row-order, not a real preference, and could differ between two calls against
+identical data. Fixed with `, "id" ASC` as an explicit (if arbitrary) tiebreaker, trading
+"unpredictable" for "at least deterministic" — picking the *right* address (a designated
+billing/current one) is real future work, not solved here.
+
+**The general lesson**: when a determination is read from data that can legitimately change between
+two points where it's used (here: the patient's address, read again on each captured charge), and
+the two use sites are meant to describe the *same* logical thing (here: one invoice's place of
+supply), snapshot the determination once at the point that logical thing is created, not at every
+site that later needs it. The bug doesn't show up in a test that only ever captures one line per
+invoice — it needs a scenario that appends a second line to an already-open invoice after the
+underlying data changed, which is exactly the kind of interaction a single-line unit or integration
+test won't exercise on its own.

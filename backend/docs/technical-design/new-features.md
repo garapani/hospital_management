@@ -185,14 +185,19 @@ Related review comments: code-review-findings-2026-08-25.md, ssu module, P2
 
 ### 20. Full India GST model: IGST, place of supply, HSN/SAC-driven tax
 
-Invoicing is CGST/SGST-only today: every taxed line splits 50/50 into cgst/sgst
+**Place-of-supply/IGST slice resolved (2026-09-03)** — see pending-tasks.md Phase 4's "GST
+IGST / place-of-supply split" entry for what shipped and what's still explicitly out of scope
+(no frontend UI to enter a patient's stateCode, no states-master-catalog validation). The
+HSN/SAC-driven tax and GST reporting bullets below remain unbuilt.
+
+Invoicing was CGST/SGST-only before that fix: every taxed line split 50/50 into cgst/sgst
 (`invoices.service.ts:156-157`), `billing_settings` carries a single `stateCode`, and the
 recently-added `defaultTaxPercent` applies one flat rate to auto-captured lines. Inter-state
-supply cannot be invoiced correctly (the finding's own "live Phase-1 gap"):
+supply could not be invoiced correctly (the finding's own "live Phase-1 gap"):
 
-- Place-of-supply rules: a line whose supply crosses state lines must attract IGST, not
+- ~~Place-of-supply rules: a line whose supply crosses state lines must attract IGST, not
   CGST/SGST — needs the patient/customer state vs. the hospital's `stateCode`, and per-line
-  tax-type selection or derivation.
+  tax-type selection or derivation.~~ Done — see above.
 - HSN/SAC-driven tax: lines already carry a free-text `hsnSacCode`; a catalog of HSN/SAC → GST
   rate would let tax derive from the code instead of a single default.
 - GST reporting: tax collected needs to be reported per return period (GSTR-1/3B) — which in turn
