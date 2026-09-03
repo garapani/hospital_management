@@ -5148,3 +5148,56 @@ backwards; the connection-pool claim conflated an already-fixed path with a real
 equally to a finding that turns out substantively correct but whose recommended *shape* of fix no
 longer matches the codebase. Fifteen minutes confirming the premise saved building the wrong,
 much larger thing.
+
+## 139. A billing charge-capture path that must "fail loud" needs its own flag, not a copy-paste of the best-effort tail — and a reversal journal needs its own source key, never the original's
+
+Building walk-in/OTC pharmacy sale (`PharmacyDispensingService.createWalkInSale`,
+`InvoicesService.captureChargeForWalkInPharmacySale`) split `InvoicesService`'s existing
+order-routed `captureChargeForOrderItem` into a price-lookup half (differs per caller) and a shared
+`postChargeCapture` tail (find-or-create open invoice, append the line, roll totals, post the
+AR/revenue journal) — see §27/§28's original charge-capture design. Two mistakes surfaced only by
+a high-effort review and, in the second case, only by the tests written to prove the fix:
+
+1. **The extraction silently inherited a hardcoded `quantity: 1`.** `captureChargeForOrderItem`
+   never needed a real quantity — Lab/Radiology/order-routed-Pharmacy are always billed as a
+   single unit — so nobody had written a multi-unit test against it, and the bug was latent on the
+   *original* path too (an order-routed pharmacy dispensing for 10 tablets billed for 1). Moving
+   the code into a shared method made the gap obvious rather than causing it: once a genuinely
+   multi-unit caller (a walk-in sale for `quantity: 3`) existed, `postChargeCapture` needed an
+   actual `quantity` parameter multiplied into `subtotal`/`taxableAmount`/`totalAmount`, not just
+   `priceRaw`. **Lesson: when extracting a shared tail from a single caller, audit every hardcoded
+   constant in it — a value that was always correct because the one caller never varied it is not
+   proof the method doesn't need the parameter, just proof nothing exercised it yet.**
+
+2. **Best-effort logging (`try { ... } catch { log; continue }`) around a journal post is only
+   safe for the specific "must never block a clinical completion" case it was written for.**
+   `captureChargeForOrderItem`'s swallow is deliberate and documented (a Lab/Radiology/Pharmacy
+   *clinical* completion must never roll back over a billing config gap). A walk-in sale has no
+   clinical action to protect — the sale IS the billing event — so the same swallow there would
+   let stock leave the building while quietly under-crediting the ledger, with no error and no
+   retry path (`reRunChargeCapture` short-circuits on "already-charged"). Worse mechanically: if
+   the swallowed error is a genuine Postgres failure (deadlock, serialization failure), the
+   transaction is already aborted when the `catch` continues — everything after runs in an
+   aborted block, and the caller's `commitTransaction()` silently degrades to a no-op `ROLLBACK`
+   with no thrown error, so an HTTP handler can return 201 for a sale that never persisted.
+   `postChargeCapture` now takes a `failLoud` flag; the walk-in caller sets it so a journal
+   failure rethrows and rolls the whole sale back with the stock decrement, instead of only
+   thinking it might have.
+
+3. **`AccountingService.postAutoJournal`'s idempotency key is `(sourceType, sourceId)`, and a
+   *reversal* of an already-posted journal must never reuse the original's key.** The first draft
+   of the walk-in reversal (`InvoicesService.voidWalkInPharmacySaleCharge`, called from
+   `PharmacyDispensingService.reverseDispensing` for the walk-in path only — order-routed
+   reversals stay stock-only, matching §18/pharmacy P2's existing "billing correction is a
+   separate staff-initiated `createReturn` call" rule, which `createReturn` can't satisfy here
+   since it refuses to run against an invoice with zero recorded payments, the common state
+   seconds after a walk-in sale) posted its reversing debit/credit under the *same*
+   `sourceType: 'InvoiceItem', sourceId: invoiceItem.id` as the original capture. `postAutoJournal`
+   found the existing journal, compared lines, saw the swapped debit/credit sides didn't match,
+   and threw `ConflictException` — caught immediately by the integration test written for this
+   exact path, not by manual reasoning. Fixed by giving the reversal its own `sourceType:
+   'WalkInSaleVoid', sourceId: dispensingId` key, matching this file's existing precedent of a
+   dedicated `sourceType` per reversal kind (`'InvoiceCancellation'` for `cancel()`, `'Return'` for
+   `createReturn`). **Lesson: never reuse a `postAutoJournal` source key for a correcting entry —
+   its idempotency guard is a feature for retries of the *same* event, and a hard rejection for
+   two *different* events that happen to share a key.**

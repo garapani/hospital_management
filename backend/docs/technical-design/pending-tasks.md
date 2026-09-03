@@ -509,17 +509,29 @@ Follow the PRD's own phase ordering as-is:
         against `OrderItem`s with `itemType='Pharmacy'`, race-safe duplicate-dispensing prevention,
         FEFO-ordered locked stock decrement against the same `stock_balances`/`stock_batches`
         tables Inventory Item B uses, two-step status machine `Pending` → `Dispensed`, with
-        `Cancelled` from `Pending`) — done; see `Development-Standards.md` §18. **Not done:**
-        walk-in/OTC sales (every dispensing requires an existing `OrderItem`; there is no
-        code path for a patient without a doctor's order), a separate dispensing-verification step
-        (unlike Lab/Radiology's three-step create→enter→verify shape, dispensing is only
-        create→dispense, no second-actor sign-off), a pharmacy-specific drug catalog (generic name,
-        dosage form, strength, controlled-substance flag — a drug is just an `InventoryItem`, same
-        catalog Inventory Item A built), POS/checkout (owned by Billing, not duplicated here;
-        `dispenseDrug` never touches a billing/charge table), rack/bin physical location tracking,
-        credit billing/credit notes/supplier ledger, narcotic/controlled-substance regulatory
-        logging, sales returns, write-offs (a `Dispensed` record is terminal, no reversal path),
-        and provisional IPD consumption billing — each a distinct future item if ever needed.
+        `Cancelled` from `Pending`) — done; see `Development-Standards.md` §18. Walk-in/OTC sales
+        are **now resolved (2026-09-03):** `PharmacyDispensingService.createWalkInSale` +
+        `POST /pharmacy/dispensings/walk-in-sale` (`pharmacy.dispensing.dispense`-gated, same
+        permission `dispenseDrug` uses) — a single atomic call (no separate create-then-dispense
+        step, since there's no clinical order to wait on) that creates an already-`Dispensed`
+        record with `orderItemId` null, decrements stock via the same FEFO pipeline, and captures
+        a billing charge directly (`InvoicesService.captureChargeForWalkInPharmacySale`) — unlike
+        order-routed dispensing's best-effort charge capture, an unpriced item here throws and
+        rolls back the whole sale, since the sale IS the billing event. `reverseDispensing` also
+        voids that charge (`voidWalkInPharmacySaleCharge`) for the walk-in path only, since
+        `createReturn` refuses to run against an invoice with no recorded payments — the common
+        state seconds after a walk-in sale. Migration `0102`; 7 new dispensing-service tests.
+        **Not done, deliberately deferred:** item scoping (any active, priced `InventoryItem` is
+        walk-in-sellable — a doctor's order is what implicitly scopes the order-routed path, and
+        there's no equivalent "is this catalog item pharmacy-sellable" concept yet; needs a real
+        flag/sub-catalog, not solved here), a separate dispensing-verification step (unlike Lab/
+        Radiology's three-step create→enter→verify shape, dispensing is only create→dispense, no
+        second-actor sign-off), a pharmacy-specific drug catalog (generic name, dosage form,
+        strength, controlled-substance flag — a drug is just an `InventoryItem`, same catalog
+        Inventory Item A built), rack/bin physical location tracking, credit billing/credit
+        notes/supplier ledger, narcotic/controlled-substance regulatory logging, and provisional
+        IPD consumption billing — each a distinct future item if ever needed. Found in the
+        2026-09-03 external review.
   - DICOM — not started (confirmed a wholly separate PACS-facing domain in the 2026-08-14
     review). **Scoping note done (2026-08-25):** see
     `new/docs/superpowers/specs/2026-08-25-dicom-scoping-design.md` — open questions on
