@@ -317,15 +317,25 @@ scope, not merely lower priority.
       the middleware's existing spec; all 7 tests in that spec needed a `setHeader`-mocking `res`
       fixture since they'd previously passed a bare `{}`. See `Development-Standards.md` §135.
       Found in the 2026-09-03 external review.
-- [ ] **Backup script/Runbook point at dev compose, not prod.** `scripts/backup-db.sh:4-5` defaults
-      to `COMPOSE_FILE=docker-compose.dev.yml`/`POSTGRES_SERVICE=api-postgres`, and `Runbook.md`'s
-      restore section (lines 104-146) references the same dev names — but `docker-compose.prod.yml`'s
-      actual Postgres service/container is `postgres`/`hospital-postgres`. Item 8 above documents
-      the backup/restore *procedure* as done; this is a naming-mismatch correction on top of it,
-      not a new capability — a prod restore following the Runbook literally would target the wrong
-      compose file. Also: no automated nightly backup cron container exists in
-      `docker-compose.prod.yml` itself (backups rely on `scripts/backup-db.sh` being invoked
-      externally, e.g. host cron). Found in the 2026-09-03 external review.
+- [x] **Backup script/Runbook point at dev compose, not prod.** **Resolved (2026-09-03):**
+      `scripts/backup-db.sh`'s `COMPOSE_FILE`/`POSTGRES_SERVICE` defaults now target production
+      (`docker-compose.prod.yml`/`postgres`, the compose **service name** — not the
+      `hospital-postgres` container name, which `docker compose exec` doesn't take), overridable
+      for a local dev-compose test run; this matches the script's actual primary use (the
+      unattended nightly cron entry on the deployed host, which never overrides these vars).
+      `Runbook.md`'s full-database restore, per-tenant restore, monthly restore-drill, and PITR
+      base-backup sections all updated the same way — the restore-drill intentionally still runs
+      against the real production Postgres instance (proving a real prod backup restores on the
+      real prod Postgres version/config), just into a throwaway `restore_drill_scratch` database,
+      never the live `hospital_db`. Item 8 above already documents the backup/restore *procedure*
+      as done; this was a naming-mismatch correction on top of it, not a new capability — a prod
+      restore following the Runbook literally before this fix would have targeted the wrong
+      compose file/service entirely. `Deployment-Guide.md`'s env-var table corrected to match.
+      **Not done:** no automated nightly backup cron container in `docker-compose.prod.yml` itself
+      (backups rely on `scripts/backup-db.sh` being invoked externally, e.g. host cron, which is
+      how `Deployment-Guide.md` already documents it) — a genuinely different, additive capability
+      from this naming-mismatch fix, left out of scope here. Found in the 2026-09-03 external
+      review.
 
 ## Phase 4 — Complete near-finished features
 
