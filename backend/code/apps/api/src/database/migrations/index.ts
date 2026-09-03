@@ -6,6 +6,7 @@ import { AddPatientInsuranceInfo3000000000003 } from './0097-add-patient-insuran
 import { CreateShiftHandoffNotes3000000000004 } from './0098-create-shift-handoff-notes.js';
 import { RestrictPublicSchemaGrants4000000000001 } from './0099-restrict-public-schema-grants.js';
 import { CreateCashierShifts3000000000005 } from './0100-create-cashier-shifts.js';
+import { AddPaymentTransactionReference3000000000006 } from './0101-add-payment-transaction-reference.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -35,4 +36,5 @@ export const TENANT_MIGRATIONS = [
   AddPatientInsuranceInfo3000000000003,
   CreateShiftHandoffNotes3000000000004,
   CreateCashierShifts3000000000005,
+  AddPaymentTransactionReference3000000000006,
 ];

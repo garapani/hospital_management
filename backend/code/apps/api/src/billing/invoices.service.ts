@@ -42,6 +42,8 @@ export interface RecordPaymentInput {
   amount: number;
   paymentMode: string;
   sourceDepositId?: string;
+  transactionReference?: string;
+  bankName?: string;
   /** Deprecated — ignored when a tenant context with an accountId is active. */
   receivedBy?: string;
 }
@@ -578,6 +580,8 @@ export class InvoicesService {
           amount: input.amount,
           paymentMode: input.paymentMode,
           sourceDepositId: input.paymentMode === 'Deposit' ? (input.sourceDepositId as string) : null,
+          transactionReference: input.transactionReference ?? null,
+          bankName: input.bankName ?? null,
           receivedBy: this.resolveActor(input.receivedBy),
         }),
       );

@@ -306,6 +306,50 @@ describe('InvoicesService (integration)', () => {
     expect(refetched.payments).toHaveLength(2);
   });
 
+  it('stores an optional transactionReference/bankName for bank reconciliation, leaving both null when omitted', async () => {
+    const patient = await makePatient(ctx, '5550000043');
+    const invoice = await ctx.inTenant(() =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 1000 }] }),
+    );
+
+    const upiPayment = await ctx.inTenant(() =>
+      invoicesService.recordPayment(invoice.id, {
+        amount: 400,
+        paymentMode: 'UPI',
+        transactionReference: 'UPI-REF-12345',
+        receivedBy: STAFF_ID,
+      }),
+    );
+    expect(upiPayment.transactionReference).toBe('UPI-REF-12345');
+    expect(upiPayment.bankName).toBeNull();
+
+    const chequePayment = await ctx.inTenant(() =>
+      invoicesService.recordPayment(invoice.id, {
+        amount: 600,
+        paymentMode: 'Cheque',
+        transactionReference: 'CHQ-000789',
+        bankName: 'State Bank',
+        receivedBy: STAFF_ID,
+      }),
+    );
+    expect(chequePayment.transactionReference).toBe('CHQ-000789');
+    expect(chequePayment.bankName).toBe('State Bank');
+  });
+
+  it('leaves transactionReference/bankName null when the caller omits them (e.g. a plain Cash payment)', async () => {
+    const patient = await makePatient(ctx, '5550000044');
+    const invoice = await ctx.inTenant(() =>
+      invoicesService.create({ patientId: patient.id, createdBy: STAFF_ID, items: [{ description: 'Item A', unitPrice: 500 }] }),
+    );
+
+    const cashPayment = await ctx.inTenant(() =>
+      invoicesService.recordPayment(invoice.id, { amount: 500, paymentMode: 'Cash', receivedBy: STAFF_ID }),
+    );
+
+    expect(cashPayment.transactionReference).toBeNull();
+    expect(cashPayment.bankName).toBeNull();
+  });
+
   it('rejects a payment exceeding the outstanding balance', async () => {
     const patient = await makePatient(ctx, '5550000025');
     const invoice = await ctx.inTenant(() =>
