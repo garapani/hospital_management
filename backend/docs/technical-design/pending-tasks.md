@@ -701,13 +701,17 @@ Follow the PRD's own phase ordering as-is:
   actual controller before assuming otherwise) turned out not to be the right fit the original
   review implied. Debounced (250ms), arrow-key navigable, gated on `patients.read`. 8 new frontend
   tests. Found in the 2026-09-03 external review.
-- [ ] **Unified doctor consultation pad.** The OPD clinical workflow is split across 4 separate
-  routes (`/clinical/patients/:id`, `/clinical/vitals`, `/clinical/encounters`, `/clinical/orders`)
-  with no single-screen view — a doctor must leave the encounter, re-search the patient, and order
-  tests/prescriptions separately; prescriptions are plain text with no pharmacy stock check. This
-  is a larger UX redesign, not a small gap — worth scoping as its own design pass (patient summary
-  + SOAP notes/diagnosis + order/prescription drawer in one screen) rather than a quick fix. Found
-  in the 2026-09-03 external review.
+- [x] **Unified doctor consultation pad.** **Resolved (2026-09-03) — scope corrected before
+  building anything:** the "4 separate routes" premise was stale. `patient-detail.ts` already
+  unifies an allergies banner, vitals (with an inline "Record Vitals" modal), SOAP-shaped clinical
+  notes, an ICD-10 diagnosis picker, prescriptions, admissions, and appointments — all in one
+  tabbed page with inline create actions, from earlier work this doc's tracking regime predates.
+  Verified against the actual current code (not the review's claim) before scoping any work — the
+  one real gap was the Orders tab being view-only. Closed that: a "Create Order" modal (Lab/
+  Radiology/Pharmacy/Other, multi-item, priority) using the existing `OrdersApiService.create`, no
+  backend change needed. Stock-aware e-prescribing (the original review's "real-time stock lookup
+  and auto-order generation") explicitly deferred as a separate, larger follow-on — prescriptions
+  stay plain-text for now. 5 new frontend tests. Found in the 2026-09-03 external review.
 
 ## Dependencies worth calling out explicitly
 

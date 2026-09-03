@@ -5126,3 +5126,25 @@ adding a new mount, not just the one spec file that happens to be nearby. Note t
 child component is never constructed at all). The risk is specifically an unconditional mount like
 this one — always present in the template regardless of any signal or permission check inside the
 child itself.
+
+## 138. A review's problem framing can be stale even when its underlying finding is real — verify the *premise*, not just the fix, before scoping work
+
+The 2026-09-03 external review's "unified doctor consultation pad" item described the OPD workflow
+as split across 4 separate routes with no single-screen view, and recommended a new 3-pane screen
+as the fix. Before building that screen, grepping `patient-detail.ts` showed the premise was
+already false: it had an allergies banner, vitals, SOAP-shaped notes, an ICD-10 diagnosis picker,
+prescriptions, admissions, and appointments already unified in one tabbed page with inline create
+modals — consolidation this doc's tracking regime predates, so the review (and this doc, until
+checked) never recorded it. The *review's instinct* wasn't wrong (a doctor did have to leave the
+page for one thing), but its *diagnosis* was two version-behind: the actual remaining gap was one
+tab (Orders) being view-only, not four disconnected screens. Building the originally-recommended
+new screen would have shipped a large, mostly-redundant duplicate of a page that already worked.
+
+**The general lesson, beyond this one item**: a review — external or from `pending-tasks.md`
+itself — names a problem and often a fix; treat the fix as a hypothesis to verify against the
+current codebase, not a spec to implement. This is the same discipline this whole review-triage
+pass already applied to the *findings themselves* (§1.2's vitals-permission claim turned out
+backwards; the connection-pool claim conflated an already-fixed path with a real one) — it applies
+equally to a finding that turns out substantively correct but whose recommended *shape* of fix no
+longer matches the codebase. Fifteen minutes confirming the premise saved building the wrong,
+much larger thing.
