@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { In, QueryFailedError } from 'typeorm';
+import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { InventoryItemCategory } from './entities/inventory-item-category.entity.js';
 import { InventoryItemSubCategory } from './entities/inventory-item-sub-category.entity.js';
@@ -130,10 +131,16 @@ export class InventoryCatalogService {
     });
   }
 
-  async listSubCategoriesByCategory(categoryId: string): Promise<InventoryItemSubCategory[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(InventoryItemSubCategory).find({ where: { categoryId } }),
-    );
+  async listSubCategoriesByCategory(
+    categoryId: string,
+    query: PaginationQueryDto,
+  ): Promise<PaginatedResponseDto<InventoryItemSubCategory>> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager
+        .createQueryBuilder(InventoryItemSubCategory, 'sc')
+        .where('sc.categoryId = :categoryId', { categoryId });
+      return paginate(qb, query);
+    });
   }
 
   async deactivateSubCategory(id: string): Promise<InventoryItemSubCategory> {
@@ -286,10 +293,16 @@ export class InventoryCatalogService {
     });
   }
 
-  async listItemsBySubCategory(subCategoryId: string): Promise<InventoryItem[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(InventoryItem).find({ where: { subCategoryId } }),
-    );
+  async listItemsBySubCategory(
+    subCategoryId: string,
+    query: PaginationQueryDto,
+  ): Promise<PaginatedResponseDto<InventoryItem>> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager
+        .createQueryBuilder(InventoryItem, 'i')
+        .where('i.subCategoryId = :subCategoryId', { subCategoryId });
+      return paginate(qb, query);
+    });
   }
 
   async getItem(id: string): Promise<InventoryItem> {
@@ -332,10 +345,13 @@ export class InventoryCatalogService {
     });
   }
 
-  async listVendors(): Promise<InventoryVendor[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(InventoryVendor).find({ order: { name: 'ASC' } }),
-    );
+  async listVendors(query: PaginationQueryDto): Promise<PaginatedResponseDto<InventoryVendor>> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager
+        .createQueryBuilder(InventoryVendor, 'v')
+        .orderBy('v.name', 'ASC');
+      return paginate(qb, query);
+    });
   }
 
   async getVendor(id: string): Promise<InventoryVendor> {

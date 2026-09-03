@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource, In, Not } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { TenantContextService } from '@hospital/tenant-context';
 import { ObjectStorageService } from '@hospital/object-storage';
+import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 import { Tenant } from './entities/tenant.entity.js';
 import { TenantProvisioningService } from '../database/tenant-provisioning.service.js';
 import { Role } from '../rbac/entities/role.entity.js';
@@ -445,12 +446,14 @@ export class TenantsService {
     return tenant;
   }
 
-  async listTenants(): Promise<Tenant[]> {
+  async listTenants(query: PaginationQueryDto): Promise<PaginatedResponseDto<Tenant>> {
     // The platform tenant is not a hospital — it must never surface in a customer listing.
-    return this.dataSource.getRepository(Tenant).find({
-      where: { hospitalId: Not(PLATFORM_TENANT_ID) },
-      order: { createdAt: 'ASC' },
-    });
+    const qb = this.dataSource
+      .getRepository(Tenant)
+      .createQueryBuilder('t')
+      .where('t.hospitalId != :platformTenantId', { platformTenantId: PLATFORM_TENANT_ID })
+      .orderBy('t.createdAt', 'ASC');
+    return paginate(qb, query);
   }
 
   async getTenant(hospitalId: string): Promise<Tenant | null> {

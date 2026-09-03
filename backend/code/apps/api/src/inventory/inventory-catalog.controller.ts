@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
+import { PaginationQueryDto } from '@hospital/pagination';
 import { InventoryCatalogService } from './inventory-catalog.service.js';
 import { CreateInventoryItemCategoryDto } from './dto/create-inventory-item-category.dto.js';
 import { CreateInventoryItemSubCategoryDto } from './dto/create-inventory-item-sub-category.dto.js';
@@ -33,8 +34,11 @@ export class InventoryCatalogController {
 
   @Get('categories/:categoryId/sub-categories')
   @RequirePermission('inventory.read')
-  async listSubCategoriesByCategory(@Param('categoryId') categoryId: string) {
-    return this.inventoryCatalogService.listSubCategoriesByCategory(categoryId);
+  async listSubCategoriesByCategory(
+    @Param('categoryId') categoryId: string,
+    @Query() query: PaginationQueryDto,
+  ) {
+    return this.inventoryCatalogService.listSubCategoriesByCategory(categoryId, query);
   }
 
   @Post('items')
@@ -45,8 +49,11 @@ export class InventoryCatalogController {
 
   @Get('sub-categories/:subCategoryId/items')
   @RequirePermission('inventory.read')
-  async listItemsBySubCategory(@Param('subCategoryId') subCategoryId: string) {
-    return this.inventoryCatalogService.listItemsBySubCategory(subCategoryId);
+  async listItemsBySubCategory(
+    @Param('subCategoryId') subCategoryId: string,
+    @Query() query: PaginationQueryDto,
+  ) {
+    return this.inventoryCatalogService.listItemsBySubCategory(subCategoryId, query);
   }
 
   @Get('items/:id')
@@ -123,8 +130,8 @@ export class InventoryCatalogController {
 
   @Get('vendors')
   @RequirePermission('inventory.read')
-  async listVendors() {
-    return this.inventoryCatalogService.listVendors();
+  async listVendors(@Query() query: PaginationQueryDto) {
+    return this.inventoryCatalogService.listVendors(query);
   }
 
   @Get('vendors/:id')

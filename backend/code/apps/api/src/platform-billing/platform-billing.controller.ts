@@ -4,9 +4,11 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
+import { PaginationQueryDto } from '@hospital/pagination';
 import { SubscriptionBillingService } from './subscription-billing.service.js';
 import { SubscribeTenantDto } from './dto/subscribe-tenant.dto.js';
 
@@ -21,8 +23,8 @@ export class PlatformBillingController {
 
   @Get('subscriptions')
   @RequirePermission(REQUIRED_PERMISSION)
-  listSubscriptions() {
-    return this.billingService.listSubscriptions();
+  listSubscriptions(@Query() query: PaginationQueryDto) {
+    return this.billingService.listSubscriptions(query);
   }
 
   @Get('tenants/:hospitalId/subscription')

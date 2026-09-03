@@ -8,9 +8,11 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
+import { PaginationQueryDto } from '@hospital/pagination';
 import { MasterDataService } from './master-data.service.js';
 import { CreateDepartmentDto } from './dto/create-department.dto.js';
 import { CreateWardDto } from './dto/create-ward.dto.js';
@@ -33,8 +35,8 @@ export class MasterDataController {
 
   @Get('departments')
   @RequirePermission(REQUIRED_READ_PERMISSION)
-  async listDepartments() {
-    return this.masterDataService.listDepartments();
+  async listDepartments(@Query() query: PaginationQueryDto) {
+    return this.masterDataService.listDepartments(query);
   }
 
   @Get('departments/:id')
@@ -68,8 +70,8 @@ export class MasterDataController {
 
   @Get('wards')
   @RequirePermission(REQUIRED_READ_PERMISSION)
-  async listWards() {
-    return this.masterDataService.listWards();
+  async listWards(@Query() query: PaginationQueryDto) {
+    return this.masterDataService.listWards(query);
   }
 
   @Get('wards/:id')
@@ -103,8 +105,8 @@ export class MasterDataController {
 
   @Get('wards/:wardId/beds')
   @RequirePermission(REQUIRED_READ_PERMISSION)
-  async listBedsByWard(@Param('wardId') wardId: string) {
-    return this.masterDataService.listBedsByWard(wardId);
+  async listBedsByWard(@Param('wardId') wardId: string, @Query() query: PaginationQueryDto) {
+    return this.masterDataService.listBedsByWard(wardId, query);
   }
 
   @Get('beds/:id')

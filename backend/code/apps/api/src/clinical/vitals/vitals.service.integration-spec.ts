@@ -56,7 +56,7 @@ describe('VitalsService (integration)', () => {
       expect(vital.id).toBeDefined();
       expect(vital.bmi).toBe(23.15); // 75 / (1.8 * 1.8) = 23.148... -> 23.15
 
-      const patientVitals = await vitalsService.listByPatient(patient.id);
+      const patientVitals = (await vitalsService.listByPatient(patient.id, {})).data;
       expect(patientVitals).toHaveLength(1);
       expect(patientVitals[0].id).toBe(vital.id);
     });
@@ -129,12 +129,12 @@ describe('VitalsService (integration)', () => {
         pulse: 80,
       });
 
-      let patientVitals = await vitalsService.listByPatient(patient.id);
+      let patientVitals = (await vitalsService.listByPatient(patient.id, {})).data;
       expect(patientVitals).toHaveLength(1);
 
       await vitalsService.void(vital.id);
 
-      patientVitals = await vitalsService.listByPatient(patient.id);
+      patientVitals = (await vitalsService.listByPatient(patient.id, {})).data;
       expect(patientVitals).toHaveLength(0);
     });
   });
@@ -172,7 +172,7 @@ describe('VitalsService (integration)', () => {
 
     // Verify not visible in tenant 2
     await tenantB.inTenant(async () => {
-      const vitals = await vitalsService.listByPatient(sharedPatientId);
+      const vitals = (await vitalsService.listByPatient(sharedPatientId, {})).data;
       expect(vitals).toHaveLength(0);
 
       await expect(vitalsService.update(sharedVitalId, { weight: 75 })).rejects.toThrow(NotFoundException);
@@ -217,7 +217,7 @@ describe('VitalsService (integration)', () => {
         );
         expect(vital.id).toBeDefined();
 
-        const list = await withWard(WARD_A, () => vitalsService.listByPatient(patient.id));
+        const list = (await withWard(WARD_A, () => vitalsService.listByPatient(patient.id, {}))).data;
         expect(list).toHaveLength(1);
 
         const updated = await withWard(WARD_A, () => vitalsService.update(vital.id, { pulse: 80 }));
@@ -236,7 +236,7 @@ describe('VitalsService (integration)', () => {
           withWard(WARD_A, () => vitalsService.create({ patientId: patient.id, pulse: 72 })),
         ).rejects.toThrow(ForbiddenException);
         await expect(
-          withWard(WARD_A, () => vitalsService.listByPatient(patient.id)),
+          withWard(WARD_A, () => vitalsService.listByPatient(patient.id, {})),
         ).rejects.toThrow(ForbiddenException);
       });
     });

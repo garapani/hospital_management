@@ -57,7 +57,7 @@ describe('AdmissionsService (integration)', () => {
         return await masterDataService.createWard({ wardCode, wardName: wardCode });
       } catch (error) {
         if (error instanceof ConflictException) {
-          const wards = await masterDataService.listWards();
+          const wards = (await masterDataService.listWards({})).data;
           const existing = wards.find((w) => w.wardCode === wardCode);
           if (existing) {
             return existing;

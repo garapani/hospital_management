@@ -157,7 +157,10 @@ describe('TenantsService (integration)', () => {
       hospitalName: 'List Hospital',
     });
 
-    const tenants = await tenantsService.listTenants();
+    // limit: 100, not the default 20 — this spec file provisions many tenants across its own
+    // `it()` blocks in the same shared DB, ordered createdAt ASC, so the default page 1 can miss
+    // a tenant created late in the run.
+    const tenants = (await tenantsService.listTenants({ limit: 100 })).data;
     expect(tenants.some((t) => t.hospitalId === 'test_tenant_svc_list')).toBe(true);
   });
 

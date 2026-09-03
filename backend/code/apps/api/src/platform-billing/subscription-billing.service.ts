@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 import { Subscription, BillingCycle } from './entities/subscription.entity.js';
 import { SubscriptionInvoice } from './entities/subscription-invoice.entity.js';
 import { PACKAGE_CATALOG } from '../packages/package-catalog.js';
@@ -84,8 +85,9 @@ export class SubscriptionBillingService {
     });
   }
 
-  listSubscriptions(): Promise<Subscription[]> {
-    return this.repository.find({ order: { createdAt: 'DESC' } });
+  listSubscriptions(query: PaginationQueryDto): Promise<PaginatedResponseDto<Subscription>> {
+    const qb = this.repository.createQueryBuilder('s').orderBy('s.createdAt', 'DESC');
+    return paginate(qb, query);
   }
 
   private lockTenantBilling(manager: EntityManager, tenantId: string): Promise<void> {

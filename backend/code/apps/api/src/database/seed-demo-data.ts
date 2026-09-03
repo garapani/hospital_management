@@ -110,12 +110,12 @@ export async function seedCatalogData(app: INestApplicationContext) {
   const insuranceClaims = app.get(InsuranceClaimsService);
 
   // --- Ward + beds -----------------------------------------------------------------------
-  let ward = (await masterData.listWards()).find((w) => w.wardCode === 'W-GEN');
+  let ward = (await masterData.listWards({})).data.find((w) => w.wardCode === 'W-GEN');
   if (!ward) {
     ward = await masterData.createWard({ wardCode: 'W-GEN', wardName: 'General Ward', wardType: 'General', bedCapacity: 20 });
     logger.log('✓ Created ward: General Ward (W-GEN)');
   }
-  const existingBeds = await masterData.listBedsByWard(ward.id);
+  const existingBeds = (await masterData.listBedsByWard(ward.id, {})).data;
   let bed1 = existingBeds.find((b) => b.bedNumber === 'G-101');
   if (!bed1) {
     bed1 = await masterData.createBed({ wardId: ward.id, bedNumber: 'G-101', bedType: 'General' });
@@ -126,7 +126,7 @@ export async function seedCatalogData(app: INestApplicationContext) {
   }
 
   // --- Department --------------------------------------------------------------------------
-  if (!(await masterData.listDepartments()).some((d) => d.departmentCode === 'GEN-MED')) {
+  if (!(await masterData.listDepartments({})).data.some((d) => d.departmentCode === 'GEN-MED')) {
     await masterData.createDepartment({ departmentCode: 'GEN-MED', departmentName: 'General Medicine', isAppointmentApplicable: true });
     logger.log('✓ Created department: General Medicine (GEN-MED)');
   }
@@ -136,11 +136,11 @@ export async function seedCatalogData(app: INestApplicationContext) {
   if (!pharmaCat) {
     pharmaCat = await inventoryCatalog.createCategory({ name: 'Pharmaceuticals' });
   }
-  let analgesics = (await inventoryCatalog.listSubCategoriesByCategory(pharmaCat.id)).find((s) => s.name === 'Analgesics');
+  let analgesics = (await inventoryCatalog.listSubCategoriesByCategory(pharmaCat.id, {})).data.find((s) => s.name === 'Analgesics');
   if (!analgesics) {
     analgesics = await inventoryCatalog.createSubCategory({ categoryId: pharmaCat.id, name: 'Analgesics', isConsumable: true });
   }
-  let paracetamol = (await inventoryCatalog.listItemsBySubCategory(analgesics.id)).find((i) => i.code === 'PARA-500');
+  let paracetamol = (await inventoryCatalog.listItemsBySubCategory(analgesics.id, {})).data.find((i) => i.code === 'PARA-500');
   if (!paracetamol) {
     paracetamol = await inventoryCatalog.createItem({
       subCategoryId: analgesics.id,
@@ -152,7 +152,7 @@ export async function seedCatalogData(app: INestApplicationContext) {
       salePrice: 2,
     });
   }
-  let vendor = (await inventoryCatalog.listVendors()).find((v) => v.name === 'MediSupply Co');
+  let vendor = (await inventoryCatalog.listVendors({})).data.find((v) => v.name === 'MediSupply Co');
   if (!vendor) {
     vendor = await inventoryCatalog.createVendor({ name: 'MediSupply Co', phone: '011-40000001' });
   }

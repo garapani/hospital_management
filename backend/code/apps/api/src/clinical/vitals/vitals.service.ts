@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
+import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 import { TenantConnectionService } from '../../database/tenant-connection.service.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { SoftDeletableEntity } from '../../database/auditable.entity.js';
@@ -81,13 +82,17 @@ export class VitalsService {
     });
   }
 
-  async listByPatient(patientId: string): Promise<Vital[]> {
+  async listByPatient(
+    patientId: string,
+    query: PaginationQueryDto,
+  ): Promise<PaginatedResponseDto<Vital>> {
     return this.tenantConnection.runInTenantSchema(async (manager) => {
       await this.assertWardAccessForPatient(manager, patientId);
-      return manager.getRepository(Vital).find({
-        where: { patientId },
-        order: { recordedAt: 'DESC' },
-      });
+      const qb = manager
+        .createQueryBuilder(Vital, 'v')
+        .where('v.patientId = :patientId', { patientId })
+        .orderBy('v.recordedAt', 'DESC');
+      return paginate(qb, query);
     });
   }
 

@@ -88,7 +88,9 @@ describe('MasterDataController (integration)', () => {
 
     const list = await request(app.getHttpServer()).get('/departments').set('Authorization', `Bearer ${adminToken}`);
     expect(list.status).toBe(200);
-    expect(list.body.some((d: { departmentCode: string }) => d.departmentCode === 'GETDEPT')).toBe(true);
+    expect(
+      list.body.data.some((d: { departmentCode: string }) => d.departmentCode === 'GETDEPT'),
+    ).toBe(true);
 
     const found = await request(app.getHttpServer())
       .get(`/departments/${created.body.id}`)
@@ -131,7 +133,7 @@ describe('MasterDataController (integration)', () => {
 
     const list = await request(app.getHttpServer()).get('/wards').set('Authorization', `Bearer ${adminToken}`);
     expect(list.status).toBe(200);
-    expect(list.body.some((w: { wardCode: string }) => w.wardCode === 'W1')).toBe(true);
+    expect(list.body.data.some((w: { wardCode: string }) => w.wardCode === 'W1')).toBe(true);
 
     const deactivated = await request(app.getHttpServer())
       .patch(`/wards/${created.body.id}/deactivate`)
@@ -158,7 +160,9 @@ describe('MasterDataController (integration)', () => {
       .get(`/wards/${wardResponse.body.id}/beds`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(listResponse.status).toBe(200);
-    expect(listResponse.body.some((b: { id: string }) => b.id === bedResponse.body.id)).toBe(true);
+    expect(
+      listResponse.body.data.some((b: { id: string }) => b.id === bedResponse.body.id),
+    ).toBe(true);
   });
 
   it('gates the GET endpoints behind master-data.read — a non-read token 403s, a read token 200s, mutations need manage', async () => {

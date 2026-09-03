@@ -43,7 +43,7 @@ describe('MasterDataService (integration)', () => {
         masterDataService.createDepartment({ departmentCode: 'NEUR', departmentName: 'Neurology' }),
       );
 
-      const list = await ctx.inTenant(() => masterDataService.listDepartments());
+      const list = (await ctx.inTenant(() => masterDataService.listDepartments({}))).data;
       expect(list.some((d) => d.departmentCode === 'NEUR')).toBe(true);
 
       const found = await ctx.inTenant(() => masterDataService.getDepartment(created.id));
@@ -135,7 +135,7 @@ describe('MasterDataService (integration)', () => {
     it('lists and gets wards, returns null for an unknown id', async () => {
       const created = await ctx.inTenant(() => masterDataService.createWard({ wardCode: 'W3', wardName: 'Maternity' }));
 
-      const list = await ctx.inTenant(() => masterDataService.listWards());
+      const list = (await ctx.inTenant(() => masterDataService.listWards({}))).data;
       expect(list.some((w) => w.wardCode === 'W3')).toBe(true);
 
       const found = await ctx.inTenant(() => masterDataService.getWard(created.id));
@@ -230,7 +230,7 @@ describe('MasterDataService (integration)', () => {
       const ward = await ctx.inTenant(() => masterDataService.createWard({ wardCode: 'GEN3', wardName: 'General 3' }));
       const bed = await ctx.inTenant(() => masterDataService.createBed({ wardId: ward.id, bedNumber: '1' }));
 
-      const beds = await ctx.inTenant(() => masterDataService.listBedsByWard(ward.id));
+      const beds = (await ctx.inTenant(() => masterDataService.listBedsByWard(ward.id, {}))).data;
       expect(beds.some((b) => b.id === bed.id)).toBe(true);
 
       const found = await ctx.inTenant(() => masterDataService.getBed(bed.id));

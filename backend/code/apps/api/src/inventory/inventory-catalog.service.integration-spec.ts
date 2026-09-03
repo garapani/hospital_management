@@ -370,7 +370,9 @@ describe('InventoryCatalogService catalog update/deactivate (integration)', () =
 
       await ctx.inTenant(() => inventoryCatalogService.deactivateItem(item.id));
 
-      const list = await ctx.inTenant(() => inventoryCatalogService.listItemsBySubCategory(subCategory.id));
+      const list = (
+        await ctx.inTenant(() => inventoryCatalogService.listItemsBySubCategory(subCategory.id, {}))
+      ).data;
       expect(list.some((i) => i.id === item.id && i.isActive === false)).toBe(true);
 
       const found = await ctx.inTenant(() => inventoryCatalogService.getItem(item.id));
@@ -397,9 +399,11 @@ describe('InventoryCatalogService catalog update/deactivate (integration)', () =
 
       await ctx.inTenant(() => inventoryCatalogService.deactivateSubCategory(subCategory.id));
 
-      const list = await ctx.inTenant(() =>
-        inventoryCatalogService.listSubCategoriesByCategory(category.id),
-      );
+      const list = (
+        await ctx.inTenant(() =>
+          inventoryCatalogService.listSubCategoriesByCategory(category.id, {}),
+        )
+      ).data;
       expect(list.some((s) => s.id === subCategory.id && s.isActive === false)).toBe(true);
     });
 
@@ -408,7 +412,7 @@ describe('InventoryCatalogService catalog update/deactivate (integration)', () =
 
       await ctx.inTenant(() => inventoryCatalogService.deactivateVendor(vendor.id));
 
-      const list = await ctx.inTenant(() => inventoryCatalogService.listVendors());
+      const list = (await ctx.inTenant(() => inventoryCatalogService.listVendors({}))).data;
       expect(list.some((v) => v.id === vendor.id && v.isActive === false)).toBe(true);
     });
   });

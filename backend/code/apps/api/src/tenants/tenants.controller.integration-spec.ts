@@ -176,10 +176,16 @@ describe('TenantsController (integration)', () => {
       .send({ hospitalId: 'test_tenant_ctrl_list', hospitalName: 'List Hospital' });
     expect(createRes.status).toBe(201);
 
-    const response = await request(app.getHttpServer()).get('/tenants').set('Authorization', `Bearer ${adminToken}`);
+    // limit=100, not the default 20 — the full suite runs many spec files against this same
+    // shared platform DB in parallel, so page 1 at the default size can miss a just-created row.
+    const response = await request(app.getHttpServer())
+      .get('/tenants?limit=100')
+      .set('Authorization', `Bearer ${adminToken}`);
     expect(response.status).toBe(200);
     expect(
-      response.body.some((t: { hospitalId: string }) => t.hospitalId === 'test_tenant_ctrl_list'),
+      response.body.data.some(
+        (t: { hospitalId: string }) => t.hospitalId === 'test_tenant_ctrl_list',
+      ),
     ).toBe(true);
   });
 
@@ -247,11 +253,11 @@ describe('TenantsController (integration)', () => {
     }
 
     const response = await request(app.getHttpServer())
-      .get('/tenants')
+      .get('/tenants?limit=100')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(response.status).toBe(200);
-    const ids = response.body.map((t: { hospitalId: string }) => t.hospitalId);
+    const ids = response.body.data.map((t: { hospitalId: string }) => t.hospitalId);
     expect(ids).not.toContain(PLATFORM_TENANT_ID);
   });
 

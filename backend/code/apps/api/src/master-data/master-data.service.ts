@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
+import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
 import { Department } from './entities/department.entity.js';
 import { Ward } from './entities/ward.entity.js';
@@ -65,10 +66,13 @@ export class MasterDataService {
     });
   }
 
-  async listDepartments(): Promise<Department[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Department).find({ order: { createdAt: 'ASC' } }),
-    );
+  async listDepartments(query: PaginationQueryDto): Promise<PaginatedResponseDto<Department>> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager
+        .createQueryBuilder(Department, 'd')
+        .orderBy('d.createdAt', 'ASC');
+      return paginate(qb, query);
+    });
   }
 
   async getDepartment(id: string): Promise<Department | null> {
@@ -153,10 +157,11 @@ export class MasterDataService {
     });
   }
 
-  async listWards(): Promise<Ward[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Ward).find({ order: { createdAt: 'ASC' } }),
-    );
+  async listWards(query: PaginationQueryDto): Promise<PaginatedResponseDto<Ward>> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager.createQueryBuilder(Ward, 'w').orderBy('w.createdAt', 'ASC');
+      return paginate(qb, query);
+    });
   }
 
   async getWard(id: string): Promise<Ward | null> {
@@ -239,10 +244,17 @@ export class MasterDataService {
     });
   }
 
-  async listBedsByWard(wardId: string): Promise<Bed[]> {
-    return this.tenantConnection.runInTenantSchema((manager) =>
-      manager.getRepository(Bed).find({ where: { wardId }, order: { bedNumber: 'ASC' } }),
-    );
+  async listBedsByWard(
+    wardId: string,
+    query: PaginationQueryDto,
+  ): Promise<PaginatedResponseDto<Bed>> {
+    return this.tenantConnection.runInTenantSchema((manager) => {
+      const qb = manager
+        .createQueryBuilder(Bed, 'b')
+        .where('b.wardId = :wardId', { wardId })
+        .orderBy('b.bedNumber', 'ASC');
+      return paginate(qb, query);
+    });
   }
 
   async getBed(id: string): Promise<Bed | null> {

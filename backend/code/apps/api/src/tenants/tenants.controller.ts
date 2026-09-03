@@ -8,9 +8,11 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
+import { PaginationQueryDto } from '@hospital/pagination';
 import { TenantsService } from './tenants.service.js';
 import { ProvisionTenantDto } from './dto/provision-tenant.dto.js';
 import { SetTenantRolesDto } from './dto/set-tenant-roles.dto.js';
@@ -33,8 +35,8 @@ export class TenantsController {
 
   @Get()
   @RequirePermission(REQUIRED_PERMISSION)
-  async list() {
-    return this.tenantsService.listTenants();
+  async list(@Query() query: PaginationQueryDto) {
+    return this.tenantsService.listTenants(query);
   }
 
   @Get(':hospitalId')
