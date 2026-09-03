@@ -150,14 +150,41 @@ Since the app is stateless (all state is in Postgres/Redis), you can scale the A
 
 ## 8. Backup Configuration
 
-Nightly backups run via `scripts/backup-db.sh`, which `pg_dump`s the whole database (every tenant
-schema plus `public`, since it's all one Postgres database) into one custom-format (`-Fc`) file,
-validates it, gzips it, and uploads it to an S3-compatible bucket. See `Runbook.md` "Restoring
-from Backup" for how to use the resulting dump. **RPO is up to 24 hours** — backups are nightly
-only; there is no continuous WAL archiving/point-in-time recovery yet (a known, deliberately
-deferred gap, not an oversight).
+Nightly backups `pg_dump` the whole database (every tenant schema plus `public`, since it's all one
+Postgres database) into one custom-format (`-Fc`) file, validate it, gzip it, and upload it to an
+S3-compatible bucket. See `Runbook.md` "Restoring from Backup" for how to use the resulting dump.
+**RPO is up to 24 hours** — backups are nightly only; there is no continuous WAL archiving/
+point-in-time recovery yet (a known, deliberately deferred gap, not an oversight).
 
-### Environment variables
+There are two independent ways to run this, covering different deployment shapes — pick one, not
+both, to avoid double backups:
+
+- **`backup` compose service (recommended)** — a container defined in `docker-compose.prod.yml`
+  (built from `deploy/backup/Dockerfile`, entrypoint `scripts/backup-cron-entrypoint.sh`) that
+  connects to the `postgres` service directly over `hospital-network` and runs the schedule
+  itself; no access to the host running compose is required. Comes up automatically with
+  `docker compose -f docker-compose.prod.yml up -d` — no separate cron entry to configure.
+- **Host cron + `scripts/backup-db.sh`** — the original approach: a cron entry on the host running
+  the compose stack invokes `docker compose exec` into the `postgres` service. Still useful when
+  you don't want an always-on container for this, or need to trigger a one-off backup manually.
+
+### `backup` compose service
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DB_PASSWORD` | *(required)* | Same value as the `postgres`/`api` services. |
+| `BACKUP_RETENTION_DAYS` | `30` | Local dump files older than this are deleted after each run. |
+| `BACKUP_HOUR_UTC` | `2` | Hour of day (UTC) the nightly dump runs. |
+| `S3_BUCKET` | *(unset)* | Target bucket. **If unset, runs in dry-run mode** — dumps, validates, and gzips locally, but skips the upload step. |
+| `S3_PREFIX` | `postgres-backups` | Key prefix inside the bucket. |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | *(unset)* | Credentials for the S3 upload — passed as env vars here since the container has no host `~/.aws` credential chain to fall back on. Provide via the deployment host's `.env`/secrets manager, not committed to the repo. |
+| `AWS_DEFAULT_REGION` | `ap-south-1` | Matches `PRD.md` §10's India data-residency rule. |
+
+Dumps land in `../../../../data/hospital/backups` on the host (same volume-mount convention as
+`postgres`/`redis`/`minio`), so `Runbook.md`'s restore steps work unchanged whether the dump was
+produced by this service or by `scripts/backup-db.sh`.
+
+### Host cron + `scripts/backup-db.sh`
 
 | Variable | Default | Purpose |
 |---|---|---|

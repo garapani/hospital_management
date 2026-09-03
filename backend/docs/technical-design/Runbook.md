@@ -109,8 +109,9 @@ This drops the volume and restarts Postgres with a clean slate.
 
 ## 5. Restoring from Backup
 
-Backups are nightly `pg_dump -Fc` files produced by `scripts/backup-db.sh` (see
-`Deployment-Guide.md` "Backup Configuration"), uploaded to the configured S3 bucket. **Default
+Backups are nightly `pg_dump -Fc` files produced either by the `backup` compose service or by
+`scripts/backup-db.sh` on a host cron entry (see `Deployment-Guide.md` "Backup Configuration" for
+both — same dump format, same restore steps either way), uploaded to the configured S3 bucket. **Default
 RPO: up to 24 hours of data loss** on the nightly-dump path alone. Continuous WAL archiving
 narrows this to minutes when enabled — see "Continuous WAL Archiving / Point-in-Time Recovery"
 below; it is **opt-in, not yet turned on in any deployed environment**, so treat 24h as the actual

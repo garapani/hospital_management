@@ -331,11 +331,18 @@ scope, not merely lower priority.
       as done; this was a naming-mismatch correction on top of it, not a new capability — a prod
       restore following the Runbook literally before this fix would have targeted the wrong
       compose file/service entirely. `Deployment-Guide.md`'s env-var table corrected to match.
-      **Not done:** no automated nightly backup cron container in `docker-compose.prod.yml` itself
-      (backups rely on `scripts/backup-db.sh` being invoked externally, e.g. host cron, which is
-      how `Deployment-Guide.md` already documents it) — a genuinely different, additive capability
-      from this naming-mismatch fix, left out of scope here. Found in the 2026-09-03 external
-      review.
+      That "Not done" gap — no automated nightly backup cron container in
+      `docker-compose.prod.yml` itself — is **now resolved (2026-09-03)** too: a `backup` service
+      (built from `deploy/backup/Dockerfile`, entrypoint `scripts/backup-cron-entrypoint.sh`)
+      connects to `postgres` directly over `hospital-network` and runs the same dump/validate/
+      gzip/prune/optional-S3-upload sequence as `backup-db.sh` on its own internal schedule
+      (`BACKUP_HOUR_UTC`, default 02:00 UTC) — no host cron entry or access to the host running
+      compose required. Comes up automatically with the rest of the stack via `restart: always`;
+      a failed run logs and retries at the next scheduled time rather than crash-looping the
+      container. Host cron + `backup-db.sh` remains documented as the alternative for deployments
+      that don't want an always-on container for this. See `Deployment-Guide.md` "Backup
+      Configuration" (both paths documented, pick one) and `Runbook.md` §5. Found in the
+      2026-09-03 external review.
 
 ## Phase 4 — Complete near-finished features
 
