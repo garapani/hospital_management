@@ -351,14 +351,16 @@ scope, not merely lower priority.
     `@hospital/pdf` lib — a landscape events table via a pure, unit-tested document builder
     (`reporting-events-pdf-document.ts`), matching the Lab/Radiology report builders' brand/style
     vocabulary. 6 new tests (3 pure builder + 3 export). See `Development-Standards.md` §49.
-- [ ] **Billing: invoice PDF/print.** The invoice detail screen (`invoice-detail.ts`, frontend)
-      supports recording payments/cancellations but has no print/download action, and no
-      billing/accounting controller renders a per-invoice PDF — distinct from the Reporting/
-      Accounting *report* exports (trial balance, income statement, etc.) shipped this session,
-      which don't cover a single patient invoice. Indian hospitals need a printed receipt at the
-      billing counter for insurance reimbursement/tax proof. Fix: a `renderInvoicePdf` endpoint via
-      the existing `@hospital/pdf` lib, mirroring the Lab/Radiology report PDF pattern, plus a
-      "Print Invoice" button. Found in the 2026-09-03 external review.
+- [x] **Billing: invoice PDF/print.** **Resolved (2026-09-03):** `GET
+      /billing/invoices/:id/invoice.pdf` (`billing.read`-gated, `Content-Disposition: inline`)
+      renders a patient invoice/receipt PDF via a new `InvoiceExportService` + pure
+      `buildInvoicePdfDocument` builder, mirroring the Lab/Radiology report PDF pattern — kept off
+      `InvoicesService`'s own constructor (directly `new`'d in 4 integration specs) per
+      Development-Standards.md §131's pattern. Frontend: a "Print Invoice" button on the invoice
+      detail screen opens it via `openPdfBlobInNewTab` (view/print, not a forced download),
+      matching the Lab requisition detail screen's "View Report" button. 6 new tests (4 pure
+      builder, 2 integration on the backend; 2 more on the frontend component); full suites green.
+      Found in the 2026-09-03 external review.
 
 ## Phase 5 — New platform capabilities
 
