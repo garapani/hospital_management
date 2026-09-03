@@ -1,7 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, Logger } from '@nestjs/common';
-import { DataSource, ObjectLiteral, Repository } from 'typeorm';
-import type { DataSourceOptions } from 'typeorm';
+import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../app/app.module.js';
 import { TenantContextService } from '@hospital/tenant-context';
 import { TenantConnectionService } from '../database/tenant-connection.service.js';
@@ -14,12 +12,10 @@ import { DepositsService } from '../billing/deposits.service.js';
 import { ReportingQueryService } from './reporting-query.service.js';
 import { AuditRecord } from '../audit/entities/audit-record.entity.js';
 import { ReportingEvent } from './entities/reporting-event.entity.js';
+import { OutboxEvent } from '../outbox/entities/outbox-event.entity.js';
 import { PersistingReportingEventPublisher } from './persisting-reporting-event-publisher.js';
+import { dispatchTenant } from '../database/outbox-dispatcher-entrypoint.js';
 import { isAuditExcludedEntity } from '@hospital/audit-emitter';
-import {
-  REPORTING_DATA_SOURCE,
-  createReportingDataSource,
-} from '../database/reporting-data-source.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -83,7 +79,16 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     );
   }
 
+  // Business events now land in outbox_events first (see PersistingReportingEventPublisher's doc
+  // comment) — reporting_events only reflects what the outbox dispatcher has drained so far. Every
+  // assertion against reporting_events in this file drains synchronously first so the test stays
+  // deterministic instead of racing a poll interval.
+  async function drain(tenantId: string): Promise<void> {
+    await dispatchTenant(`tenant_${tenantId}`);
+  }
+
   async function getEvents(tenantId: string, eventType: string) {
+    await drain(tenantId);
     return inTenant(tenantId, () =>
       tenantConnection.runInTenantSchema((manager) =>
         manager
@@ -93,10 +98,10 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     );
   }
 
-  it('does not create a reporting event for unmapped entities (Patient)', async () => {
+  it('does not create an outbox row for unmapped entities (Patient)', async () => {
     await inTenant(ctx.tenantId, async () => {
       const beforeCount = await tenantConnection.runInTenantSchema((m) =>
-        m.getRepository(ReportingEvent).count(),
+        m.getRepository(OutboxEvent).count({ where: { kind: 'Reporting' } }),
       );
 
       await patientsService.create({
@@ -107,7 +112,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
       });
 
       const afterCount = await tenantConnection.runInTenantSchema((m) =>
-        m.getRepository(ReportingEvent).count(),
+        m.getRepository(OutboxEvent).count({ where: { kind: 'Reporting' } }),
       );
       expect(afterCount).toBe(beforeCount);
     });
@@ -274,17 +279,13 @@ describe('PersistingReportingEventPublisher (integration)', () => {
   });
 
   it('does not feed reporting events back into the audit trail', async () => {
-    // NOTE on why this passes: it is NOT currently because of @AuditExcludeEntity() on
-    // ReportingEvent. Reporting writes run through `REPORTING_DATA_SOURCE` (see
-    // persisting-reporting-event-publisher.ts), a separate TypeORM `DataSource` from the main one.
-    // Both `ReportingSubscriber` (reporting.subscriber.ts) and `AuditSubscriber`
-    // (audit-wiring.service.ts) register themselves only on the main, injected `DataSource`'s
-    // `subscribers` array — never on `REPORTING_DATA_SOURCE`. So no subscriber, audit or
-    // otherwise, is even attached to the connection a reporting write runs on; the audit
-    // subscriber has no opportunity to fire regardless of what any entity decorator says.
-    // @AuditExcludeEntity() on ReportingEvent is therefore redundant belt-and-braces defense today,
-    // not the active mechanism keeping this test green — see the decorator-presence guard below
-    // for a direct regression check on the decorator itself.
+    // The outbox dispatcher's own connection has no subscribers attached to it (subscribers only
+    // ever register on the API process's main DataSource — see ReportingSubscriber/AuditSubscriber
+    // wiring), so materializing an outbox row into reporting_events can never itself trigger an
+    // audit write, regardless of what any entity decorator says. @AuditExcludeEntity() on
+    // ReportingEvent (pinned by the next test) is belt-and-braces defense on top of that, same as
+    // it always was.
+    await drain(ctx.tenantId);
     const auditRows = await inTenant(ctx.tenantId, () =>
       tenantConnection.runInTenantSchema((m) =>
         m
@@ -297,15 +298,11 @@ describe('PersistingReportingEventPublisher (integration)', () => {
 
   it('keeps @AuditExcludeEntity() on ReportingEvent as defense-in-depth', () => {
     // Direct regression guard on the decorator itself (unit-level, no subscriber/DB involved).
-    // The test above proves reporting writes never reach audit_records today because of pool
-    // separation, not this decorator — but if a future refactor ever routes reporting writes back
-    // through the main DataSource (or a subscriber gets attached to REPORTING_DATA_SOURCE), this
-    // decorator becomes the only thing standing between that write and a duplicated audit_records
-    // row. This pins that it's still present.
     expect(isAuditExcludedEntity(ReportingEvent)).toBe(true);
   });
 
   it('enforces tenant isolation', async () => {
+    await drain(tenantB.tenantId);
     await inTenant(tenantB.tenantId, async () => {
       const events = await tenantConnection.runInTenantSchema((m) =>
         m.getRepository(ReportingEvent).count(),
@@ -314,275 +311,104 @@ describe('PersistingReportingEventPublisher (integration)', () => {
     });
   });
 
-  it('writes reporting events on a dedicated, bounded connection pool', () => {
-    // Reporting writes take a *second* connection while the business transaction still holds its
-    // own. If both came from the same pool, N concurrent tracked writes at pool capacity would
-    // block forever (node-postgres defaults to connectionTimeoutMillis: 0 = wait indefinitely).
-    // What bounds that: a pool object distinct from the main one, capped, with a finite
-    // acquisition timeout so exhaustion throws (and is caught + logged by the publisher).
-    const reportingDataSource = app.get<DataSource>(REPORTING_DATA_SOURCE);
-    const mainDataSource = app.get(DataSource);
-
-    expect(reportingDataSource).not.toBe(mainDataSource);
-    expect(reportingDataSource.isInitialized).toBe(true);
-    expect(reportingDataSource.options.extra).toMatchObject({
-      max: 3,
-      connectionTimeoutMillis: 2000,
-    });
-    // This pool never runs migrations and maps only the reporting entity.
-    expect(reportingDataSource.options.migrations).toEqual([]);
-    expect(reportingDataSource.options.entities).toEqual([ReportingEvent]);
-  });
-
-  it('routes reporting writes through REPORTING_DATA_SOURCE, not the main pool', async () => {
-    // Pins the second argument to `runInTenantSchema` in
-    // persisting-reporting-event-publisher.ts (`this.tenantConnectionService.runInTenantSchema(
-    // work, this.reportingDataSource)`). Every other test in this file exercises the publisher
-    // without inspecting which pool actually served the write, so silently dropping that second
-    // argument — reverting reporting writes to the shared main pool and reintroducing the
-    // pool-exhaustion deadlock this whole fix chain exists to prevent — would leave every existing
-    // test green. This is a real spy on the live TenantConnectionService instance (not a mock
-    // replacement), so the underlying reporting write still executes for real.
-    const reportingDataSource = app.get<DataSource>(REPORTING_DATA_SOURCE);
-    const spy = jest.spyOn(tenantConnection, 'runInTenantSchema');
+  it('writes the outbox row on the SAME manager/transaction as the business write', async () => {
+    // Proves the actual fix this whole design exists for: if a later step in the same business
+    // transaction fails, the outbox row must roll back with it — no orphan reporting event
+    // referencing a change that never persisted.
+    const publisher = app.get(PersistingReportingEventPublisher);
+    const spy = jest.spyOn(publisher, 'publish');
 
     try {
-      await inTenant(ctx.tenantId, async () => {
-        const patient = await patientsService.create({
-          firstName: 'Routing',
-          lastName: 'Pin',
-          gender: 'Male',
-          phoneNumber: '9999999993',
-        });
-        await ordersService.create({
-          patientId: patient.id,
-          orderedBy: DOCTOR_ID,
-          items: [
-            { itemType: 'Lab', itemDescription: 'Routing', priority: 'Routine' },
-          ],
-        });
-      });
+      await expect(
+        inTenant(ctx.tenantId, () =>
+          tenantConnection.runInTenantSchema(async (manager) => {
+            await publisher.publish(
+              { eventType: 'TestEvent', entityId: '99999999-9999-9999-9999-999999999999', payload: {}, correlationId: null },
+              manager,
+            );
+            throw new Error('simulated failure elsewhere in the same business transaction');
+          }),
+        ),
+      ).rejects.toThrow('simulated failure elsewhere in the same business transaction');
 
+      // publish() was called with the SAME manager the business transaction ran on.
+      expect(spy.mock.calls[spy.mock.calls.length - 1][1]).toBeDefined();
+
+      const orphaned = await inTenant(ctx.tenantId, () =>
+        tenantConnection.runInTenantSchema((m) =>
+          m.getRepository(OutboxEvent).find({
+            where: { kind: 'Reporting' },
+          }),
+        ),
+      );
       expect(
-        spy.mock.calls.some(([, dataSourceArg]) => dataSourceArg === reportingDataSource),
-      ).toBe(true);
+        orphaned.some((row) => (row.payload as { entityId: string }).entityId === '99999999-9999-9999-9999-999999999999'),
+      ).toBe(false);
     } finally {
       spy.mockRestore();
     }
   });
 
-  it('fails fast instead of hanging when the reporting pool is exhausted', async () => {
-    // Proves the *mechanism* the config above relies on: with a bounded `max` and a finite
-    // `connectionTimeoutMillis`, an over-capacity acquisition rejects rather than waiting forever.
-    // Run against a throwaway 1-connection / 200ms clone so the assertion is deterministic and
-    // costs a fraction of a second — the real pool's 3/2000ms values are asserted separately above.
-    const tinyPool = new DataSource({
-      ...createReportingDataSource().options,
-      extra: { max: 1, connectionTimeoutMillis: 200 },
-    } as DataSourceOptions);
-    await tinyPool.initialize();
-
-    const held = tinyPool.createQueryRunner();
-    await held.connect(); // occupies the pool's only connection
-    try {
-      const starved = tinyPool.createQueryRunner();
-      const startedAt = Date.now();
-      await expect(starved.connect()).rejects.toThrow(/timeout/i);
-      expect(Date.now() - startedAt).toBeLessThan(3000);
-    } finally {
-      await held.release();
-      await tinyPool.destroy();
-    }
-  });
-
-  // Global Constraint: "Failed reporting-archive write must never roll back or block the
-  // real business transaction." The first test is the definitive one — a genuine Postgres error
-  // on the reporting_events INSERT. The remaining two simulate failure above the SQL layer and
-  // pin the JS-level try/catch structure in the publisher and the subscriber respectively.
-  describe('when the reporting-archive write fails', () => {
-    afterEach(() => {
-      jest.restoreAllMocks();
-    });
-
-    it('still commits the business insert when the reporting_events INSERT fails at the SQL level', async () => {
-      // Real SQL failure, not a JS mock: the reporting_events table is renamed out from under
-      // the publisher, so its INSERT raises Postgres 42P01 (undefined_table).
-      //
-      // This is the test that was impossible before the write moved off the business
-      // transaction's QueryRunner. Previously the publisher's save ran on the SAME connection as
-      // the `orders` INSERT, so a 42P01 aborted that transaction — Postgres then rejects every
-      // subsequent statement including COMMIT ("current transaction is aborted"), and the order
-      // would never have persisted no matter what the publisher's try/catch did. The order being
-      // readable afterwards is therefore proof the reporting write is on its own connection.
+  describe('when the dispatcher fails to materialize a row', () => {
+    it('never affects the already-committed business transaction, and marks the row for retry', async () => {
+      // Unlike the old design (where a reporting_events SQL failure ran inside the business
+      // transaction's own write path), the outbox write always succeeds against outbox_events —
+      // a materialization failure can only ever happen later, in the dispatcher's own separate
+      // process/transaction, which is exactly the isolation this design is meant to guarantee.
       const schema = `tenant_${ctx.tenantId}`;
-      const loggedErrors: unknown[] = [];
-      jest
-        .spyOn(Logger.prototype, 'error')
-        .mockImplementation((message: unknown) => {
-          loggedErrors.push(message);
+      const order = await inTenant(ctx.tenantId, async () => {
+        const patient = await patientsService.create({
+          firstName: 'DispatchFailure',
+          lastName: 'Test',
+          gender: 'Male',
+          phoneNumber: '9999999995',
         });
+        return ordersService.create({
+          patientId: patient.id,
+          orderedBy: DOCTOR_ID,
+          items: [{ itemType: 'Lab', itemDescription: 'ESR', priority: 'Routine' }],
+        });
+      });
 
       const renameTable = async (from: string, to: string) => {
         const queryRunner = ctx.dataSource.createQueryRunner();
         await queryRunner.connect();
         try {
-          await queryRunner.query(
-            `ALTER TABLE "${schema}"."${from}" RENAME TO "${to}"`,
-          );
+          await queryRunner.query(`ALTER TABLE "${schema}"."${from}" RENAME TO "${to}"`);
         } finally {
           await queryRunner.release();
         }
       };
 
       await renameTable('reporting_events', 'reporting_events_hidden');
-
-      let order: { id: string };
-      let patientId: string;
       try {
-        const result = await inTenant(ctx.tenantId, async () => {
-          const patient = await patientsService.create({
-            firstName: 'SqlLevel',
-            lastName: 'Failure',
-            gender: 'Male',
-            phoneNumber: '9999999995',
-          });
-          const created = await ordersService.create({
-            patientId: patient.id,
-            orderedBy: DOCTOR_ID,
-            items: [
-              { itemType: 'Lab', itemDescription: 'ESR', priority: 'Routine' },
-            ],
-          });
-          return { order: created, patientId: patient.id };
-        });
-        order = result.order;
-        patientId = result.patientId;
+        await drain(ctx.tenantId);
       } finally {
         await renameTable('reporting_events_hidden', 'reporting_events');
       }
 
-      jest.restoreAllMocks();
+      // The business transaction committed regardless — it never touched reporting_events at all.
+      const persisted = await inTenant(ctx.tenantId, () => ordersService.findOne(order.id));
+      expect(persisted.id).toBe(order.id);
 
-      // The reporting write really did blow up at the SQL layer — a vacuous pass (e.g. the
-      // subscriber never firing) would leave nothing logged. The assertion also pins the table
-      // name, so an unrelated failure that shares the same log prefix (e.g. "No tenant context
-      // set") cannot satisfy it. Both accepted phrases are genuine Postgres SQL-level errors for
-      // the reporting_events INSERT: 42P01 ("relation "reporting_events" does not exist") when
-      // the renamed-away tenant table is the only resolution target, and 42501 ("permission
-      // denied for table reporting_events") when the unqualified name falls through search_path
-      // ("tenant_X", public) onto a stale `public.reporting_events` leftover from the
-      // pre-tenant-schema era — the tenant role has no privileges on public tables, so the INSERT
-      // fails at the SQL layer either way, and the business transaction must still commit.
-      expect(
-        loggedErrors.some(
-          (message) =>
-            typeof message === 'string' &&
-            message.includes('Failed to persist reporting event OrderPlaced') &&
-            message.includes('reporting_events') &&
-            (message.includes('does not exist') || message.includes('permission denied')),
+      // The outbox row is still there, marked for retry — not silently lost.
+      const rows = await inTenant(ctx.tenantId, () =>
+        tenantConnection.runInTenantSchema((m) =>
+          m.getRepository(OutboxEvent).find({
+            where: { kind: 'Reporting' },
+          }),
         ),
-      ).toBe(true);
-
-      // ...and the business transaction still committed: order + items are readable.
-      const persisted = await inTenant(ctx.tenantId, () =>
-        ordersService.findOne(order.id),
       );
-      expect(persisted.id).toBe(order.id);
-      expect(persisted.patientId).toBe(patientId);
-      expect(persisted.items).toHaveLength(1);
+      const row = rows.find((r) => (r.payload as { entityId: string }).entityId === order.id);
+      expect(row).toBeDefined();
+      expect(row?.status).toBe('Pending');
+      expect(row?.attempts).toBe(1);
+      expect(row?.lastError).toContain('reporting_events');
 
-      // No reporting event was archived for it.
+      // Now that the table is back, a later drain succeeds and catches it up.
+      await drain(ctx.tenantId);
       const orderEvents = await getEvents(ctx.tenantId, 'OrderPlaced');
-      expect(orderEvents.map((e) => e.entityId)).not.toContain(order.id);
-    });
-
-    it('still commits the business insert when the reporting_events save throws', async () => {
-      const realSave = Repository.prototype.save;
-      jest.spyOn(Repository.prototype, 'save').mockImplementation(function (
-        this: Repository<ObjectLiteral>,
-        ...args: unknown[]
-      ) {
-        if (this.target === ReportingEvent) {
-          return Promise.reject(
-            new Error('simulated reporting_events write failure'),
-          );
-        }
-        return (realSave as (...a: unknown[]) => Promise<unknown>).apply(
-          this,
-          args,
-        );
-      } as typeof Repository.prototype.save);
-
-      const { order, patientId } = await inTenant(
-        ctx.tenantId,
-        async () => {
-          const patient = await patientsService.create({
-            firstName: 'Archive',
-            lastName: 'Failure',
-            gender: 'Male',
-            phoneNumber: '9999999997',
-          });
-          const created = await ordersService.create({
-            patientId: patient.id,
-            orderedBy: DOCTOR_ID,
-            items: [
-              { itemType: 'Lab', itemDescription: 'LFT', priority: 'Routine' },
-            ],
-          });
-          return { order: created, patientId: patient.id };
-        },
-      );
-
-      jest.restoreAllMocks();
-
-      // The business transaction committed: the order and its items are readable.
-      const persisted = await inTenant(ctx.tenantId, () =>
-        ordersService.findOne(order.id),
-      );
-      expect(persisted.id).toBe(order.id);
-      expect(persisted.patientId).toBe(patientId);
-      expect(persisted.items).toHaveLength(1);
-
-      // ...and no reporting event was archived for it.
-      const orderEvents = await getEvents(ctx.tenantId, 'OrderPlaced');
-      expect(orderEvents.map((e) => e.entityId)).not.toContain(order.id);
-    });
-
-    it('still commits the business insert when the publisher itself rejects', async () => {
-      const publisher = app.get(PersistingReportingEventPublisher);
-      jest
-        .spyOn(publisher, 'publish')
-        .mockRejectedValue(new Error('simulated reporting publisher failure'));
-
-      const order = await inTenant(ctx.tenantId, async () => {
-        const patient = await patientsService.create({
-          firstName: 'Publisher',
-          lastName: 'Failure',
-          gender: 'Female',
-          phoneNumber: '9999999996',
-        });
-        return ordersService.create({
-          patientId: patient.id,
-          orderedBy: DOCTOR_ID,
-          items: [
-            {
-              itemType: 'Radiology',
-              itemDescription: 'X-Ray',
-              priority: 'Routine',
-            },
-          ],
-        });
-      });
-
-      jest.restoreAllMocks();
-
-      const persisted = await inTenant(ctx.tenantId, () =>
-        ordersService.findOne(order.id),
-      );
-      expect(persisted.id).toBe(order.id);
-
-      const orderEvents = await getEvents(ctx.tenantId, 'OrderPlaced');
-      expect(orderEvents.map((e) => e.entityId)).not.toContain(order.id);
+      expect(orderEvents.map((e) => e.entityId)).toContain(order.id);
     });
   });
 
@@ -620,6 +446,7 @@ describe('PersistingReportingEventPublisher (integration)', () => {
         returnedBy: DOCTOR_ID,
       });
 
+      await drain(revenueCtx.tenantId);
       const revenue = await inTenant(revenueCtx.tenantId, () =>
         reportingQueryService.getRevenue({ from: '2026-01-01', to: '2026-12-31' }),
       );

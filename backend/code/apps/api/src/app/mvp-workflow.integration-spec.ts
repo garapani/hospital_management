@@ -302,8 +302,9 @@ describe('MVP end-to-end workflow (integration)', () => {
     expect(invoicesRes.body.data).toHaveLength(1);
     const invoice = invoicesRes.body.data[0];
     expect(invoice.status).toBe('Unpaid');
-    // CBC 300 + X-ray 450 + paracetamol 2 (charge-capture lines are quantity 1 × catalog price).
-    expect(invoice.totalAmount).toBe(300 + 450 + 2);
+    // CBC 300 + X-ray 450 + paracetamol 2/unit × 10 dispensed = 20 (Lab/Radiology charge-capture
+    // lines are always quantity 1; Pharmacy carries the actual dispensed quantity — §139/§140).
+    expect(invoice.totalAmount).toBe(300 + 450 + 2 * 10);
 
     const detailRes = expectOk(await http.get(`/billing/invoices/${invoice.id}`));
     const lineDescriptions = (detailRes.body.items as Array<{ description: string }>).map((i) => i.description);

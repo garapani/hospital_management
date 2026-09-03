@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DataSource, EntitySubscriberInterface, InsertEvent } from 'typeorm';
 import { Order } from '../orders/entities/order.entity.js';
 import { Invoice } from '../billing/entities/invoice.entity.js';
@@ -12,8 +12,6 @@ import { TenantContextService } from '@hospital/tenant-context';
 
 @Injectable()
 export class ReportingSubscriber implements EntitySubscriberInterface {
-  private readonly logger = new Logger(ReportingSubscriber.name);
-
   private readonly eventCatalog = new Map<
     new (...args: any[]) => object,
     {
@@ -134,25 +132,22 @@ export class ReportingSubscriber implements EntitySubscriberInterface {
       return;
     }
 
-    try {
-      const payload = await handler.buildPayload(event.entity, event);
-      const correlationId = this.tenantContextService.getCorrelationId();
+    const payload = await handler.buildPayload(event.entity, event);
+    const correlationId = this.tenantContextService.getCorrelationId();
 
-      // Deliberately does NOT pass `event.manager`: the publisher opens its own connection so a
-      // SQL-level reporting failure cannot abort this business transaction. Accepted tradeoff —
-      // a business transaction that rolls back after this point leaves an orphan reporting row.
-      await this.publisher.publish({
+    // Passes `event.manager`: the outbox write commits or rolls back together with this business
+    // transaction (see PersistingReportingEventPublisher's doc comment) — deliberately not
+    // caught, since a failure here should abort the transaction just like any other write inside
+    // it, rather than being silently swallowed and leaving no record the event was ever meant to
+    // fire.
+    await this.publisher.publish(
+      {
         eventType: handler.eventType,
         entityId: event.entity.id,
         payload,
         correlationId: correlationId ?? null,
-      });
-    } catch (error) {
-      this.logger.error(
-        `Failed to build/publish reporting event for ${handler.eventType}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
+      },
+      event.manager,
+    );
   }
 }

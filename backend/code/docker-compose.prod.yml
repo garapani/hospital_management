@@ -234,6 +234,35 @@ services:
     networks:
       - hospital-network
 
+  # Drains outbox_events (every provisioned tenant schema) into reporting_events/audit_records —
+  # see Development-Standards.md's outbox section and database/outbox-dispatcher-entrypoint.ts.
+  # A separate long-running process from `api` itself, not a NestJS-scheduled job inside it: keeps
+  # the drain isolated from request-serving load and gives it its own restart/monitoring lifecycle,
+  # same rationale as the `backup` service above.
+  outbox-dispatcher:
+    image: hospital-api:latest
+    container_name: hospital-outbox-dispatcher
+    restart: always
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: hospital_db_user
+      DB_PASSWORD: "${DB_PASSWORD:?Error: DB_PASSWORD environment variable is required}"
+      DB_DATABASE: hospital_db
+      OUTBOX_POLL_INTERVAL_MS: "${OUTBOX_POLL_INTERVAL_MS:-5000}"
+      OUTBOX_BATCH_SIZE: "${OUTBOX_BATCH_SIZE:-50}"
+      OUTBOX_MAX_ATTEMPTS: "${OUTBOX_MAX_ATTEMPTS:-5}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hospital-network
+    command:
+      - sh
+      - -c
+      - node --import @swc-node/register/esm-register apps/api/src/database/outbox-dispatcher-entrypoint.ts
+
 networks:
   hospital-network:
     name: hospital-network
