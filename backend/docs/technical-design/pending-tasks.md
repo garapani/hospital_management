@@ -301,13 +301,22 @@ scope, not merely lower priority.
       through the dedicated pool not the main one, fails-fast-on-exhaustion) added to
       `persisting-audit-event-publisher.integration-spec.ts`; full suite green. See
       `Development-Standards.md` §132. Found in the 2026-09-03 external review.
-- [ ] **Global exception filter + correlation-id response header.** `main.ts` registers no
-      `app.useGlobalFilters` — there's no `HttpExceptionFilter` anywhere in the codebase, so
-      unhandled DB errors (statement timeout `57014`, unique violation `23505`) fall through to
-      Nest's default generic 500 instead of a consistent error payload. Separately,
-      `TenantContextMiddleware` reads an inbound `x-correlation-id` but never calls
-      `res.setHeader` to echo it back, so a client can't correlate a failed request against server
-      logs. Found in the 2026-09-03 external review.
+- [x] **Global exception filter + correlation-id response header.** **Resolved (2026-09-03):**
+      `apps/api/src/common/filters/global-exception.filter.ts` (`GlobalExceptionFilter`, registered
+      via `app.useGlobalFilters` in `main.ts`) passes any `HttpException` through unchanged — every
+      existing per-service `QueryFailedError` handler (role-management, appointments, lab-catalog,
+      pharmacy-dispensing, accounting, ...) keeps working exactly as before — and maps two named
+      Postgres SQLSTATE codes (`57014` statement timeout → 504, `23505` unique violation → 409) as
+      a last-resort safety net for anything that reaches it uncaught; anything else still logs and
+      returns a generic 500, just with a consistent `{statusCode, message}` body instead of Nest's
+      default. `TenantContextMiddleware` now calls `res.setHeader('x-correlation-id', ...)` right
+      after resolving the id (client-supplied or generated), so it lands on both success and error
+      responses; `main.ts`'s CORS config gained `exposedHeaders: ['x-correlation-id']` so a browser
+      client can actually read it (`allowedHeaders` alone only governs request headers). 11 new
+      tests (7 unit on the filter, 4 integration proving real end-to-end wiring) plus 1 new test on
+      the middleware's existing spec; all 7 tests in that spec needed a `setHeader`-mocking `res`
+      fixture since they'd previously passed a bare `{}`. See `Development-Standards.md` §135.
+      Found in the 2026-09-03 external review.
 - [ ] **Backup script/Runbook point at dev compose, not prod.** `scripts/backup-db.sh:4-5` defaults
       to `COMPOSE_FILE=docker-compose.dev.yml`/`POSTGRES_SERVICE=api-postgres`, and `Runbook.md`'s
       restore section (lines 104-146) references the same dev names — but `docker-compose.prod.yml`'s

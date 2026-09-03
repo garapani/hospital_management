@@ -5028,3 +5028,38 @@ actually renders pager controls. This absorbed 10 near-identical cascading-dropd
 (category → sub-category → item pickers across Pharmacy Dispensing, Ward Supply, Stock
 Requisition, Purchase Orders, Inventory Item List) with zero component changes — verified by
 grepping for every consumer of the touched API service methods before editing, not assumed.
+
+## 135. A `@Catch()` global exception filter must not re-catch what per-service `QueryFailedError` handling already owns, and every hand-built `res` test fixture needs a real `setHeader`
+
+`GlobalExceptionFilter` (`apps/api/src/common/filters/global-exception.filter.ts`) is a
+last-resort safety net, not a replacement for the existing per-service pattern of catching
+`QueryFailedError` inline and translating a known constraint violation into a domain-specific
+`ConflictException` (role-management, appointments, lab-catalog, pharmacy-dispensing, accounting —
+grep `instanceof QueryFailedError` before assuming this filter is the only place unique
+violations get handled). The filter's `instanceof HttpException` branch passes those through
+unchanged first; only a `QueryFailedError` that reaches the filter *uncaught* — meaning no service
+along the way recognized its constraint — falls into the generic Postgres-code mapping. Getting
+the branch order backwards (mapping codes before checking `HttpException`) would silently override
+every one of those existing, more specific error messages with a generic one.
+
+Registering a `@Catch()`-with-no-argument filter via `app.useGlobalFilters()` replaces Nest's
+*entire* default exception handling for every route — it's not additive. Anything the built-in
+filter used to do implicitly (consistent JSON shape, logging an unhandled error) has to be
+reimplemented in the new filter, or it silently regresses.
+
+**Testing an Express middleware/filter that calls `res.setHeader` (or any other real `Response`
+method) needs a fixture object with that method mocked, not `{} as any`.** Adding
+`res.setHeader('x-correlation-id', ...)` to `TenantContextMiddleware` broke all 7 existing tests in
+`tenant-context.middleware.spec.ts` at once — every one of them called `middleware.use(req, {} as
+any, next)`, and `{}.setHeader` is not a function. Fix: a shared `buildRes()` test helper
+(`{ setHeader: jest.fn() }`) reused across every test in the file, not a per-test patch — the same
+shape gap will recur for the next `res.*` call this middleware grows.
+
+**Testing that a global filter is actually wired** needs the same pattern
+`global-validation-pipe.integration-spec.ts` established for the global `ValidationPipe`: boot the
+real `AppModule` via `Test.createTestingModule`, then call `app.useGlobalFilters(new
+GlobalExceptionFilter())` on the test app explicitly — no other integration spec goes through
+`main.ts`'s `bootstrap()`, so nothing proves the filter (or the pipe, or now this filter) is
+actually registered in production unless one spec does this. A unit test that calls
+`filter.catch(exception, mockHost)` directly proves the filter's own logic but not that
+`main.ts` ever wires it in.
