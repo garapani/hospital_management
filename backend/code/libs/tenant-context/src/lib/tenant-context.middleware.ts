@@ -35,6 +35,10 @@ export class TenantContextMiddleware implements NestMiddleware {
     }
     
     const correlationId = req.header('x-correlation-id') || randomUUID();
+    // Echoed back so a client can correlate a failed request against server logs — set here
+    // (before any response is sent) so it lands on both success and error responses, including
+    // ones the global exception filter formats later in the same request lifecycle.
+    res.setHeader('x-correlation-id', correlationId);
 
     this.tenantContext.run({ tenantId, accountId, patientId, wardId, correlationId }, () =>
       next(),

@@ -10,6 +10,7 @@ import { NestFactory } from '@nestjs/core';
 import { API_GLOBAL_PREFIX } from '@hospital/tenant-context';
 import { AppModule } from './app/app.module.js';
 import { createApiValidationPipe } from './app/api-validation-pipe.js';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter.js';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger as PinoLogger } from 'nestjs-pino';
 
@@ -31,12 +32,16 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins,
     allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id'],
+    // Without this, a cross-origin browser client receives x-correlation-id over the wire but
+    // JS can't read it (CORS hides non-exposed response headers from fetch/XHR by default).
+    exposedHeaders: ['x-correlation-id'],
   });
   // Phase A of 2.14 (see new/docs/superpowers/specs/2026-08-22-global-validation-pipe-design.md):
   // activates the class-validator decorators that already exist on ~9 DTOs (previously dead code —
   // no ValidationPipe was ever registered) and coerces typed-but-undecorated fields (e.g.
   // PaginationQueryDto's page/limit) via reflected design:type metadata.
   app.useGlobalPipes(createApiValidationPipe());
+  app.useGlobalFilters(new GlobalExceptionFilter());
   // Shared with unauthenticated-routes.ts's fallback matchers (@hospital/tenant-context) so they
   // can't silently drift out of sync with whatever this is actually set to.
   const globalPrefix = API_GLOBAL_PREFIX;

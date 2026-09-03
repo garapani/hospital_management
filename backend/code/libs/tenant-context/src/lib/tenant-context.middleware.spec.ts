@@ -11,6 +11,10 @@ describe('TenantContextMiddleware', () => {
     return { header: (name: string) => headers[name], authContext, originalUrl } as any;
   }
 
+  function buildRes() {
+    return { setHeader: jest.fn() } as any;
+  }
+
   it('propagates tenant id and account id from req.authContext when present, ignoring headers', () => {
     const service = new TenantContextService();
     const middleware = new TenantContextMiddleware(service);
@@ -20,7 +24,7 @@ describe('TenantContextMiddleware', () => {
     );
 
     let observed: unknown;
-    middleware.use(req, {} as any, () => {
+    middleware.use(req, buildRes(), () => {
       observed = {
         tenantId: service.getTenantId(),
         accountId: service.getAccountId(),
@@ -45,7 +49,7 @@ describe('TenantContextMiddleware', () => {
     });
 
     let observed: unknown;
-    middleware.use(req, {} as any, () => {
+    middleware.use(req, buildRes(), () => {
       observed = {
         tenantId: service.getTenantId(),
         accountId: service.getAccountId(),
@@ -66,11 +70,29 @@ describe('TenantContextMiddleware', () => {
     const req = buildRequest({});
 
     let observedCorrelationId: string | undefined;
-    middleware.use(req, {} as any, () => {
+    middleware.use(req, buildRes(), () => {
       observedCorrelationId = service.getCorrelationId();
     });
 
     expect(observedCorrelationId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('echoes the correlation id back on the response header, whether client-supplied or generated', () => {
+    const service = new TenantContextService();
+    const middleware = new TenantContextMiddleware(service);
+
+    const suppliedReq = buildRequest({ 'x-correlation-id': 'client-supplied-id' });
+    const suppliedRes = buildRes();
+    middleware.use(suppliedReq, suppliedRes, () => undefined);
+    expect(suppliedRes.setHeader).toHaveBeenCalledWith('x-correlation-id', 'client-supplied-id');
+
+    const generatedReq = buildRequest({});
+    const generatedRes = buildRes();
+    middleware.use(generatedReq, generatedRes, () => undefined);
+    expect(generatedRes.setHeader).toHaveBeenCalledWith(
+      'x-correlation-id',
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+    );
   });
 
   it('never consults x-tenant-id/x-account-id headers when req.authContext is present, even if its fields are falsy', () => {
@@ -82,7 +104,7 @@ describe('TenantContextMiddleware', () => {
     );
 
     let observed: unknown;
-    middleware.use(req, {} as any, () => {
+    middleware.use(req, buildRes(), () => {
       observed = {
         tenantId: service.getTenantId(),
         accountId: service.getAccountId(),
@@ -104,12 +126,12 @@ describe('TenantContextMiddleware', () => {
 
     middleware.use(
       buildRequest({ 'x-tenant-id': 'h1' }, undefined, '/api/auth/refresh'),
-      {} as any,
+      buildRes(),
       () => undefined,
     );
     middleware.use(
       buildRequest({ 'x-tenant-id': 'h1' }, undefined, '/api/auth/login'),
-      {} as any,
+      buildRes(),
       () => undefined,
     );
 
@@ -124,7 +146,7 @@ describe('TenantContextMiddleware', () => {
 
     middleware.use(
       buildRequest({ 'x-tenant-id': 'h1' }, undefined, '/api/patients'),
-      {} as any,
+      buildRes(),
       () => undefined,
     );
 
@@ -138,7 +160,7 @@ describe('TenantContextMiddleware', () => {
     const req = buildRequest({});
     let nextCalled = false;
 
-    middleware.use(req, {} as any, () => {
+    middleware.use(req, buildRes(), () => {
       nextCalled = true;
     });
 
