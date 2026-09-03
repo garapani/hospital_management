@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dev.yml}"
-POSTGRES_SERVICE="${POSTGRES_SERVICE:-api-postgres}"
+# Defaults target production: this script's primary real-world use is the nightly cron entry on
+# the deployed host (see Deployment-Guide.md "Backup Configuration"), where COMPOSE_FILE/
+# POSTGRES_SERVICE are never overridden. docker-compose.prod.yml's Postgres service is named
+# `postgres` (container_name hospital-postgres); override both for a local dev-compose test run
+# (docker-compose.dev.yml's service is `api-postgres`).
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+POSTGRES_SERVICE="${POSTGRES_SERVICE:-postgres}"
 POSTGRES_USER="${POSTGRES_USER:-hospital_db_user}"
 POSTGRES_DB="${POSTGRES_DB:-hospital_db}"
 BACKUP_DIR="${BACKUP_DIR:-./backups}"

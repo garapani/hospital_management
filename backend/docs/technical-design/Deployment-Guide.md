@@ -161,8 +161,8 @@ deferred gap, not an oversight).
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `COMPOSE_FILE` | `docker-compose.dev.yml` | Compose file the Postgres service lives in (backup script default; set to `docker-compose.prod.yml` on a prod host). |
-| `POSTGRES_SERVICE` | `api-postgres` | Compose service name to `docker exec` into (backup script default; `hospital-postgres` on prod). |
+| `COMPOSE_FILE` | `docker-compose.prod.yml` | Compose file the Postgres service lives in — defaults to prod since the nightly cron entry is the script's real usage; override to `docker-compose.dev.yml` for a local test run. |
+| `POSTGRES_SERVICE` | `postgres` | Compose **service name** (not container name) to `docker compose exec` into — `docker-compose.prod.yml`'s Postgres service is `postgres` (its `container_name` is `hospital-postgres`, which `docker compose exec` does not take); override to `api-postgres` for `docker-compose.dev.yml`. |
 | `POSTGRES_USER` | `hospital_db_user` | Matches `DB_USERNAME`. |
 | `POSTGRES_DB` | `hospital_db` | Matches `DB_DATABASE`. |
 | `BACKUP_DIR` | `./backups` | Local working directory for dump files before/after upload. |

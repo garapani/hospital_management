@@ -121,9 +121,11 @@ RPO until it's enabled and drilled at least once.
 ```bash
 aws s3 cp s3://$S3_BUCKET/$S3_PREFIX/<filename>.dump.gz ./restore.dump.gz
 gunzip ./restore.dump.gz
-docker compose -f docker-compose.dev.yml exec -T api-postgres \
+docker compose -f docker-compose.prod.yml exec -T postgres \
   pg_restore -U hospital_db_user -d hospital_db --clean --if-exists < ./restore.dump
 ```
+(Substitute `docker-compose.dev.yml`/`api-postgres` if rehearsing this against a local dev stack
+instead of the actual production host.)
 `--clean --if-exists` drops existing objects before recreating them, so this is safe to run
 against a database that already has stale or corrupt data in it.
 
@@ -132,30 +134,36 @@ against a database that already has stale or corrupt data in it.
 Restores exactly one tenant's schema without touching any other tenant or the platform's `public`
 schema:
 ```bash
-docker compose -f docker-compose.dev.yml exec -T api-postgres \
+docker compose -f docker-compose.prod.yml exec -T postgres \
   pg_restore -U hospital_db_user -d hospital_db --schema=tenant_<hospitalId> --clean --if-exists < ./restore.dump
 ```
 
 ### Monthly restore-drill procedure
 
 Once a month, prove a real backup actually restores:
+Runs against the actual production Postgres instance — the whole point is proving a real
+production backup restores cleanly on the real production Postgres version/config, not a
+same-shaped dev one. It's still safe: everything below targets a throwaway `restore_drill_scratch`
+database, never the live `hospital_db`. (Substitute `docker-compose.dev.yml`/`api-postgres` if
+rehearsing this against a local dev stack instead.)
+
 1. Restore the latest dump into a scratch database:
    ```bash
-   docker compose -f docker-compose.dev.yml exec -T api-postgres createdb -U hospital_db_user restore_drill_scratch
-   docker compose -f docker-compose.dev.yml exec -T api-postgres \
+   docker compose -f docker-compose.prod.yml exec -T postgres createdb -U hospital_db_user restore_drill_scratch
+   docker compose -f docker-compose.prod.yml exec -T postgres \
      pg_restore -U hospital_db_user -d restore_drill_scratch --clean --if-exists < ./restore.dump
    ```
 2. Run smoke queries confirming non-zero row counts on both a platform table and at least one
    tenant schema:
    ```bash
-   docker compose -f docker-compose.dev.yml exec -T api-postgres \
+   docker compose -f docker-compose.prod.yml exec -T postgres \
      psql -U hospital_db_user -d restore_drill_scratch -c "SELECT count(*) FROM public.tenants;"
-   docker compose -f docker-compose.dev.yml exec -T api-postgres \
+   docker compose -f docker-compose.prod.yml exec -T postgres \
      psql -U hospital_db_user -d restore_drill_scratch -c "SELECT count(*) FROM tenant_<any-known-tenant-id>.patients;"
    ```
 3. Drop the scratch database:
    ```bash
-   docker compose -f docker-compose.dev.yml exec -T api-postgres dropdb -U hospital_db_user restore_drill_scratch
+   docker compose -f docker-compose.prod.yml exec -T postgres dropdb -U hospital_db_user restore_drill_scratch
    ```
 4. Log the result below.
 
@@ -195,9 +203,11 @@ data volume — add a second bind mount for the archive directory):
 4. Take a fresh base backup once archiving is confirmed running (check `archive_command` is
    succeeding — no `.ready` files piling up in `pg_wal/archive_status/` inside the container):
    ```bash
-   docker compose -f docker-compose.dev.yml exec api-postgres \
+   docker compose -f docker-compose.prod.yml exec postgres \
      pg_basebackup -U hospital_db_user -D /wal-archive/base/$(date +%Y%m%d) -Fp -Xs -P
    ```
+   (Substitute `docker-compose.dev.yml`/`api-postgres` when exercising this against a local dev
+   stack instead of the actual production host.)
 5. Periodically ship `/wal-archive` offsite (same S3 target `backup-db.sh` already uploads to,
    under its own `S3_PREFIX` e.g. `wal-archive`) — a local-only archive volume defeats the purpose
    if the host itself is lost (see "Hardware Failure Recovery" below).
@@ -241,8 +251,7 @@ direction is finalized later, this section needs a follow-up rewrite, not a patc
 3. Clone the repo (`new_hospital`) and check out the commit currently running in production (tag
    or note this as part of your deploy process — not yet formalized; see `pending-tasks.md`'s
    tracked production-infra gap).
-4. Bring up the compose stack: `docker compose -f docker-compose.dev.yml up -d` (update this once
-   a production compose file exists).
+4. Bring up the compose stack: `docker compose -f docker-compose.prod.yml up -d`.
 5. Pull the latest dump from S3 and restore it (see "Restoring from Backup" above) — accept the
    RPO stated there (up to 24h of data since the last nightly backup).
 6. Run the restore-drill smoke queries above against the now-live database to confirm the restore
