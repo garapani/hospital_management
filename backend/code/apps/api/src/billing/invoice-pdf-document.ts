@@ -8,6 +8,7 @@ export interface InvoicePdfLineItem {
   discountAmount: number;
   cgstAmount: number;
   sgstAmount: number;
+  igstAmount: number;
   totalAmount: number;
 }
 
@@ -45,6 +46,7 @@ export function buildInvoicePdfDocument(data: InvoicePdfData): PdfDocumentDefini
       { text: 'Discount', style: 'tableHeader' },
       { text: 'CGST', style: 'tableHeader' },
       { text: 'SGST', style: 'tableHeader' },
+      { text: 'IGST', style: 'tableHeader' },
       { text: 'Amount', style: 'tableHeader' },
     ],
     ...data.items.map((item) => [
@@ -55,6 +57,7 @@ export function buildInvoicePdfDocument(data: InvoicePdfData): PdfDocumentDefini
       money(item.discountAmount),
       money(item.cgstAmount),
       money(item.sgstAmount),
+      money(item.igstAmount),
       money(item.totalAmount),
     ]),
   ];
@@ -82,7 +85,7 @@ export function buildInvoicePdfDocument(data: InvoicePdfData): PdfDocumentDefini
       {
         table: {
           headerRows: 1,
-          widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+          widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
           body: itemTableBody,
         },
       },

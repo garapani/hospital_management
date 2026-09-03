@@ -9,6 +9,7 @@ import { CreateCashierShifts3000000000005 } from './0100-create-cashier-shifts.j
 import { AddPaymentTransactionReference3000000000006 } from './0101-add-payment-transaction-reference.js';
 import { AddPharmacyWalkInSale3000000000007 } from './0102-add-pharmacy-walk-in-sale.js';
 import { CreateOutboxEvents3000000000008 } from './0103-create-outbox-events.js';
+import { AddGstStateFields3000000000009 } from './0104-add-gst-state-fields.js';
 
 // Platform-level migrations: create shared/public-schema tables (RBAC catalog, tenant registry).
 // Run once by migrate.ts. Never replayed per-tenant schema.
@@ -41,4 +42,5 @@ export const TENANT_MIGRATIONS = [
   AddPaymentTransactionReference3000000000006,
   AddPharmacyWalkInSale3000000000007,
   CreateOutboxEvents3000000000008,
+  AddGstStateFields3000000000009,
 ];

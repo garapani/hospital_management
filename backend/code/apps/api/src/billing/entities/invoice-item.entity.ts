@@ -36,6 +36,12 @@ export class InvoiceItem {
   @Column({ type: 'numeric', precision: 12, scale: 2, default: 0, transformer: numericTransformer })
   sgstAmount!: number;
 
+  // Exactly one of (cgstAmount+sgstAmount) or igstAmount is ever nonzero for a given line — see
+  // InvoicesService.isInterStateSupply/gst-tax-split.util.ts. Never both: GST law charges either
+  // CGST+SGST (intra-state) or IGST (inter-state), not a mix.
+  @Column({ type: 'numeric', precision: 12, scale: 2, default: 0, transformer: numericTransformer })
+  igstAmount!: number;
+
   @Column({ type: 'numeric', precision: 12, scale: 2, transformer: numericTransformer })
   totalAmount!: number;
 

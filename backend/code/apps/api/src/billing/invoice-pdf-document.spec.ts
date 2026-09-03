@@ -22,6 +22,7 @@ describe('buildInvoicePdfDocument', () => {
         discountAmount: 0,
         cgstAmount: 45,
         sgstAmount: 45,
+        igstAmount: 0,
         totalAmount: 590,
       },
     ],
@@ -64,6 +65,7 @@ describe('buildInvoicePdfDocument', () => {
       '₹0.00',
       '₹45.00',
       '₹45.00',
+      '₹0.00',
       '₹590.00',
     ]);
   });

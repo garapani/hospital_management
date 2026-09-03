@@ -12,6 +12,7 @@ import { PatientNumberGeneratorService } from '../patients/patient-number-genera
 import { AccountsService } from '../accounts/accounts.service.js';
 import { PdfService } from '@hospital/pdf';
 import { InvoicesService } from '../billing/invoices.service.js';
+import { BillingSettingsService } from '../billing/billing-settings.service.js';
 import { AccountingService } from '../accounting/accounting.service.js';
 import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
 import { Invoice } from '../billing/entities/invoice.entity.js';
@@ -29,9 +30,11 @@ describe('PharmacyDispensingService (integration)', () => {
   let ordersService: OrdersService;
   let dispensingService: PharmacyDispensingService;
   let patientsService: PatientsService;
+  let billingSettingsService: BillingSettingsService;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'pharmacy_dispensing' });
+    billingSettingsService = new BillingSettingsService(ctx.tenantConnection);
     inventoryCatalogService = new InventoryCatalogService(ctx.tenantConnection);
     ordersService = new OrdersService(ctx.tenantConnection);
     const accountingService = new AccountingService(
@@ -743,6 +746,49 @@ describe('PharmacyDispensingService (integration)', () => {
         ),
       );
       expect(invoice?.totalAmount).toBe(0);
+    });
+
+    it('charges IGST instead of CGST+SGST on a walk-in sale when the patient is out of state', async () => {
+      const patient = await ctx.inTenant(() =>
+        patientsService.create({
+          firstName: 'Walk-In', lastName: 'OutOfState', dateOfBirth: '1990-01-01', gender: 'Female',
+          phoneNumber: '4470000106',
+          addresses: [{ addressType: 'home', state: 'Delhi', stateCode: '07' }],
+        }),
+      );
+      const item = await makePricedDrugItem('otc-igst', 100);
+      await seedBatch(item.id, 'BATCH-OTC-IGST', daysFromNow(30), 10);
+      await ctx.inTenant(() =>
+        billingSettingsService.update({
+          gstin: '27AAAAA0000A1Z5',
+          stateCode: '27', // Maharashtra — different from the patient's Delhi ('07')
+          hospitalLegalName: 'Test Hospital',
+          defaultTaxPercent: 18,
+        }),
+      );
+
+      const dispensing = await withActor(() =>
+        dispensingService.createWalkInSale({ patientId: patient.id, inventoryItemId: item.id, quantity: 1 }),
+      );
+
+      const invoiceItems = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(InvoiceItem).find({ where: { sourceOrderItemId: dispensing.id } }),
+        ),
+      );
+      expect(invoiceItems).toHaveLength(1);
+      expect(invoiceItems[0].cgstAmount).toBe(0);
+      expect(invoiceItems[0].sgstAmount).toBe(0);
+      expect(invoiceItems[0].igstAmount).toBe(18); // 100 * 18%
+
+      await ctx.inTenant(() =>
+        billingSettingsService.update({
+          gstin: '27AAAAA0000A1Z5',
+          stateCode: '27',
+          hospitalLegalName: 'Test Hospital',
+          defaultTaxPercent: 0,
+        }),
+      );
     });
   });
 });

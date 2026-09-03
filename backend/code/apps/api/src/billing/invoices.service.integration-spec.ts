@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { InvoicesService, getFinancialYearStart } from './invoices.service.js';
+import { BillingSettingsService } from './billing-settings.service.js';
 import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { DepositsService } from './deposits.service.js';
@@ -22,6 +23,7 @@ describe('InvoicesService (integration)', () => {
   let invoicesService: InvoicesService;
   let depositsService: DepositsService;
   let accountingService: AccountingService;
+  let billingSettingsService: BillingSettingsService;
 
   beforeAll(async () => {
     ctx = await setupTenantTestContext({ namePrefix: 'invoices_svc' });
@@ -32,6 +34,7 @@ describe('InvoicesService (integration)', () => {
     accountingService = new AccountingService(ctx.tenantConnection, new JournalNumberGeneratorService(ctx.tenantConnection), ctx.tenantContext);
     invoicesService = new InvoicesService(ctx.tenantConnection, ctx.tenantContext, accountingService);
     depositsService = new DepositsService(ctx.tenantConnection, ctx.tenantContext, accountingService);
+    billingSettingsService = new BillingSettingsService(ctx.tenantConnection);
   });
 
   afterAll(() => teardownTenantTestContext(ctx));
@@ -82,6 +85,115 @@ describe('InvoicesService (integration)', () => {
     expect(exemptItem.cgstAmount).toBe(0);
     expect(exemptItem.sgstAmount).toBe(0);
     expect(exemptItem.totalAmount).toBe(500);
+  });
+
+  describe('GST place of supply: IGST vs CGST+SGST', () => {
+    async function setTenantStateCode(stateCode: string) {
+      await ctx.inTenant(() =>
+        billingSettingsService.update({ gstin: '27AAAAA0000A1Z5', stateCode, hospitalLegalName: 'Test Hospital' }),
+      );
+    }
+
+    async function makePatientInState(phoneNumber: string, stateCode: string) {
+      return ctx.inTenant(() =>
+        patientsService.create({
+          firstName: 'Test',
+          lastName: 'Patient',
+          dateOfBirth: '1990-01-01',
+          gender: 'Male',
+          phoneNumber,
+          addresses: [{ addressType: 'home', state: 'Test State', stateCode }],
+        }),
+      );
+    }
+
+    it('charges IGST (no CGST/SGST) when the patient is in a different state than the hospital', async () => {
+      await setTenantStateCode('27'); // Maharashtra
+      const patient = await makePatientInState('5550000080', '07'); // Delhi
+
+      const invoice = await ctx.inTenant(() =>
+        invoicesService.create({
+          patientId: patient.id,
+          createdBy: STAFF_ID,
+          items: [{ description: 'Consultation Fee', unitPrice: 1000, taxPercent: 18 }],
+        }),
+      );
+
+      const item = invoice.items[0];
+      expect(item.cgstAmount).toBe(0);
+      expect(item.sgstAmount).toBe(0);
+      expect(item.igstAmount).toBe(180);
+      expect(item.totalAmount).toBe(1180);
+      // Total tax is identical either way — only the ledger-bucket split changes.
+      expect(invoice.taxAmount).toBe(180);
+    });
+
+    it('charges CGST+SGST (no IGST) when the patient is in the same state as the hospital', async () => {
+      await setTenantStateCode('27');
+      const patient = await makePatientInState('5550000081', '27');
+
+      const invoice = await ctx.inTenant(() =>
+        invoicesService.create({
+          patientId: patient.id,
+          createdBy: STAFF_ID,
+          items: [{ description: 'Consultation Fee', unitPrice: 1000, taxPercent: 18 }],
+        }),
+      );
+
+      const item = invoice.items[0];
+      expect(item.cgstAmount).toBe(90);
+      expect(item.sgstAmount).toBe(90);
+      expect(item.igstAmount).toBe(0);
+      expect(invoice.taxAmount).toBe(180);
+    });
+
+    it('defaults to CGST+SGST when the patient has no stateCode on file', async () => {
+      await setTenantStateCode('27');
+      const patient = await makePatient(ctx, '5550000082'); // no addresses at all
+
+      const invoice = await ctx.inTenant(() =>
+        invoicesService.create({
+          patientId: patient.id,
+          createdBy: STAFF_ID,
+          items: [{ description: 'Consultation Fee', unitPrice: 1000, taxPercent: 18 }],
+        }),
+      );
+
+      const item = invoice.items[0];
+      expect(item.cgstAmount).toBe(90);
+      expect(item.sgstAmount).toBe(90);
+      expect(item.igstAmount).toBe(0);
+    });
+
+    it('applies the same IGST treatment to every line on a multi-line inter-state invoice', async () => {
+      await setTenantStateCode('27');
+      const patient = await makePatientInState('5550000083', '07');
+
+      const invoice = await ctx.inTenant(() =>
+        invoicesService.create({
+          patientId: patient.id,
+          createdBy: STAFF_ID,
+          items: [
+            { description: 'Consultation Fee', unitPrice: 500, taxPercent: 18 },
+            { description: 'Lab Panel', unitPrice: 1000, taxPercent: 12 },
+            { description: 'Exempt Supply', unitPrice: 200, taxPercent: 0 },
+          ],
+        }),
+      );
+
+      expect(invoice.items).toHaveLength(3);
+      for (const item of invoice.items) {
+        expect(item.cgstAmount).toBe(0);
+        expect(item.sgstAmount).toBe(0);
+      }
+      const consultation = invoice.items.find((item) => item.taxPercent === 18)!;
+      expect(consultation.igstAmount).toBe(90);
+      const labPanel = invoice.items.find((item) => item.taxPercent === 12)!;
+      expect(labPanel.igstAmount).toBe(120);
+      const exempt = invoice.items.find((item) => item.taxPercent === 0)!;
+      expect(exempt.igstAmount).toBe(0);
+      expect(invoice.taxAmount).toBe(210); // 90 + 120 + 0, matching the summed igstAmounts
+    });
   });
 
   it('rejects an invoice with an empty items array', async () => {

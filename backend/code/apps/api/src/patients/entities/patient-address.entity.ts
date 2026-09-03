@@ -22,6 +22,13 @@ export class PatientAddress extends SoftDeletableEntity {
   @Column({ type: 'varchar', length: 100, nullable: true })
   state!: string | null;
 
+  // 2-digit GST state code (e.g. '27') — distinct from `state` above (a free-text name): GST
+  // place-of-supply determination needs an exact, compact-comparable code, matching
+  // BillingSettings.stateCode's shape. Nullable: unknown until the caller supplies it, and billing
+  // treats "unknown" as same-state (CGST+SGST) rather than guessing.
+  @Column({ type: 'varchar', length: 2, nullable: true })
+  stateCode!: string | null;
+
   @Column({ type: 'varchar', length: 20, nullable: true })
   postalCode!: string | null;
 

@@ -43,6 +43,7 @@ export class InvoiceExportService {
           discountAmount: item.discountAmount,
           cgstAmount: item.cgstAmount,
           sgstAmount: item.sgstAmount,
+          igstAmount: item.igstAmount,
           totalAmount: item.totalAmount,
         })),
         subtotal: invoice.subtotal,

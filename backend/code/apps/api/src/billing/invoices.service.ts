@@ -9,6 +9,7 @@ import { Patient } from '../patients/entities/patient.entity.js';
 import { Deposit } from './entities/deposit.entity.js';
 import { Return } from './entities/return.entity.js';
 import { roundMoney } from './money.util.js';
+import { splitGstTax } from './gst-tax-split.util.js';
 import { paginate, PaginatedResponseDto, PaginationQueryDto } from '@hospital/pagination';
 import { withAdvisoryLock } from '../database/advisory-lock.util.js';
 import { AccountingService } from '../accounting/accounting.service.js';
@@ -141,6 +142,10 @@ export class InvoicesService {
       }
 
       const { invoiceNumber, financialYear } = await this.generateInvoiceNumber(manager);
+      // One place-of-supply per invoice, not per line: every line on this invoice is for the same
+      // patient, so they share the same inter-state determination (see isInterStateSupply's doc
+      // comment for what "unknown" defaults to).
+      const isInterState = await this.isInterStateSupply(manager, input.patientId);
 
       let subtotal = 0;
       let discountAmount = 0;
@@ -155,8 +160,7 @@ export class InvoicesService {
         const lineTaxable = roundMoney(lineSubtotal - lineDiscount);
         const taxPercent = item.taxPercent ?? 0;
         const lineTax = roundMoney(lineTaxable * (taxPercent / 100));
-        const cgstAmount = roundMoney(lineTax / 2);
-        const sgstAmount = roundMoney(lineTax - cgstAmount);
+        const { cgstAmount, sgstAmount, igstAmount } = splitGstTax(lineTax, isInterState);
         const lineTotal = roundMoney(lineTaxable + lineTax);
 
         subtotal = roundMoney(subtotal + lineSubtotal);
@@ -175,6 +179,7 @@ export class InvoicesService {
           taxPercent,
           cgstAmount,
           sgstAmount,
+          igstAmount,
           totalAmount: lineTotal,
         };
       });
@@ -187,6 +192,7 @@ export class InvoicesService {
           sourceAdmissionId: input.sourceAdmissionId ?? null,
           invoiceNumber,
           financialYear,
+          isInterStateSupply: isInterState,
           subtotal,
           discountAmount,
           taxableAmount,
@@ -433,7 +439,9 @@ export class InvoicesService {
 
     invoice.subtotal = roundMoney(invoice.subtotal - invoiceItem.unitPrice * invoiceItem.quantity);
     invoice.taxableAmount = roundMoney(invoice.taxableAmount - invoiceItem.unitPrice * invoiceItem.quantity);
-    invoice.taxAmount = roundMoney(invoice.taxAmount - (invoiceItem.cgstAmount + invoiceItem.sgstAmount));
+    invoice.taxAmount = roundMoney(
+      invoice.taxAmount - (invoiceItem.cgstAmount + invoiceItem.sgstAmount + invoiceItem.igstAmount),
+    );
     invoice.totalAmount = roundMoney(invoice.subtotal - invoice.discountAmount + invoice.taxAmount);
     await invoiceRepository.save(invoice);
 
@@ -494,7 +502,19 @@ export class InvoicesService {
       order: { createdAt: 'DESC' },
       lock: { mode: 'pessimistic_write' },
     });
-    const invoice = openInvoice ?? (await this.createCaptureInvoice(manager, input.patientId, input.completedBy));
+    // Place of supply is resolved once, at invoice-creation time, and reused for every line ever
+    // appended to that invoice (see Invoice.isInterStateSupply's doc comment) — never recomputed
+    // per captured line. Skips the isInterStateSupply lookup entirely for the common case of
+    // appending to an already-open invoice, both for correctness and because it would otherwise
+    // run on every captured charge while this method already holds the invoice row lock.
+    const invoice =
+      openInvoice ??
+      (await this.createCaptureInvoice(
+        manager,
+        input.patientId,
+        await this.isInterStateSupply(manager, input.patientId),
+        input.completedBy,
+      ));
 
     const unitPrice = roundMoney(input.priceRaw);
     const quantity = input.quantity ?? 1;
@@ -510,8 +530,7 @@ export class InvoicesService {
     );
     const taxPercent = settingsRows.length > 0 ? Number(settingsRows[0].defaultTaxPercent) : 0;
     const lineTax = roundMoney((lineSubtotal * taxPercent) / 100);
-    const cgstAmount = roundMoney(lineTax / 2);
-    const sgstAmount = roundMoney(lineTax - cgstAmount);
+    const { cgstAmount, sgstAmount, igstAmount } = splitGstTax(lineTax, invoice.isInterStateSupply);
     const lineTotal = roundMoney(lineSubtotal + lineTax);
 
     const invoiceItem = await manager.getRepository(InvoiceItem).save(
@@ -525,6 +544,7 @@ export class InvoicesService {
         taxPercent,
         cgstAmount,
         sgstAmount,
+        igstAmount,
         totalAmount: lineTotal,
       }),
     );
@@ -585,9 +605,49 @@ export class InvoicesService {
     return { captured: true };
   }
 
+  /**
+   * GST place of supply: inter-state when the hospital's registered state
+   * (`billing_settings.stateCode`) differs from the patient's (`patient_addresses.stateCode`,
+   * the first address row that has one set — an invoice is for one patient, so every line on it
+   * shares the same determination; called once per invoice, at creation, and snapshotted onto
+   * `Invoice.isInterStateSupply` — see that column's doc comment for why it's never recomputed
+   * per line). Defaults to `false` (same-state, i.e. today's pre-existing CGST+SGST behavior)
+   * whenever either side is unknown — a hospital or patient without a state code on file is
+   * unpriced-tax territory the same way an item with no price is unpriced, not a reason to guess.
+   */
+  private async isInterStateSupply(manager: EntityManager, patientId: string): Promise<boolean> {
+    const settingsRows: { stateCode: string | null }[] = await manager.query(
+      `SELECT "stateCode" FROM billing_settings WHERE id = 'default'`,
+    );
+    const tenantStateCode = settingsRows[0]?.stateCode ?? null;
+    if (!tenantStateCode) {
+      return false;
+    }
+
+    // "id" ASC breaks ties on "createdAt": every address a single create()/update() call inserts
+    // shares that call's transaction timestamp exactly (patients.service.ts recreates the whole
+    // address set in one transaction), so ORDER BY "createdAt" alone doesn't reliably mean
+    // "the oldest one" — it can return a different row on every call. "id" is a random uuid, so
+    // this doesn't encode any real preference either, but it does make repeated calls against the
+    // same data deterministic instead of depending on physical row order.
+    const addressRows: { stateCode: string | null }[] = await manager.query(
+      `SELECT "stateCode" FROM patient_addresses
+       WHERE "patientId" = $1 AND "stateCode" IS NOT NULL AND "deletedAt" IS NULL
+       ORDER BY "createdAt" ASC, "id" ASC LIMIT 1`,
+      [patientId],
+    );
+    const patientStateCode = addressRows[0]?.stateCode ?? null;
+    if (!patientStateCode) {
+      return false;
+    }
+
+    return tenantStateCode !== patientStateCode;
+  }
+
   private async createCaptureInvoice(
     manager: EntityManager,
     patientId: string,
+    isInterStateSupply: boolean,
     completedBy?: string,
   ): Promise<Invoice> {
     const { invoiceNumber, financialYear } = await this.generateInvoiceNumber(manager);
@@ -601,6 +661,7 @@ export class InvoicesService {
         patientId,
         invoiceNumber,
         financialYear,
+        isInterStateSupply,
         subtotal: 0,
         discountAmount: 0,
         taxableAmount: 0,

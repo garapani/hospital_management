@@ -29,6 +29,13 @@ export class CreatePatientAddressDto {
   @IsString()
   state?: string;
 
+  // 2-digit GST state code, e.g. '27' — used for GST place-of-supply (CGST+SGST vs IGST)
+  // determination, distinct from the free-text `state` above.
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{2}$/, { message: 'stateCode must be a 2-digit GST state code' })
+  stateCode?: string;
+
   @IsOptional()
   @IsString()
   postalCode?: string;

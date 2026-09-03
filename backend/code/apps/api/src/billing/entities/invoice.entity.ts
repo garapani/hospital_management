@@ -43,6 +43,15 @@ export class Invoice extends SoftDeletableEntity {
   @Column({ type: 'varchar', length: 20, default: 'Unpaid' })
   status!: string;
 
+  // GST place of supply, snapshotted at invoice creation (InvoicesService.isInterStateSupply) and
+  // reused for every line ever appended to this invoice — never recomputed per line. A
+  // charge-capture invoice can accumulate lines across several separate completions while it stays
+  // Unpaid/PartiallyPaid, and the patient's on-file address can change in between; without this
+  // snapshot a single invoice could end up with some lines CGST+SGST and others IGST, which isn't a
+  // valid GST document (one invoice has exactly one place of supply).
+  @Column({ type: 'boolean', default: false })
+  isInterStateSupply!: boolean;
+
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
 }

@@ -375,6 +375,103 @@ describe('Charge capture (integration) — order-item completion auto-charges th
     );
   });
 
+  it('charges IGST instead of CGST+SGST on a captured line when the patient is out of state', async () => {
+    const patient = await inTenant(() =>
+      patientsService.create({
+        firstName: 'Capture',
+        lastName: 'OutOfState',
+        dateOfBirth: '1990-01-01',
+        gender: 'Female',
+        phoneNumber: '5560000015',
+        addresses: [{ addressType: 'home', state: 'Delhi', stateCode: '07' }],
+      }),
+    );
+    const test = await makePricedLabTest('IGST CBC', 'IGST-CBC', 300);
+
+    await inTenant(() =>
+      billingSettingsService.update({
+        gstin: '27AAAAA0000A1Z5',
+        stateCode: '27', // Maharashtra — different from the patient's Delhi ('07')
+        hospitalLegalName: 'Tax Hospital Pvt Ltd',
+        defaultTaxPercent: 18,
+      }),
+    );
+
+    await completeLabOrderItem(patient.id, test);
+
+    const invoice = (await inTenant(() => invoicesService.list({ patientId: patient.id }))).data[0];
+    expect(invoice.taxAmount).toBe(54); // same total tax as the intra-state case — only the split changes
+
+    const items = await invoiceItemsFor(invoice.id);
+    expect(items[0].cgstAmount).toBe(0);
+    expect(items[0].sgstAmount).toBe(0);
+    expect(items[0].igstAmount).toBe(54);
+    expect(items[0].totalAmount).toBe(354);
+
+    await inTenant(() =>
+      billingSettingsService.update({
+        gstin: '27AAAAA0000A1Z5',
+        stateCode: '27',
+        hospitalLegalName: 'Tax Hospital Pvt Ltd',
+        defaultTaxPercent: 0,
+      }),
+    );
+  });
+
+  it('keeps an already-open invoice on its original IGST/CGST+SGST split even if the patient\'s address changes before the next captured line appends to it', async () => {
+    const patient = await inTenant(() =>
+      patientsService.create({
+        firstName: 'Capture',
+        lastName: 'AddressChange',
+        dateOfBirth: '1990-01-01',
+        gender: 'Female',
+        phoneNumber: '5560000016',
+        addresses: [{ addressType: 'home', state: 'Delhi', stateCode: '07' }],
+      }),
+    );
+    const testA = await makePricedLabTest('Snapshot CBC A', 'SNAP-CBC-A', 100);
+    const testB = await makePricedLabTest('Snapshot CBC B', 'SNAP-CBC-B', 100);
+
+    await inTenant(() =>
+      billingSettingsService.update({
+        gstin: '27AAAAA0000A1Z5',
+        stateCode: '27', // Maharashtra — patient is Delhi, so this first capture is inter-state
+        hospitalLegalName: 'Tax Hospital Pvt Ltd',
+        defaultTaxPercent: 18,
+      }),
+    );
+    await completeLabOrderItem(patient.id, testA);
+
+    // Patient's on-file address now matches the hospital's state — if place of supply were
+    // recomputed per line instead of snapshotted once at invoice creation, the second capture
+    // below would wrongly switch to CGST+SGST on the same invoice as the first line's IGST.
+    await inTenant(() =>
+      patientsService.update(patient.id, {
+        addresses: [{ addressType: 'home', state: 'Maharashtra', stateCode: '27' }],
+      }),
+    );
+    await completeLabOrderItem(patient.id, testB);
+
+    const invoice = (await inTenant(() => invoicesService.list({ patientId: patient.id }))).data[0];
+    const items = await invoiceItemsFor(invoice.id);
+    expect(items).toHaveLength(2); // both lines landed on the same invoice
+
+    for (const item of items) {
+      expect(item.igstAmount).toBe(18); // 100 * 18%
+      expect(item.cgstAmount).toBe(0);
+      expect(item.sgstAmount).toBe(0);
+    }
+
+    await inTenant(() =>
+      billingSettingsService.update({
+        gstin: '27AAAAA0000A1Z5',
+        stateCode: '27',
+        hospitalLegalName: 'Tax Hospital Pvt Ltd',
+        defaultTaxPercent: 0,
+      }),
+    );
+  });
+
   it('cancelling a taxed charge-captured invoice reverses the full line total including tax', async () => {
     const patient = await makePatient('5560000014');
     const test = await makePricedLabTest('Taxed Cancel CBC', 'TAX-CAN-CBC', 200);
