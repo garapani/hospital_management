@@ -17,6 +17,40 @@ services:
       timeout: 5s
       retries: 10
 
+  # Nightly automated backup: dumps hospital_db (all tenant schemas + public), validates,
+  # gzips, and optionally uploads to S3. Runs on its own schedule inside the stack (see
+  # scripts/backup-cron-entrypoint.sh) — an alternative to the host-cron + scripts/backup-db.sh
+  # approach documented in Deployment-Guide.md "Backup Configuration", not a replacement for it;
+  # use whichever fits the deployment (this one needs no access to the host running compose).
+  backup:
+    build:
+      context: .
+      dockerfile: deploy/backup/Dockerfile
+    image: hospital-backup:latest
+    container_name: hospital-backup
+    restart: always
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      POSTGRES_USER: hospital_db_user
+      POSTGRES_DB: hospital_db
+      DB_PASSWORD: "${DB_PASSWORD:?Error: DB_PASSWORD environment variable is required}"
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: "${BACKUP_RETENTION_DAYS:-30}"
+      BACKUP_HOUR_UTC: "${BACKUP_HOUR_UTC:-2}"
+      S3_BUCKET: "${S3_BUCKET:-}"
+      S3_PREFIX: "${S3_PREFIX:-postgres-backups}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+      AWS_DEFAULT_REGION: "${AWS_DEFAULT_REGION:-ap-south-1}"
+    volumes:
+      - ../../../../data/hospital/backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hospital-network
+
   redis:
     image: redis:7
     container_name: hospital-redis
