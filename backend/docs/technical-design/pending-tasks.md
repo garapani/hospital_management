@@ -240,14 +240,22 @@ scope, not merely lower priority.
    Redis + MinIO + API with a published port, plus a one-shot `migrate` service); `Deployment-Guide.md`
    documents the containerized path. Also fixed the Runbook's `afterTransactionCommit`/rollback-sandbox claims, which
    don't exist anywhere in the codebase.
-- [ ] **Unpaginated endpoints audit.** 8 list endpoints still return unbounded arrays instead of
-      `@hospital/pagination`'s `PaginationQueryDto`/`paginate()`: `GET /vitals/patient/:patientId`,
-      `GET /inventory/sub-categories/:subCategoryId/items`,
+- [x] **Unpaginated endpoints audit.** **Resolved (2026-09-03):** all 9 flagged list endpoints
+      (`GET /vitals/patient/:patientId`, `GET /inventory/sub-categories/:subCategoryId/items`,
       `GET /inventory/categories/:categoryId/sub-categories`, `GET /inventory/vendors`,
       `GET /departments`, `GET /wards`, `GET /wards/:wardId/beds`, `GET /tenants`,
-      `GET /platform/billing/subscriptions`. Same risk pattern as the pagination work already done
-      elsewhere in this doc — a long-admitted patient or a large pharmacy subcategory returns
-      hundreds/thousands of rows unbounded. Found in the 2026-09-03 external review.
+      `GET /platform/billing/subscriptions`) now use `@hospital/pagination`'s
+      `PaginationQueryDto`/`paginate()`, returning `PaginatedResponseDto<T>`. Frontend: the two
+      with a real unbounded-growth story (vitals-by-patient, inventory items-by-subcategory) and
+      the remaining catalog/dropdown-style ones (departments/wards/beds/vendors/sub-categories/
+      tenants) all keep their existing `Observable<T[]>` API-service signatures — each service
+      requests `limit: 100` and unwraps `.data` internally, so no consuming component changed;
+      `GET /platform/billing/subscriptions` has no frontend consumer yet, backend-only fix.
+      Every internal backend caller (`seed-demo-data.ts`, 5 service-level + 2 controller-level
+      integration specs) updated for the new response shape; 2 specs needed an explicit
+      `limit: 100` where the same suite/file provisions enough rows across its own test run to
+      push a just-created one past the default page-1 window. See `Development-Standards.md`
+      §134. Found in the 2026-09-03 external review.
 
 ## Phase 3 — Production-readiness ops
 

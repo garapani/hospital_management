@@ -4981,3 +4981,50 @@ Two things worth generalizing:
   `permission denied for schema`, while `SELECT gen_random_uuid()` (what every tenant table's
   `id uuid DEFAULT gen_random_uuid()` depends on via the `search_path` fallback to `public`) still
   succeeds — proving the fix revoked `CREATE` without over-correcting into revoking `USAGE` too.
+
+## 134. Adding real pagination to a previously-unbounded endpoint breaks callers in three different, easy-to-miss places
+
+Paginating 9 endpoints (vitals-by-patient, 3 inventory catalog lists, 3 master-data lists, tenants,
+platform subscriptions) surfaced every place a response-shape change (`T[]` → `PaginatedResponseDto<T>`)
+can hide from a plain `tsc --build`:
+
+- **Internal callers typed against the service method** (`seed-demo-data.ts` calling
+  `masterData.listWards()`, `inventoryCatalog.listVendors()`, etc.) — caught immediately by
+  typecheck, since the return type literally changed. Fix is mechanical: add the now-required
+  `query` argument and `.data` before array methods.
+- **Integration specs that call the service directly** (`*.service.integration-spec.ts`) — also
+  caught by typecheck, same fix.
+- **Controller-level specs that go through `supertest`** (`*.controller.integration-spec.ts`) —
+  **not** caught by typecheck, because `request(...).get(...)` responses are typed `any`/loosely
+  cast at the assertion site (`response.body.some(...)`), not against the service's real return
+  type. These only fail at *runtime*, with a `TypeError: ... is not a function` pointing at the
+  array method, not at the actual cause. `master-data.controller.integration-spec.ts` and
+  `tenants.controller.integration-spec.ts` both had this — found only by actually running the full
+  suite after typecheck went green, not by trusting typecheck alone. **Grep for
+  `*.controller.integration-spec.ts` files touching the changed controller before declaring a
+  pagination migration done** — typecheck passing is not sufficient evidence for this class of
+  change.
+- **A spec file that accumulates many rows across its own `it()` blocks** (or across the whole
+  suite, when run in parallel against a shared DB) can push a just-created row past the default
+  page-1 window once a previously-unbounded `find()` becomes a real `paginate()` call — not a bug
+  in the pagination fix, but an assumption the test itself was making that pagination now
+  legitimately breaks. `tenants.service.integration-spec.ts`'s "lists provisioned tenants" test
+  failed this way (`expect(tenants.some(...)).toBe(true)` → `false`, not a type error) purely from
+  accumulated state, both in its own file and — worse — again during a *full-suite* run even after
+  the single-file fix, because other spec files provision tenants concurrently against the same
+  platform DB. Fix: pass an explicit generous `limit` (100, matching the frontend's dropdown-style
+  default below) in the test call rather than relying on the endpoint's default page size — this
+  is a real, expected consequence of removing an endpoint's unbounded-result guarantee, not
+  something to work around by reverting the pagination.
+
+**Frontend-side pattern for a "catalog/dropdown" consumer that doesn't need pager UI**: keep the
+per-domain API service method's existing `Observable<T[]>` signature — request `limit: 100` and
+`.pipe(map((res) => res.data))` inside the service method itself, so the shape change never
+reaches a component. This matches the existing "a per-domain API service wraps `ApiClientService`,
+keeps HTTP-shape knowledge out of components" convention (see the Screen-building-conventions
+section) — a paginated-vs-plain-array response is exactly HTTP-shape knowledge. Reserve exposing
+the full `PaginatedResponse<T>` (as `PatientsApiService.search()` already does) for a screen that
+actually renders pager controls. This absorbed 10 near-identical cascading-dropdown call sites
+(category → sub-category → item pickers across Pharmacy Dispensing, Ward Supply, Stock
+Requisition, Purchase Orders, Inventory Item List) with zero component changes — verified by
+grepping for every consumer of the touched API service methods before editing, not assumed.
