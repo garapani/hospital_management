@@ -2,6 +2,7 @@ import { Body, Controller, Get, Header, Param, Patch, Post, Query, StreamableFil
 import { PermissionGuard, RequirePermission } from '@hospital/auth-guards';
 import { PharmacyDispensingService } from './pharmacy-dispensing.service.js';
 import { CreatePharmacyDispensingDto } from './dto/create-pharmacy-dispensing.dto.js';
+import { CreateWalkInSaleDto } from './dto/create-walk-in-sale.dto.js';
 import { DispenseDrugDto } from './dto/dispense-drug.dto.js';
 import { CancelPharmacyDispensingDto } from './dto/cancel-pharmacy-dispensing.dto.js';
 import { ReversePharmacyDispensingDto } from './dto/reverse-pharmacy-dispensing.dto.js';
@@ -17,6 +18,12 @@ export class PharmacyDispensingController {
   @RequirePermission('pharmacy.dispensing.create')
   async create(@Body() dto: CreatePharmacyDispensingDto) {
     return this.pharmacyDispensingService.createDispensing(dto);
+  }
+
+  @Post('walk-in-sale')
+  @RequirePermission('pharmacy.dispensing.dispense')
+  async createWalkInSale(@Body() dto: CreateWalkInSaleDto) {
+    return this.pharmacyDispensingService.createWalkInSale(dto);
   }
 
   @Get()

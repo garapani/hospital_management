@@ -11,6 +11,12 @@ import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { PdfService } from '@hospital/pdf';
+import { InvoicesService } from '../billing/invoices.service.js';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
+import { Invoice } from '../billing/entities/invoice.entity.js';
+import { InvoiceItem } from '../billing/entities/invoice-item.entity.js';
+import { PharmacyDispensing } from './entities/pharmacy-dispensing.entity.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -28,6 +34,11 @@ describe('PharmacyDispensingService (integration)', () => {
     ctx = await setupTenantTestContext({ namePrefix: 'pharmacy_dispensing' });
     inventoryCatalogService = new InventoryCatalogService(ctx.tenantConnection);
     ordersService = new OrdersService(ctx.tenantConnection);
+    const accountingService = new AccountingService(
+      ctx.tenantConnection,
+      new JournalNumberGeneratorService(ctx.tenantConnection),
+      ctx.tenantContext,
+    );
     dispensingService = new PharmacyDispensingService(
       ctx.tenantConnection,
       new PharmacyDispensingNumberGeneratorService(ctx.tenantConnection),
@@ -36,6 +47,7 @@ describe('PharmacyDispensingService (integration)', () => {
       new FefoStockDecrementService(),
       ctx.tenantContext,
       new PdfService(),
+      new InvoicesService(ctx.tenantConnection, ctx.tenantContext, accountingService),
     );
     patientsService = new PatientsService(
       ctx.tenantConnection,
@@ -516,6 +528,221 @@ describe('PharmacyDispensingService (integration)', () => {
       );
       expect(reversalTransactions).toHaveLength(1);
       expect(reversalTransactions[0].recordedBy).toBe(AUTHENTICATED_ACCOUNT);
+    });
+  });
+
+  describe('createWalkInSale', () => {
+    const WALK_IN_ACCOUNT = '00000000-0000-4000-8000-0000000000bb';
+
+    function withActor<T>(work: () => Promise<T>): Promise<T> {
+      return ctx.tenantContext.run(
+        { tenantId: ctx.tenantId, accountId: WALK_IN_ACCOUNT, correlationId: 'walk-in-sale-test' },
+        work,
+      );
+    }
+
+    async function makePatient(phoneNumber: string) {
+      return ctx.inTenant(() =>
+        patientsService.create({
+          firstName: 'Walk-In', lastName: 'Patient', dateOfBirth: '1990-01-01', gender: 'Female', phoneNumber,
+        }),
+      );
+    }
+
+    async function makePricedDrugItem(suffix: string, salePrice: number) {
+      return ctx.inTenant(async () => {
+        const category = await inventoryCatalogService.createCategory({ name: `WalkIn Category ${suffix}` });
+        const subCategory = await inventoryCatalogService.createSubCategory({
+          categoryId: category.id,
+          name: `WalkIn SubCategory ${suffix}`,
+          isConsumable: true,
+        });
+        return inventoryCatalogService.createItem({
+          subCategoryId: subCategory.id,
+          name: `OTC Drug ${suffix}`,
+          code: `OTC-${suffix}`,
+          unitOfMeasure: 'Tablet',
+          salePrice,
+        });
+      });
+    }
+
+    it('dispenses immediately, decrements stock, and captures a billing charge with no orderItemId', async () => {
+      const patient = await makePatient('4470000100');
+      const item = await makePricedDrugItem('otc-1', 50);
+      const batch = await seedBatch(item.id, 'BATCH-OTC-1', daysFromNow(30), 10);
+
+      const dispensing = await withActor(() =>
+        dispensingService.createWalkInSale({ patientId: patient.id, inventoryItemId: item.id, quantity: 3 }),
+      );
+
+      expect(dispensing.status).toBe('Dispensed');
+      expect(dispensing.orderItemId).toBeNull();
+      expect(dispensing.patientId).toBe(patient.id);
+      expect(dispensing.dispensedBy).toBe(WALK_IN_ACCOUNT);
+
+      const balance = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(StockBalance).findOne({ where: { stockBatchId: batch.id } }),
+        ),
+      );
+      expect(Number(balance?.availableQuantity)).toBe(7);
+
+      const invoiceItems = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(InvoiceItem).find({ where: { sourceOrderItemId: dispensing.id } }),
+        ),
+      );
+      expect(invoiceItems).toHaveLength(1);
+      expect(invoiceItems[0].unitPrice).toBe(50);
+      expect(invoiceItems[0].quantity).toBe(3);
+      expect(invoiceItems[0].description).toBe('OTC Drug otc-1');
+
+      const invoice = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(Invoice).findOne({ where: { id: invoiceItems[0].invoiceId } }),
+        ),
+      );
+      expect(invoice?.patientId).toBe(patient.id);
+      // Quantity must multiply into the charge — 3 units at 50 each, not just 1 unit's price
+      // (this used to be hardcoded to quantity 1 regardless of the actual amount sold).
+      expect(invoice?.totalAmount).toBe(150);
+    });
+
+    it('a repeated identical submit within the dedup window returns the original sale, not a second one', async () => {
+      const patient = await makePatient('4470000104');
+      const item = await makePricedDrugItem('otc-dup', 25);
+      const batch = await seedBatch(item.id, 'BATCH-OTC-DUP', daysFromNow(30), 10);
+
+      const first = await withActor(() =>
+        dispensingService.createWalkInSale({ patientId: patient.id, inventoryItemId: item.id, quantity: 2 }),
+      );
+      const second = await withActor(() =>
+        dispensingService.createWalkInSale({ patientId: patient.id, inventoryItemId: item.id, quantity: 2 }),
+      );
+
+      expect(second.id).toBe(first.id);
+
+      const balance = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(StockBalance).findOne({ where: { stockBatchId: batch.id } }),
+        ),
+      );
+      expect(Number(balance?.availableQuantity)).toBe(8); // decremented once, not twice
+
+      const invoiceItems = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(InvoiceItem).find({ where: { sourceOrderItemId: first.id } }),
+        ),
+      );
+      expect(invoiceItems).toHaveLength(1); // charged once, not twice
+    });
+
+    it('rejects a patient that does not exist', async () => {
+      const item = await makePricedDrugItem('otc-2', 20);
+      await seedBatch(item.id, 'BATCH-OTC-2', daysFromNow(30), 5);
+
+      await expect(
+        withActor(() =>
+          dispensingService.createWalkInSale({
+            patientId: '00000000-0000-0000-0000-000000000000',
+            inventoryItemId: item.id,
+            quantity: 1,
+          }),
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects an inventory item with no sale price, without decrementing stock', async () => {
+      const patient = await makePatient('4470000101');
+      const item = await ctx.inTenant(async () => {
+        const category = await inventoryCatalogService.createCategory({ name: 'WalkIn Category unpriced' });
+        const subCategory = await inventoryCatalogService.createSubCategory({
+          categoryId: category.id, name: 'WalkIn SubCategory unpriced', isConsumable: true,
+        });
+        return inventoryCatalogService.createItem({
+          subCategoryId: subCategory.id, name: 'Unpriced OTC Drug', code: 'OTC-UNPRICED', unitOfMeasure: 'Tablet',
+        });
+      });
+      const batch = await seedBatch(item.id, 'BATCH-OTC-UNPRICED', daysFromNow(30), 5);
+
+      await expect(
+        withActor(() =>
+          dispensingService.createWalkInSale({ patientId: patient.id, inventoryItemId: item.id, quantity: 1 }),
+        ),
+      ).rejects.toThrow(ConflictException);
+
+      const balance = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(StockBalance).findOne({ where: { stockBatchId: batch.id } }),
+        ),
+      );
+      expect(Number(balance?.availableQuantity)).toBe(5); // unchanged: rejected before the sale committed
+
+      const dispensingCount = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(PharmacyDispensing).count({ where: { patientId: patient.id } }),
+        ),
+      );
+      expect(dispensingCount).toBe(0); // the whole sale rolled back, not just the stock decrement
+    });
+
+    it('rejects insufficient stock', async () => {
+      const patient = await makePatient('4470000102');
+      const item = await makePricedDrugItem('otc-3', 10);
+      await seedBatch(item.id, 'BATCH-OTC-3', daysFromNow(30), 2);
+
+      await expect(
+        withActor(() =>
+          dispensingService.createWalkInSale({ patientId: patient.id, inventoryItemId: item.id, quantity: 5 }),
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a deactivated inventory item', async () => {
+      const patient = await makePatient('4470000103');
+      const item = await makePricedDrugItem('otc-4', 10);
+      await ctx.inTenant(() => inventoryCatalogService.deactivateItem(item.id));
+
+      await expect(
+        withActor(() =>
+          dispensingService.createWalkInSale({ patientId: patient.id, inventoryItemId: item.id, quantity: 1 }),
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('reverseDispensing voids the walk-in charge along with the stock credit', async () => {
+      const patient = await makePatient('4470000105');
+      const item = await makePricedDrugItem('otc-reverse', 40);
+      const batch = await seedBatch(item.id, 'BATCH-OTC-REVERSE', daysFromNow(30), 10);
+
+      const dispensing = await withActor(() =>
+        dispensingService.createWalkInSale({ patientId: patient.id, inventoryItemId: item.id, quantity: 2 }),
+      );
+
+      const reversed = await withActor(() => dispensingService.reverseDispensing(dispensing.id));
+      expect(reversed.status).toBe('Reversed');
+
+      const balance = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(StockBalance).findOne({ where: { stockBatchId: batch.id } }),
+        ),
+      );
+      expect(Number(balance?.availableQuantity)).toBe(10); // credited back
+
+      const invoiceItems = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(InvoiceItem).find({ where: { sourceOrderItemId: dispensing.id } }),
+        ),
+      );
+      expect(invoiceItems).toHaveLength(0); // charge voided, not just left dangling
+
+      const invoice = await ctx.inTenant(() =>
+        ctx.tenantConnection.runInTenantSchema((manager) =>
+          manager.getRepository(Invoice).findOne({ where: { patientId: patient.id } }),
+        ),
+      );
+      expect(invoice?.totalAmount).toBe(0);
     });
   });
 });

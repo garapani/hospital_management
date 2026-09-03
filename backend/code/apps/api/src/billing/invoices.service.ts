@@ -285,6 +285,7 @@ export class InvoicesService {
 
     let price: number | null = null;
     let description = orderItem.itemDescription;
+    let quantity = 1;
     if (orderItem.itemType === 'Lab') {
       const rows = await manager.query(
         `SELECT t.price, t.name FROM lab_requisitions r JOIN lab_tests t ON t.id = r."testId"
@@ -306,14 +307,18 @@ export class InvoicesService {
         description = rows[0].name;
       }
     } else if (orderItem.itemType === 'Pharmacy') {
+      // Quantity flows into the charge (not just the price): dispensing a strip of 10 tablets
+      // must bill for 10, not 1 — pd.quantity is the actual dispensed amount, unlike Lab/
+      // Radiology where a requisition/study is always a single billable unit.
       const rows = await manager.query(
-        `SELECT i."salePrice", i.name FROM pharmacy_dispensings pd JOIN inventory_items i ON i.id = pd."inventoryItemId"
+        `SELECT i."salePrice", i.name, pd.quantity FROM pharmacy_dispensings pd JOIN inventory_items i ON i.id = pd."inventoryItemId"
          WHERE pd."orderItemId" = $1 AND pd.status != 'Cancelled' ORDER BY pd."createdAt" DESC LIMIT 1`,
         [orderItem.id],
       );
       if (rows.length > 0) {
         price = rows[0].salePrice === null ? null : Number(rows[0].salePrice);
         description = rows[0].name;
+        quantity = Number(rows[0].quantity);
       }
     } else {
       return { captured: false, reason: `unsupported itemType ${orderItem.itemType}` };
@@ -323,6 +328,160 @@ export class InvoicesService {
       return { captured: false, reason: 'unpriced' };
     }
 
+    return this.postChargeCapture(manager, {
+      patientId,
+      sourceId: orderItem.id,
+      description,
+      priceRaw: price,
+      quantity,
+      completedBy: orderItem.completedBy,
+    });
+  }
+
+  /**
+   * OTC/walk-in pharmacy sale: dispensing with no doctor's order behind it (PharmacyDispensingService
+   * .createWalkInSale), so there is no order_items row for ChargeCaptureSubscriber to key off — the
+   * caller invokes this directly, in the same transaction as the stock decrement. Unlike
+   * captureChargeForOrderItem (best-effort — a billing gap must never block a clinical completion),
+   * an unpriced item here throws: a walk-in sale IS the billing event, so letting stock walk out
+   * uncharged would be a straight revenue leak, not a deferred capture. Reuses
+   * `sourceOrderItemId`/`UQ_invoice_items_source_order_item` as a generic "source record id"
+   * idempotency guard (see the column's other callers) — for this path it holds the
+   * PharmacyDispensing id rather than an order_items id, which the constraint doesn't distinguish.
+   */
+  async captureChargeForWalkInPharmacySale(
+    manager: EntityManager,
+    input: {
+      patientId: string;
+      dispensingId: string;
+      inventoryItemId: string;
+      quantity: number;
+      completedBy?: string;
+    },
+  ): Promise<{ captured: boolean }> {
+    await withAdvisoryLock(manager, `charge_capture:${input.patientId}`);
+
+    const alreadyCharged = await manager.query(
+      `SELECT 1 FROM invoice_items WHERE "sourceOrderItemId" = $1 LIMIT 1`,
+      [input.dispensingId],
+    );
+    if (alreadyCharged.length > 0) {
+      // Unreachable in practice — dispensingId is a freshly generated uuid every call — but a
+      // walk-in sale must never leave stock uncharged, so this can't silently no-op like the
+      // best-effort order-routed path does for the same condition.
+      throw new ConflictException(`Dispensing ${input.dispensingId} already has a captured charge`);
+    }
+
+    const rows = await manager.query(`SELECT "salePrice", name FROM inventory_items WHERE id = $1`, [
+      input.inventoryItemId,
+    ]);
+    if (rows.length === 0) {
+      throw new NotFoundException(`Inventory item ${input.inventoryItemId} not found`);
+    }
+    const price = rows[0].salePrice === null ? null : Number(rows[0].salePrice);
+    if (price === null) {
+      throw new ConflictException(
+        `Inventory item ${input.inventoryItemId} has no sale price; cannot complete a walk-in sale`,
+      );
+    }
+
+    return this.postChargeCapture(manager, {
+      patientId: input.patientId,
+      sourceId: input.dispensingId,
+      description: rows[0].name as string,
+      priceRaw: price,
+      quantity: input.quantity,
+      completedBy: input.completedBy,
+      failLoud: true,
+    });
+  }
+
+  /**
+   * Voids the invoice line + reverses the AR/revenue journal a walk-in pharmacy sale posted
+   * (PharmacyDispensingService.reverseDispensing, walk-in path only). Order-routed reversals stay
+   * stock-only by design (a resulting invoice correction goes through the normal staff-initiated
+   * createReturn, since a payment is the common case by the time anyone reverses one) — but a
+   * walk-in sale is typically reversed within seconds of the sale, almost always before any
+   * payment is recorded, and createReturn refuses to run against an invoice with no recorded
+   * payments ("use cancel instead"), which would force cancelling the patient's entire open
+   * invoice just to undo one line. Scoped narrowly: only ever called for a line this same service
+   * created via captureChargeForWalkInPharmacySale, found by the same sourceOrderItemId key.
+   */
+  async voidWalkInPharmacySaleCharge(manager: EntityManager, dispensingId: string): Promise<void> {
+    const invoiceItem = await manager.getRepository(InvoiceItem).findOne({
+      where: { sourceOrderItemId: dispensingId },
+    });
+    if (!invoiceItem) {
+      return; // Charge capture itself must have failed/never ran — nothing to void.
+    }
+
+    const invoiceRepository = manager.getRepository(Invoice);
+    const invoice = await invoiceRepository.findOne({
+      where: { id: invoiceItem.invoiceId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!invoice) {
+      throw new Error(`Invariant violation: invoice ${invoiceItem.invoiceId} for invoice item ${invoiceItem.id} not found`);
+    }
+    if (invoice.paidAmount > 0) {
+      throw new ConflictException(
+        `Invoice ${invoice.id} already has a payment recorded against it; cannot auto-void the walk-in sale line — use a manual return instead`,
+      );
+    }
+
+    await manager.getRepository(InvoiceItem).delete({ id: invoiceItem.id });
+
+    invoice.subtotal = roundMoney(invoice.subtotal - invoiceItem.unitPrice * invoiceItem.quantity);
+    invoice.taxableAmount = roundMoney(invoice.taxableAmount - invoiceItem.unitPrice * invoiceItem.quantity);
+    invoice.taxAmount = roundMoney(invoice.taxAmount - (invoiceItem.cgstAmount + invoiceItem.sgstAmount));
+    invoice.totalAmount = roundMoney(invoice.subtotal - invoice.discountAmount + invoice.taxAmount);
+    await invoiceRepository.save(invoice);
+
+    // Distinct sourceType/sourceId from the original charge-capture journal (which was keyed
+    // 'InvoiceItem':invoiceItem.id): postAutoJournal is idempotent per (sourceType, sourceId) and
+    // requires identical lines on a repeat — reusing that same key here, with the debit/credit
+    // sides swapped, would trip its "conflicting duplicate" guard instead of posting the reversal.
+    // Matches this file's existing precedent of a dedicated sourceType per reversal kind
+    // ('InvoiceCancellation', 'Return').
+    await this.accountingService.postAutoJournal(manager, {
+      sourceType: 'WalkInSaleVoid',
+      sourceId: dispensingId,
+      entryDate: today(),
+      narration: `Walk-in sale reversed: ${invoiceItem.description}`,
+      lines: [
+        { accountId: LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE, debit: invoiceItem.totalAmount },
+        { accountId: LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE, credit: invoiceItem.totalAmount },
+      ],
+    });
+  }
+
+  /**
+   * Shared tail of every charge-capture path: find-or-create the patient's open invoice, append a
+   * line, roll the totals, and post the AR/revenue journal. Split out of captureChargeForOrderItem
+   * so captureChargeForWalkInPharmacySale doesn't duplicate the money-handling logic — everything
+   * before this (price lookup, unpriced/already-charged handling) differs per caller and stays
+   * there.
+   */
+  private async postChargeCapture(
+    manager: EntityManager,
+    input: {
+      patientId: string;
+      sourceId: string;
+      description: string;
+      priceRaw: number;
+      quantity?: number;
+      completedBy?: string;
+      /**
+       * Order-routed captures are best-effort: a ledger-post failure is logged and swallowed
+       * because the clinical action it's attached to (a Lab/Radiology/Pharmacy completion) must
+       * never roll back over a billing problem. A walk-in sale has no clinical action to
+       * protect — the sale IS the billing event — so its caller sets this to rethrow instead,
+       * rolling the whole sale (stock decrement included) back rather than silently leaving an
+       * invoice line with no matching journal entry.
+       */
+      failLoud?: boolean;
+    },
+  ): Promise<{ captured: boolean }> {
     // Row-locked like every other invoice mutator (recordPayment/createReturn/cancel): without
     // this, a concurrent recordPayment/createReturn/cancel committing between this read and the
     // save() below leaves this method's paidAmount/status computed from a stale, pre-commit
@@ -331,13 +490,15 @@ export class InvoicesService {
     // protect an already-existing invoice's row against a concurrent payment/return/cancel.
     const invoiceRepository = manager.getRepository(Invoice);
     const openInvoice = await invoiceRepository.findOne({
-      where: { patientId, status: In(['Unpaid', 'PartiallyPaid']) },
+      where: { patientId: input.patientId, status: In(['Unpaid', 'PartiallyPaid']) },
       order: { createdAt: 'DESC' },
       lock: { mode: 'pessimistic_write' },
     });
-    const invoice = openInvoice ?? (await this.createCaptureInvoice(manager, patientId, orderItem.completedBy));
+    const invoice = openInvoice ?? (await this.createCaptureInvoice(manager, input.patientId, input.completedBy));
 
-    const unitPrice = roundMoney(price);
+    const unitPrice = roundMoney(input.priceRaw);
+    const quantity = input.quantity ?? 1;
+    const lineSubtotal = roundMoney(unitPrice * quantity);
 
     // Charge capture no longer hardcodes 0% tax: the line carries the tenant's configured
     // default GST rate from billing_settings (0 = exempt, and the pre-settings behavior) —
@@ -348,17 +509,17 @@ export class InvoicesService {
       `SELECT "defaultTaxPercent" FROM billing_settings WHERE id = 'default'`,
     );
     const taxPercent = settingsRows.length > 0 ? Number(settingsRows[0].defaultTaxPercent) : 0;
-    const lineTax = roundMoney((unitPrice * taxPercent) / 100);
+    const lineTax = roundMoney((lineSubtotal * taxPercent) / 100);
     const cgstAmount = roundMoney(lineTax / 2);
     const sgstAmount = roundMoney(lineTax - cgstAmount);
-    const lineTotal = roundMoney(unitPrice + lineTax);
+    const lineTotal = roundMoney(lineSubtotal + lineTax);
 
     const invoiceItem = await manager.getRepository(InvoiceItem).save(
       manager.getRepository(InvoiceItem).create({
         invoiceId: invoice.id,
-        sourceOrderItemId: orderItem.id,
-        description,
-        quantity: 1,
+        sourceOrderItemId: input.sourceId,
+        description: input.description,
+        quantity,
         unitPrice,
         discountAmount: 0,
         taxPercent,
@@ -368,11 +529,11 @@ export class InvoicesService {
       }),
     );
 
-    invoice.subtotal = roundMoney(invoice.subtotal + unitPrice);
+    invoice.subtotal = roundMoney(invoice.subtotal + lineSubtotal);
     // Captured lines carry taxPercent from billing_settings (possibly 0), so the line's taxable
-    // amount is its unitPrice — without this, taxableAmount silently stayed 0 forever on every
+    // amount is its subtotal — without this, taxableAmount silently stayed 0 forever on every
     // auto-generated invoice (code-review-findings-2026-08-25 P1).
-    invoice.taxableAmount = roundMoney(invoice.taxableAmount + unitPrice);
+    invoice.taxableAmount = roundMoney(invoice.taxableAmount + lineSubtotal);
     invoice.taxAmount = roundMoney(invoice.taxAmount + lineTax);
     invoice.totalAmount = roundMoney(invoice.subtotal - invoice.discountAmount + invoice.taxAmount);
     invoice.status =
@@ -384,31 +545,38 @@ export class InvoicesService {
     await invoiceRepository.save(invoice);
 
     // Revenue recognized now, at charge-capture (not at payment) — see Development-Standards.md
-    // "Automatic ledger posting from Billing". Best-effort, unlike recordPayment/createReturn
-    // above: this runs inside the same transaction as a Lab/Radiology/Pharmacy completion, and per
-    // the same human ruling documented on this method's class-level doc comment, a ledger problem
-    // must never roll back that clinical completion. Known limitation shared with the rest of this
-    // method: if this throws, the invoice item still exists, so a later reRunChargeCapture retry
-    // short-circuits on "already-charged" and never retries the revenue posting — recovery is
-    // manual, matching the pre-existing "no re-run endpoint for a failed capture" caveat. The
-    // journal amount is the line's full total (unitPrice + tax): this codebase has no GST-liability
-    // ledger account, so tax is rolled into revenue exactly as manual-invoice payments already do
-    // (a separate GST-liability model is net-new accounting work, not this fix).
+    // "Automatic ledger posting from Billing". Best-effort for an order-routed capture (this runs
+    // inside the same transaction as a Lab/Radiology/Pharmacy completion, and per the human ruling
+    // documented on captureChargeForOrderItem's class-level doc comment, a ledger problem must
+    // never roll back that clinical completion) — but fail-loud when `failLoud` is set (the
+    // walk-in path: there is no clinical action to protect, and a swallowed Postgres error here
+    // would otherwise abort the transaction while this method carries on writing to it, so
+    // `commitTransaction()` would silently degrade to a no-op ROLLBACK and the caller would return
+    // a 201 for a sale that never persisted). Known limitation of the best-effort branch: if this
+    // throws, the invoice item still exists, so a later reRunChargeCapture retry short-circuits on
+    // "already-charged" and never retries the revenue posting — recovery is manual, matching the
+    // pre-existing "no re-run endpoint for a failed capture" caveat. The journal amount is the
+    // line's full total (subtotal + tax): this codebase has no GST-liability ledger account, so
+    // tax is rolled into revenue exactly as manual-invoice payments already do (a separate
+    // GST-liability model is net-new accounting work, not this fix).
     try {
       await this.accountingService.postAutoJournal(manager, {
         sourceType: 'InvoiceItem',
         sourceId: invoiceItem.id,
         entryDate: today(),
-        narration: `Charge capture: ${description}`,
-        actor: orderItem.completedBy,
+        narration: `Charge capture: ${input.description}`,
+        actor: input.completedBy,
         lines: [
           { accountId: LEDGER_ACCOUNT_IDS.PATIENT_ACCOUNTS_RECEIVABLE, debit: lineTotal },
           { accountId: LEDGER_ACCOUNT_IDS.PATIENT_SERVICE_REVENUE, credit: lineTotal },
         ],
       });
     } catch (error) {
+      if (input.failLoud) {
+        throw error;
+      }
       this.logger.error(
-        `Revenue posting failed for invoice item ${invoiceItem.id} (order item ${orderItem.id}): ${
+        `Revenue posting failed for invoice item ${invoiceItem.id} (source ${input.sourceId}): ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

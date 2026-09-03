@@ -15,11 +15,21 @@ import { ListPendingPharmacyItemsDto } from './dto/list-pending-pharmacy-items.d
 import { paginate, PaginatedResponseDto } from '@hospital/pagination';
 import { PdfService } from '@hospital/pdf';
 import { buildPharmacyDispensingLabelDocument } from './pharmacy-dispensing-label-document.js';
+import { InvoicesService } from '../billing/invoices.service.js';
+import { withAdvisoryLock } from '../database/advisory-lock.util.js';
 
 export interface CreateDispensingInput {
   orderItemId: string;
   inventoryItemId: string;
   quantity: number;
+}
+
+export interface CreateWalkInSaleInput {
+  patientId: string;
+  inventoryItemId: string;
+  quantity: number;
+  /** Deprecated — ignored when a tenant context with an accountId is active. */
+  dispensedBy?: string;
 }
 
 export interface DispenseDrugInput {
@@ -43,6 +53,7 @@ export class PharmacyDispensingService {
     private readonly fefoStockDecrement: FefoStockDecrementService,
     private readonly tenantContext: TenantContextService,
     private readonly pdfService: PdfService,
+    private readonly invoicesService: InvoicesService,
   ) {}
 
   /**
@@ -118,6 +129,110 @@ export class PharmacyDispensingService {
         }
         throw error;
       }
+    });
+  }
+
+  /**
+   * OTC/walk-in sale: dispensing with no doctor's order behind it — e.g. a patient buying an
+   * over-the-counter item at the pharmacy counter (pending-tasks.md Phase 6 Pharmacy item's
+   * "Not done" gap; every other dispensing path requires an existing `OrderItem`). Unlike
+   * `createDispensing`+`dispenseDrug` (create Pending, then a separate dispense step), this is a
+   * single atomic call: there is no clinical order to wait on, so create and dispense collapse
+   * into one action, same as a real pharmacy counter sale. Requires the item to have a sale price
+   * up front (InvoicesService.captureChargeForWalkInPharmacySale throws otherwise) — a walk-in
+   * sale IS the billing event, so unlike order-routed dispensing (where charge capture is
+   * best-effort and never blocks the clinical action), stock must never leave uncharged here.
+   *
+   * Deliberately not scoped to a "pharmacy items only" catalog subset for this first pass — any
+   * active, priced `InventoryItem` can be sold this way (Pharmacist's `pharmacy.dispensing.dispense`
+   * permission is the only current gate). Order-routed dispensing has an implicit control a
+   * walk-in sale doesn't (a doctor's order determines what's dispensable); tracked as a follow-up
+   * in pending-tasks.md rather than solved here — narrowing needs a real "is this catalog item
+   * pharmacy-sellable" concept, which doesn't exist yet.
+   */
+  async createWalkInSale(input: CreateWalkInSaleInput): Promise<PharmacyDispensing> {
+    const quantity = Number(input.quantity);
+    if (typeof input.quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
+      throw new BadRequestException('quantity must be a positive number');
+    }
+
+    const dispensedBy = this.resolveActor(input.dispensedBy);
+    if (!dispensedBy?.trim()) {
+      throw new BadRequestException('dispensedBy is required');
+    }
+
+    const item = await this.inventoryCatalogService.getItem(input.inventoryItemId); // throws NotFoundException if missing
+    if (!item.isActive) {
+      throw new ConflictException(
+        `Inventory item ${input.inventoryItemId} is deactivated; cannot dispense`,
+      );
+    }
+
+    const dispensingNumber = await this.dispensingNumberGenerator.generateNextDispensingNumber();
+
+    return this.tenantConnection.runInTenantSchema(async (manager) => {
+      // Unlike an order-routed dispensing (naturally deduplicated by
+      // UQ_pharmacy_dispensings_active_order_item on orderItemId), a walk-in sale has no order to
+      // key off, so a double-click or client retry on this single-call endpoint would otherwise
+      // sell and bill twice with nothing to catch it. The lock serializes concurrent walk-in sales
+      // of the same item to the same patient; the window check inside it treats an identical sale
+      // within the last 10s as the same submit and returns the original instead of creating a
+      // second one.
+      await withAdvisoryLock(manager, `walk_in_sale:${input.patientId}:${input.inventoryItemId}`);
+
+      const patientRows: Array<{ id: string }> = await manager.query(
+        `SELECT id FROM patients WHERE id = $1`,
+        [input.patientId],
+      );
+      if (patientRows.length === 0) {
+        throw new NotFoundException(`Patient ${input.patientId} not found`);
+      }
+
+      const dispensingRepository = manager.getRepository(PharmacyDispensing);
+
+      const recentDuplicate = await dispensingRepository.findOne({
+        where: {
+          patientId: input.patientId,
+          inventoryItemId: input.inventoryItemId,
+          quantity: String(quantity),
+          status: 'Dispensed',
+        },
+        order: { createdAt: 'DESC' },
+      });
+      if (recentDuplicate?.dispensedAt && Date.now() - recentDuplicate.dispensedAt.getTime() < 10_000) {
+        return recentDuplicate;
+      }
+
+      const dispensing = await dispensingRepository.save(
+        dispensingRepository.create({
+          orderItemId: null,
+          patientId: input.patientId,
+          inventoryItemId: input.inventoryItemId,
+          dispensingNumber,
+          quantity: String(quantity),
+          status: 'Dispensed',
+          dispensedBy,
+          dispensedAt: new Date(),
+        }),
+      );
+
+      await this.fefoStockDecrement.decrementInTransaction(manager, {
+        itemId: input.inventoryItemId,
+        quantity,
+        transactionType: 'PharmacyDispense',
+        referenceId: dispensing.id,
+        recordedBy: dispensedBy,
+      });
+
+      await this.invoicesService.captureChargeForWalkInPharmacySale(manager, {
+        patientId: input.patientId,
+        dispensingId: dispensing.id,
+        inventoryItemId: input.inventoryItemId,
+        quantity,
+        completedBy: dispensedBy,
+      });
+
+      return dispensing;
     });
   }
 
@@ -222,6 +337,11 @@ export class PharmacyDispensingService {
         );
       }
 
+      if (dispensing.orderItemId === null) {
+        // A walk-in sale (createWalkInSale) never leaves status 'Pending' — it's created and
+        // dispensed in one call — so this dispensing must be order-routed to have reached here.
+        throw new Error(`Invariant violation: dispensing ${id} is Pending with no orderItemId`);
+      }
       const orderItem = await manager.getRepository(OrderItem).findOne({ where: { id: dispensing.orderItemId } });
       if (!orderItem) {
         throw new NotFoundException(`Order item ${dispensing.orderItemId} not found`);
@@ -262,13 +382,20 @@ export class PharmacyDispensingService {
 
   /**
    * Credits stock back for a Dispensed record and marks it Reversed (e.g. a wrong-drug or
-   * wrong-quantity dispense). Scoped to stock only: the linked order item stays Completed and no
-   * billing charge is reversed here — a resulting invoice correction is a separate, staff-initiated
-   * `InvoicesService.createReturn` call, same as every other reversal in this codebase (fraction,
-   * insurance). Once reversed, `createDispensing`'s duplicate-guard allows a new dispensing to be
-   * created against the same order item (see the guard above) — re-dispensing then completes an
-   * already-Completed order item, which `completeItemInTransaction` no-ops on, so billing is never
-   * double-charged. (code-review-findings-2026-08-25 pharmacy P2.)
+   * wrong-quantity dispense). For an order-routed dispensing this is scoped to stock only: the
+   * linked order item stays Completed and no billing charge is reversed here — a resulting invoice
+   * correction is a separate, staff-initiated `InvoicesService.createReturn` call, same as every
+   * other reversal in this codebase (fraction, insurance). Once reversed, `createDispensing`'s
+   * duplicate-guard allows a new dispensing to be created against the same order item (see the
+   * guard above) — re-dispensing then completes an already-Completed order item, which
+   * `completeItemInTransaction` no-ops on, so billing is never double-charged.
+   * (code-review-findings-2026-08-25 pharmacy P2.)
+   *
+   * A walk-in sale (orderItemId null) is different: it's typically reversed within seconds, almost
+   * always before any payment is recorded, and `createReturn` refuses to run against an invoice
+   * with zero recorded payments — it would force cancelling the patient's entire open invoice just
+   * to undo one line. So for that path only, this also voids the charge
+   * (InvoicesService.voidWalkInPharmacySaleCharge) in the same transaction as the stock credit.
    */
   async reverseDispensing(id: string, input: ReverseDispensingInput = {}): Promise<PharmacyDispensing> {
     const reversedBy = this.resolveActor(input.reversedBy);
@@ -323,6 +450,10 @@ export class PharmacyDispensingService {
         );
       }
 
+      if (dispensing.orderItemId === null) {
+        await this.invoicesService.voidWalkInPharmacySaleCharge(manager, dispensing.id);
+      }
+
       dispensing.status = 'Reversed';
       dispensing.reversedBy = reversedBy;
       dispensing.reversedAt = new Date();
@@ -346,12 +477,18 @@ export class PharmacyDispensingService {
 
       const inventoryItem = await this.inventoryCatalogService.getItem(dispensing.inventoryItemId);
 
-      const orderRows = await manager.query(
-        `SELECT o."patientId" FROM orders o JOIN order_items oi ON oi."orderId" = o.id WHERE oi.id = $1`,
-        [dispensing.orderItemId],
-      );
-      const patient = orderRows.length > 0
-        ? await manager.query(`SELECT "firstName", "lastName", "patientNo" FROM patients WHERE id = $1`, [orderRows[0].patientId])
+      // A walk-in dispensing has no orderItemId to join through — its patient comes directly off
+      // the dispensing row instead (populated only on that path; see the entity's comment).
+      let patientId: string | null = dispensing.patientId;
+      if (patientId === null && dispensing.orderItemId !== null) {
+        const orderRows = await manager.query(
+          `SELECT o."patientId" FROM orders o JOIN order_items oi ON oi."orderId" = o.id WHERE oi.id = $1`,
+          [dispensing.orderItemId],
+        );
+        patientId = orderRows.length > 0 ? orderRows[0].patientId : null;
+      }
+      const patient = patientId !== null
+        ? await manager.query(`SELECT "firstName", "lastName", "patientNo" FROM patients WHERE id = $1`, [patientId])
         : [];
       const patientName = patient.length > 0 ? `${patient[0].firstName} ${patient[0].lastName}` : 'Unknown';
       const patientNo = patient[0]?.patientNo ?? '';

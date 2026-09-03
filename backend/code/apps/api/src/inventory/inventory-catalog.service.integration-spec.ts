@@ -8,6 +8,9 @@ import { PatientsService } from '../patients/patients.service.js';
 import { PatientNumberGeneratorService } from '../patients/patient-number-generator.service.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { PdfService } from '@hospital/pdf';
+import { InvoicesService } from '../billing/invoices.service.js';
+import { AccountingService } from '../accounting/accounting.service.js';
+import { JournalNumberGeneratorService } from '../accounting/journal-number-generator.service.js';
 import {
   setupTenantTestContext,
   teardownTenantTestContext,
@@ -25,6 +28,11 @@ describe('InventoryCatalogService catalog update/deactivate (integration)', () =
     ctx = await setupTenantTestContext({ namePrefix: 'inventory_catalog_gap' });
     inventoryCatalogService = new InventoryCatalogService(ctx.tenantConnection);
     ordersService = new OrdersService(ctx.tenantConnection);
+    const accountingService = new AccountingService(
+      ctx.tenantConnection,
+      new JournalNumberGeneratorService(ctx.tenantConnection),
+      ctx.tenantContext,
+    );
     dispensingService = new PharmacyDispensingService(
       ctx.tenantConnection,
       new PharmacyDispensingNumberGeneratorService(ctx.tenantConnection),
@@ -33,6 +41,7 @@ describe('InventoryCatalogService catalog update/deactivate (integration)', () =
       new FefoStockDecrementService(),
       ctx.tenantContext,
       new PdfService(),
+      new InvoicesService(ctx.tenantConnection, ctx.tenantContext, accountingService),
     );
     patientsService = new PatientsService(
       ctx.tenantConnection,

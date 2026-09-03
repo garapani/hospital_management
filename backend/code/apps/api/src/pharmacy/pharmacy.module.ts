@@ -6,9 +6,10 @@ import { PharmacyDispensingController } from './pharmacy-dispensing.controller.j
 import { PharmacyDispensingNumberGeneratorService } from './pharmacy-dispensing-number-generator.service.js';
 import { PharmacyOrderCancellationSubscriber } from './pharmacy-order-cancellation.subscriber.js';
 import { OrdersModule } from '../orders/orders.module.js';
+import { BillingModule } from '../billing/billing.module.js';
 
 @Module({
-  imports: [InventoryModule, OrdersModule, PdfModule],
+  imports: [InventoryModule, OrdersModule, PdfModule, BillingModule],
   controllers: [PharmacyDispensingController],
   providers: [
     PharmacyDispensingService,

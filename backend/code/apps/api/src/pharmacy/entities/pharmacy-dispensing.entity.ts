@@ -5,13 +5,19 @@ import { OrderItem } from '../../orders/entities/order-item.entity.js';
 @Entity('pharmacy_dispensings')
 export class PharmacyDispensing extends SoftDeletableEntity {
   @PrimaryGeneratedColumn('uuid') id!: string;
-  @Column({ type: 'uuid' }) orderItemId!: string;
+  // Null for a walk-in/OTC sale (PharmacyDispensingService.createWalkInSale) — there is no
+  // doctor's order behind it. Always set for an order-routed dispensing.
+  @Column({ type: 'uuid', nullable: true }) orderItemId!: string | null;
   // Declared relation for the list views that join the order item's description — the orderItemId
   // column remains the source of truth and the pharmacy→orders edge already exists via the
   // dispensing service's OrdersService dependency.
-  @ManyToOne(() => OrderItem, { nullable: false })
+  @ManyToOne(() => OrderItem, { nullable: true })
   @JoinColumn({ name: 'orderItemId' })
-  orderItem!: OrderItem;
+  orderItem!: OrderItem | null;
+  // Set only for a walk-in/OTC sale — an order-routed dispensing derives its patient via
+  // orders.patientId instead, so this stays null there (same "populated on one path only" idiom
+  // invoice_items.sourceOrderItemId already uses).
+  @Column({ type: 'uuid', nullable: true }) patientId!: string | null;
   @Column({ type: 'uuid' }) inventoryItemId!: string;
   @Column({ type: 'varchar', unique: true }) dispensingNumber!: string;
   @Column({ type: 'numeric' }) quantity!: string;
