@@ -49,28 +49,53 @@ regression in the backfill mechanism itself in CI, but it cannot force the deplo
 actually be run — treat this as a mandatory manual step in the deploy checklist, not optional.
 
 ## 2. Event Archiver and Audit Logs Missing
-We use asynchronous TypeORM `EntitySubscriberInterface` hooks to capture Audit Logs and Reporting Events without blocking the core business transaction.
+We use asynchronous TypeORM `EntitySubscriberInterface` hooks (`AuditSubscriber`/
+`ReportingSubscriber`) plus a transactional outbox to capture Audit Logs and Reporting Events
+without either blocking the core business transaction or silently orphaning a record if that
+transaction later rolls back — see Development-Standards.md §140 for the full design and the two
+generations of bug this replaced.
+
+### How persistence actually happens (two hops, not one)
+
+1. **Write**: `AuditSubscriber`/`ReportingSubscriber`'s `afterInsert`/`afterUpdate`/`afterRemove`
+   hooks call `PersistingAuditEventPublisher`/`PersistingReportingEventPublisher.publish()`
+   synchronously with the `EntityManager` TypeORM's subscriber API hands them (`event.manager`) —
+   the publisher writes a row to `outbox_events` (tenant-scoped) on that SAME manager, so it commits
+   or rolls back exactly with the business write that triggered it. `PersistingAuditEventPublisher`
+   additionally checks `current_schema()` first and skips (logs a warning, does not write) for a
+   platform-level entity save (main/`public`-schema manager, e.g. `Tenant`/`Subscription`/
+   `Package`) — not yet supported, a known gap, not a bug.
+2. **Materialize**: a separate `outbox-dispatcher` process (own container in
+   `docker-compose.prod.yml`, own DB connection) polls every `OUTBOX_POLL_INTERVAL_MS` (default
+   5s), drains `Pending` `outbox_events` rows per tenant schema, and writes the corresponding
+   `audit_records`/`reporting_events` row — fully decoupled from any business transaction by then.
 
 ### Symptoms
-- Actions occur, but no records appear in `audit_records` or `reporting_events`.
+- Actions occur, but no records appear in `outbox_events` at all → step 1 (the write) never ran or
+  was skipped; see below.
+- A row sits in `outbox_events` with `status = 'Pending'` far longer than the poll interval, or
+  `status = 'Failed'` → step 2 (the dispatcher) isn't running, or is failing to materialize that
+  row — see `Deployment-Guide.md` §9's troubleshooting section (query, retry, and
+  `docker compose ps outbox-dispatcher` check).
+- No records in `outbox_events` for a platform-level entity (`Tenant`, `Subscription`, `Package`,
+  ...) → expected, not a bug. Check application logs for
+  `[PersistingAuditEventPublisher] Skipped audit event for .../... : current schema "public" is not
+  a tenant schema` to confirm that's what happened, rather than assuming something's broken.
 - In test environments: "Jest did not exit one second after the test run has completed."
 
 ### Resolution
-1. **Check Logs for Publisher Errors**:
-   `PersistingAuditEventPublisher`/`PersistingReportingEventPublisher` wrap the actual write in a
-   `try/catch` and only `logger.error(...)` on failure — they never crash the triggering request.
-   Inspect the application logs for `[PersistingAuditEventPublisher]` or
-   `[PersistingReportingEventPublisher]` errors.
-2. **How persistence actually happens**: `AuditSubscriber`'s `afterInsert`/`afterUpdate`/`afterRemove`
-   hooks call the publisher synchronously with the `EntityManager` TypeORM's subscriber API hands
-   them (`event.manager`) — so the audit/reporting write runs inside the *same* transaction as the
-   business write that triggered it, not deferred to a commit hook (there is no
-   `afterTransactionCommit` anywhere in this codebase). If the business transaction rolls back, the
-   audit/reporting write rolls back with it. The one path that opens its own connection is
-   `PersistingAuditEventPublisher.publish()` when called without a manager — it uses
-   `TenantConnectionService.runInTenantSchema()`, which runs the whole callback inside a real
-   transaction with `SET LOCAL ROLE`/`SET LOCAL search_path` already applied, so schema mismatches
-   there point at a tenant-context bug, not a stale connection.
+1. **Check `outbox_events` first, not `audit_records`/`reporting_events` directly** — a record that
+   looks "missing" is very often just still `Pending`, waiting on the next dispatcher poll (default
+   5s lag is expected, not a bug — see Development-Standards.md §140's "Product-visible
+   consequence").
+2. **Check logs for publisher errors**: the tenant-scoped write itself is deliberately NOT wrapped
+   in a try/catch (a failure there is meant to roll back the business transaction, not vanish
+   silently) — so a genuine failure at step 1 surfaces as a request-level 500, not a quiet log line.
+   A quiet `[PersistingAuditEventPublisher] Skipped ...` log line is the one *expected*, non-error
+   skip (platform-level entity, see Symptoms above).
+3. **Check the dispatcher's own logs/exit status** for step 2 failures:
+   `docker compose -f docker-compose.prod.yml logs outbox-dispatcher`, or in test environments,
+   console output prefixed `outbox-dispatcher:`.
 
 ## 3. Dealing with Test Flakiness (inTenant utility)
 `inTenant()` (from `apps/api/src/testing/tenant-test-context.ts`) is **not** a rolled-back
@@ -94,9 +119,13 @@ created for real by `TenantProvisioningService` in `setupTenantTestContext()` an
 - Confirm the failing spec's `afterAll` cleans up every tenant schema/role it created, including
   ones constructed via `ctx.createTenant()` or a directly-instantiated `TenantsService`/
   `TenantProvisioningService`, not just the one `setupTenantTestContext()` returns.
-- If asserting on data written by an audit/reporting subscriber, remember the write happens inside
-  the same transaction as the triggering action (see Section 2) — no need to wait for a separate
-  commit hook.
+- If asserting on `outbox_events`, remember that write happens inside the same transaction as the
+  triggering action (see Section 2) — no need to wait for anything. If asserting on
+  `audit_records`/`reporting_events` directly, that row only exists after the outbox dispatcher has
+  drained it — call `dispatchTenant('tenant_<id>')` (exported from
+  `database/outbox-dispatcher-entrypoint.ts`) to drain synchronously in a test rather than polling
+  or sleeping; see `persisting-audit-event-publisher.integration-spec.ts`/
+  `persisting-reporting-event-publisher.integration-spec.ts` for the pattern.
 
 ## 4. Resetting the Environment
 If your local development database gets corrupted:

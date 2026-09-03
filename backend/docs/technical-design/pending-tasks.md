@@ -198,7 +198,7 @@ scope, not merely lower priority.
       with the vars set (parses clean) and unset (fails immediately with the required-variable
       error, doesn't silently start). MinIO's bootstrap creds now derive from the same
       `OBJECT_STORAGE_ACCESS_KEY`/`SECRET_KEY` the API already required at boot (one source of
-      truth, matching what `Deployment-Guide.md` §9 already claimed but the compose file didn't
+      truth, matching what `Deployment-Guide.md` §10 already claimed but the compose file didn't
       actually do — it had no `${VAR}` interpolation at all, so the documented `.env` file was
       never actually reaching the containers). `Deployment-Guide.md` §3's `.env` template updated
       to list `OBJECT_STORAGE_ACCESS_KEY`/`SECRET_KEY`, which it hadn't before. **Operational
@@ -256,6 +256,28 @@ scope, not merely lower priority.
       `limit: 100` where the same suite/file provisions enough rows across its own test run to
       push a just-created one past the default page-1 window. See `Development-Standards.md`
       §134. Found in the 2026-09-03 external review.
+- [x] **Reporting event outbox pattern.** **Resolved (2026-09-03):** `PersistingReportingEventPublisher`
+      and `PersistingAuditEventPublisher` previously wrote `reporting_events`/`audit_records` on a
+      dedicated connection deliberately separate from the business transaction that triggered them
+      — protecting that transaction from a reporting/audit SQL failure, but at the accepted cost of
+      an orphan row if the business transaction later rolled back for an unrelated reason (both
+      publishers' own doc comments called this out as a deliberate tradeoff, not an oversight — the
+      2026-09-03 external review flagged it as a gap worth closing anyway). Both now write to a new
+      tenant-scoped `outbox_events` table (migration `0103`) on the SAME manager as the business
+      transaction instead, guaranteeing the two commit or roll back together; a separate
+      `outbox-dispatcher` compose service (own container, own connection, polls every
+      `OUTBOX_POLL_INTERVAL_MS`) drains `Pending` rows across every provisioned tenant and
+      materializes them into `reporting_events`/`audit_records`. Scope covers both publishers (the
+      review named only reporting, but audit had the identical tradeoff with an identical fix
+      shape). **Product-visible consequence:** the Reporting Dashboard and audit trail are now
+      eventually consistent (lag up to the poll interval, default 5s) rather than real-time — see
+      `Deployment-Guide.md` §9. See `Development-Standards.md` §140 for the three bugs this fix's
+      own full-suite run and tests caught: a platform-admin action (subscribing a tenant to a
+      billing package) 500ing because every JWT carries a `hospitalId` claim regardless of whether
+      the request is tenant-scoped or platform-admin, making that field an unreliable gate for
+      "should this write attempt the tenant-scoped `outbox_events` table" — fixed with a direct
+      `current_schema()` check instead — plus a connection-release-ordering leak in the
+      dispatcher's failure path and a missing rollback guard on an early return in `processRow`.
 
 ## Phase 3 — Production-readiness ops
 

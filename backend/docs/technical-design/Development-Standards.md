@@ -5201,3 +5201,82 @@ a high-effort review and, in the second case, only by the tests written to prove
    `createReturn`). **Lesson: never reuse a `postAutoJournal` source key for a correcting entry —
    its idempotency guard is a feature for retries of the *same* event, and a hard rejection for
    two *different* events that happen to share a key.**
+
+## 140. A transactional outbox: write intent on the caller's own transaction, materialize later on a separate one — and a background dispatcher needs the same connection-lifecycle discipline as everything else
+
+`PersistingReportingEventPublisher`/`PersistingAuditEventPublisher` (pending-tasks.md Phase 2's
+"Reporting event outbox pattern," found in the 2026-09-03 external review) used to write straight
+to `reporting_events`/`audit_records` on a **separate, dedicated connection** from the business
+transaction that triggered them (`REPORTING_DATA_SOURCE`/`AUDIT_DATA_SOURCE`, §132) — deliberate
+isolation, so a SQL failure on that write could never abort the business transaction. Its
+documented, accepted cost: a business transaction that later rolled back for an unrelated reason
+left an already-committed reporting/audit row behind, referencing a change that never persisted.
+
+**The fix, in outline**: both publishers now write a row to a new tenant-scoped `outbox_events`
+table (id/kind/payload jsonb/status/attempts/lastError, migration `0103`) on the **caller's own
+manager** — `ReportingSubscriber`/`@hospital/audit-emitter`'s `AuditSubscriber` both already had
+`event.manager` in hand and simply weren't passing it through; the plumbing to accept it already
+existed (`AuditEventPublisher.publish(event, manager?)`), just unused. That insert is deliberately
+**not** wrapped in a try/catch: it's a plain single-table jsonb write with no FKs and no business
+validation, low-risk enough to trust as part of the atomic unit — the entire point is that this
+commits or rolls back exactly when the business write does. A separate `outbox-dispatcher` compose
+service (its own container, its own connection, polling every `OUTBOX_POLL_INTERVAL_MS`) drains
+`Pending` rows per tenant schema and materializes them into `reporting_events`/`audit_records`
+later, fully decoupled from any business transaction by the time it runs — a genuine SQL failure
+there marks the row for retry (`attempts`/`lastError`) without touching anything already committed.
+
+**One case had to keep the old swallow-and-skip behavior — and the obvious gate for it is wrong**:
+`AuditSubscriber` fires on every entity in the app, including platform-level ones (`Tenant`/
+`Subscription`/`Package`) saved on the main, `public`-search-path manager. `outbox_events` is
+tenant-scoped, so an unqualified insert for one of those throws "relation does not exist" — and
+unlike the tenant-scoped case, letting that propagate would newly block platform provisioning (or,
+as the full-suite run below caught, platform-admin actions like subscribing a tenant to a billing
+package) over a missing audit trail, which is strictly worse than the trail being missing. The
+first attempt gated this on `AuditEvent.hospitalId` (absent → skip) — plausible-looking, and wrong:
+`TenantContextMiddleware` sets a `hospitalId` claim from the JWT on **every** authenticated
+request, platform-admin ones included, so the field is populated by "was this request
+authenticated at all," not "is this write tenant-scoped." A live `platform-billing` integration
+test (subscribing a tenant to a package via `POST /platform/billing/tenants/:id/subscribe`) proved
+it: `hospitalId` was set, the gate let the insert through, and it hit exactly the "relation
+outbox_events does not exist" failure the gate was meant to prevent — as a raw 500, not a graceful
+skip. Worse than the visible 500: **catching that failure in JS would not have saved the
+transaction anyway** — a Postgres error poisons the rest of that transaction regardless of whether
+the JS exception is caught, so `commitTransaction()` would have silently degraded into a `ROLLBACK`
+either way, exactly the "looks like it worked, nothing actually persisted" failure mode called out
+above for a dispatcher-side failure. The only sound fix is to never attempt the write at all when
+the target schema can't take it: `manager.query('SELECT current_schema()')` — a side-effect-free
+builtin call, safe to run unconditionally since it cannot itself fail — checked for a `tenant_`
+prefix before attempting the insert. This matches the *pre-existing* behavior for platform-level
+entities (the old dedicated-connection write already required a tenant context via
+`TenantConnectionService.runInTenantSchema` and silently failed without one) — not a new gap, just
+made an explicit precondition instead of an accidental side effect of a broader try/catch.
+**Lesson: a value derived from request auth context (a JWT claim, a session field) is not the same
+signal as which schema a specific write actually landed on — when the two can diverge, check the
+thing you actually care about, not a proxy for it, especially when getting it wrong doesn't just
+misfire, it silently discards a transaction.**
+
+**Product-visible consequence, not just an internals swap**: `reporting_events`/`audit_records` are
+now eventually consistent with the business write, lagging by up to the dispatcher's poll interval
+(default 5s) — the Reporting Dashboard and audit trail were implicitly real-time before, are not
+now. Documented in `Deployment-Guide.md` §9 as a deliberate trade, not called out as a bug.
+
+**Two more bugs a full-suite run caught**, on top of the platform-billing one above (all three
+surfaced only once this change ran against the whole app, not from the targeted integration tests
+written alongside it — underscoring why a cross-cutting change like this, where the audit
+subscriber fires on nearly every entity write, needs the full suite before it's done, not just the
+directories it looks like it touches), both in the dispatcher rather than the core outbox-write
+path (which worked first try):
+
+1. `processRow`'s failure branch updated the outbox row's `attempts`/`status` on the *main* pool
+   before releasing the per-row `QueryRunner`'s own connection back to that same pool — triggered
+   node-postgres's "client is already executing a query" deprecation warning under test. Harmless
+   today at this dispatcher's concurrency level, but the fix (release first, bookkeeping query
+   second) is the same "don't start a second query on a connection until the first one's query
+   runner has actually let go of it" discipline as every other multi-step DB operation in this
+   codebase.
+2. The early-return branch (`if (!locked || locked.status !== 'Pending')` — another dispatcher
+   instance, or a manual status change, already claimed the row) rolled back the transaction but
+   never called `queryRunner.release()`, leaking one pooled connection per skipped row. Cheap to
+   miss: `try`/`finally` would have caught it for free, but this function uses explicit release
+   calls at each exit point instead (needed anyway to fix bug 1's ordering), so every new exit path
+   needs its own explicit release — there's no `finally` silently covering for it.

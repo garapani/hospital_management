@@ -150,7 +150,10 @@ Full per-module table with routes/key files/spec links: **`Module-Reference.md`*
 - **Reporting event archiver** — `reporting` module's `reporting.subscriber` intercepts critical
   business operations (order placed, patient admitted, …) and normalizes them into the flat
   `reporting_events` table powering dashboard read APIs, CSV export (`reporting-csv.util.ts`) and
-  a PDF document (`reporting-events-pdf-document.ts`).
+  a PDF document (`reporting-events-pdf-document.ts`). Both this and the audit trail above write
+  through a transactional outbox (`outbox_events`, same manager as the business write) first, drained
+  into `reporting_events`/`audit_records` by a separate `outbox-dispatcher` process — see
+  Development-Standards.md §140.
 - **Observability** — `@hospital/observability`: pino structured logger
   (`ObservabilityLoggerModule`), metrics (`ObservabilityMetricsModule`, `GET /api/metrics`,
   unauthenticated), request timing middleware.

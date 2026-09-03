@@ -224,7 +224,43 @@ the PRD's target of 10-20 tenant schemas this isn't expected to trigger, but if 
 max_locks_per_transaction = <value>;`) and restart Postgres — this setting only takes effect on
 restart, `pg_reload_conf()` is not enough.
 
-## 9. Production Environment: the newgenworks.in server
+## 9. Outbox Dispatcher
+
+Reporting events and audit records are written to `outbox_events` first, on the same transaction
+as the business change that triggered them, and only reach `reporting_events`/`audit_records` once
+the `outbox-dispatcher` compose service drains them — a separate, always-on process from `api`
+(comes up automatically with `docker compose -f docker-compose.prod.yml up -d`, no separate setup
+step). See Development-Standards.md's outbox section for why (the atomicity gap this replaced) and
+`database/outbox-dispatcher-entrypoint.ts` for the implementation.
+
+**This means the Reporting Dashboard (event counts, revenue) and the audit trail are eventually
+consistent, not real-time** — lagging by up to `OUTBOX_POLL_INTERVAL_MS` (default 5s) behind the
+business write. This is a deliberate trade for the atomicity guarantee (no more orphan reporting/
+audit rows referencing a business change that rolled back) — acceptable for a dashboard and an
+audit trail, neither of which gates a clinical or billing workflow.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OUTBOX_POLL_INTERVAL_MS` | `5000` | How often the dispatcher checks for pending rows, across every provisioned tenant, per cycle. |
+| `OUTBOX_BATCH_SIZE` | `50` | Max rows drained per tenant per cycle. |
+| `OUTBOX_MAX_ATTEMPTS` | `5` | A row that fails to materialize this many times is marked `Failed` and stops retrying (stays queryable in `outbox_events` for manual investigation — nothing auto-deletes it). |
+
+### Troubleshooting: rows stuck `Pending` or `Failed`
+
+```sql
+-- Run against a tenant schema (SET search_path first, or qualify the table).
+SELECT id, kind, status, attempts, "lastError", "createdAt" FROM outbox_events
+WHERE status IN ('Pending', 'Failed') ORDER BY "createdAt" ASC;
+```
+
+A `Failed` row's `lastError` is the last materialization exception (e.g. a renamed/missing target
+table, a constraint violation from a malformed payload). Once the underlying cause is fixed, reset
+it to retry: `UPDATE outbox_events SET status = 'Pending', attempts = 0 WHERE id = '<id>';` — the
+next poll cycle picks it up. A row `Pending` for far longer than `OUTBOX_POLL_INTERVAL_MS` with no
+`Failed` rows nearby usually means the `outbox-dispatcher` container itself isn't running — check
+`docker compose -f docker-compose.prod.yml ps outbox-dispatcher`.
+
+## 10. Production Environment: the newgenworks.in server
 
 **This is a shared VPS, not a dedicated host.** Hostname `srv775724`, Debian 12 (bookworm), 2
 vCPU / 8GB RAM. Alongside this project it also runs several unrelated projects for other clients
