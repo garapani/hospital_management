@@ -5063,3 +5063,43 @@ GlobalExceptionFilter())` on the test app explicitly — no other integration sp
 actually registered in production unless one spec does this. A unit test that calls
 `filter.catch(exception, mockHost)` directly proves the filter's own logic but not that
 `main.ts` ever wires it in.
+
+## 136. Tagging a new row with "the current session's X, if one exists" belongs in a `beforeInsert` subscriber, not a service-constructor dependency — and testing it needs a real DI-resolved app, not a lightweight `new Service(...)` spec
+
+`CashierShift`/`PaymentShiftTagSubscriber` needed `payments.shiftId` auto-populated with the
+recording account's open shift — additive (null when no shift is open), never a precondition for
+recording a payment. Two reusable decisions:
+
+- **`beforeInsert`, not `afterInsert` + a follow-up UPDATE.** Mutating `event.entity` in
+  `beforeInsert` lands the tagged value in the same INSERT statement TypeORM is about to generate
+  — no second write, no window where the row briefly exists untagged. Filtered by
+  `event.metadata.tableName === 'payments'` (not an entity-class `listenTo()`) for the same
+  module-boundary reason `ChargeCaptureSubscriber` does it — importing `Payment` into a
+  cross-cutting subscriber file is fine (it already lives in the billing module), but the general
+  pattern is: filter by table name when the subscriber conceptually belongs to a different slice
+  than the table it's reacting to.
+- **Kept `InvoicesService` untouched rather than injecting `CashierShiftService` into it.**
+  `InvoicesService` is directly `new`'d in 4 integration specs (same reasoning as §131's
+  `AccountingExportService` and the invoice-PDF `InvoiceExportService`) — a subscriber sidesteps
+  that constructor entirely, so none of those 4 specs needed touching. This is now the third time
+  this exact "don't add a constructor dependency to a service several specs build directly"
+  pattern has paid for itself; when a new cross-cutting concern needs to react to another module's
+  writes, reach for a subscriber before reaching for a constructor edge.
+
+**Testing this class of subscriber needs the full-`AppModule`-bootstrap pattern
+(`Test.createTestingModule({ imports: [AppModule] }).compile()`, `moduleFixture.get(...)` for
+every DI-resolved service), not the lightweight `new Service(ctx.tenantConnection, ...)` pattern
+most billing specs use.** A subscriber only registers itself on `dataSource.subscribers` from its
+own `OnModuleInit` — which only fires when Nest actually instantiates and initializes the module.
+A spec that directly `new`s `CashierShiftService`/`InvoicesService` never triggers
+`PaymentShiftTagSubscriber.onModuleInit()`, so a payment saved that way is silently never tagged —
+not a bug, just a spec exercising less of the system than a full boot does. Mirrors exactly why
+`charge-capture.integration-spec.ts` and `persisting-reporting-event-publisher.integration-spec.ts`
+both use the same full-bootstrap shape: any subscriber-mediated behavior needs it, service-level
+business logic alone doesn't.
+
+**Reconciliation math**: "expected" (the sum of a shift's actual tagged payments, grouped by
+`paymentMode`) is computed live via a query on read/close, never persisted as a snapshot — once a
+shift is `Closed`, no further payment can be tagged to it (the subscriber only tags the account's
+currently-*Open* shift), so the expected total is already immutable from that point on and
+snapshotting it would just be a second source of truth to keep in sync for no benefit.

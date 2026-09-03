@@ -669,12 +669,21 @@ Follow the PRD's own phase ordering as-is:
   `notifications` table migration `0028`, and in-process subscribers wired for admission and
   appointment creation) shipped in `a203100` + `93df331`; no email/SMS/push channel exists yet,
   and the frontend has a notifications feature folder but no routed page yet.
-- [ ] **Cashier shift open/close + day-end reconciliation.** No `CashierShift`/settlement entity,
-  service, or endpoint exists. Hospital billing-desk cashiers handling 8-hour shifts of
-  cash/UPI/card need: open shift with a float amount, accept payments through the shift, submit a
-  physical cash-denomination count + card/UPI slip count at close, and a day-end reconciliation
-  report flagging overage/shortage before handoff to accounts. Found in the 2026-09-03 external
-  review.
+- [x] **Cashier shift open/close + day-end reconciliation.** **Resolved (2026-09-03):**
+  `CashierShift` (tenant-scoped, migration `0100`) + `CashierShiftService` +
+  `CashierShiftController` (`POST /billing/cashier-shifts`, `GET .../current`, `GET .../:id`,
+  `GET .../:id/reconciliation`, `POST .../:id/close`, both `billing.manage`/`billing.read`-gated
+  like the rest of Billing — no new permission added). Open with a float amount; a new
+  `PaymentShiftTagSubscriber` auto-tags `payments.shiftId` (nullable, additive — untagged when no
+  shift is open, never blocks recording a payment) with the recording account's open shift, if it
+  has one. Close takes a standard-INR denomination count (cash) + a declared total per non-cash
+  mode (Card/UPI/Cheque), computes each mode's *expected* total from the shift's actual tagged
+  payments, and returns expected/declared/variance per mode — only the account that opened a shift
+  can close it. Frontend: a Cashier Shift screen (open/close modals, a live denomination-count
+  total, the reconciliation table, recent-shift history), sidebar-gated on `billing.manage`. 15
+  new backend tests (10 service-level incl. the subscriber wiring end-to-end, 5 controller-level),
+  8 new frontend tests; full suites green. See `Development-Standards.md` §136. Found in the
+  2026-09-03 external review.
 - [ ] **Payment transaction reference fields.** `payment.entity.ts`/`RecordPaymentDto` have no
   `transactionReference`/`upiRefNumber`/`bankName`/`chequeNumber` fields — bank reconciliation and
   finance audit can't match a hospital payment record against the corresponding bank-statement
