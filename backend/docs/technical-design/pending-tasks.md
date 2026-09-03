@@ -684,10 +684,15 @@ Follow the PRD's own phase ordering as-is:
   new backend tests (10 service-level incl. the subscriber wiring end-to-end, 5 controller-level),
   8 new frontend tests; full suites green. See `Development-Standards.md` §136. Found in the
   2026-09-03 external review.
-- [ ] **Payment transaction reference fields.** `payment.entity.ts`/`RecordPaymentDto` have no
-  `transactionReference`/`upiRefNumber`/`bankName`/`chequeNumber` fields — bank reconciliation and
-  finance audit can't match a hospital payment record against the corresponding bank-statement
-  line. Found in the 2026-09-03 external review.
+- [x] **Payment transaction reference fields.** **Resolved (2026-09-03):** `payments` gained two
+  nullable columns (migration `0101`) — `transactionReference` (one generic field covering UPI ref
+  number/cheque number/card auth code; only one is ever populated per payment since `paymentMode`
+  already says which kind, so separate per-mode columns would just be redundant nulls) and
+  `bankName`. `RecordPaymentDto`/`InvoicesService.recordPayment` accept both. Frontend: the Record
+  Payment modal gained optional reference/bank inputs (shown for non-Cash modes), and the invoice
+  detail screen gained a Payments display section — payments were already fetched by the backend
+  but never surfaced on screen at all before this, so the new fields would otherwise be write-only
+  with no way to actually use them for reconciliation. Found in the 2026-09-03 external review.
 - [ ] **Global patient search (Ctrl+K).** No command-palette/spotlight component exists in
   `staff-console`. Receptionists/triage nurses handling queues and phone calls currently must
   navigate to the patients list and filter — a top-bar spotlight search over `/patients?q=`/
