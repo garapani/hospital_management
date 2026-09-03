@@ -5103,3 +5103,26 @@ business logic alone doesn't.
 shift is `Closed`, no further payment can be tagged to it (the subscriber only tags the account's
 currently-*Open* shift), so the expected total is already immutable from that point on and
 snapshotting it would just be a second source of truth to keep in sync for no benefit.
+
+## 137. Mounting a new child component unconditionally in a shared shell breaks every existing spec that constructs that shell without the child's dependencies
+
+Adding `<hms-global-search>` to `shell-chrome.html` (Ctrl+K patient search, reachable from any
+routed page) broke every test in `shell-chrome.spec.ts` at once — not because anything in those
+tests changed, but because `TestBed.createComponent(ShellChrome)` now also constructs
+`GlobalSearchComponent` as a child, which injects `PatientsApiService` → `ApiClientService` →
+`API_BASE_URL`/`TENANT_ID`, none of which `shell-chrome.spec.ts`'s test module provided (it only
+ever mocked the API services `ShellChrome` itself used directly — `NotificationsApiService`,
+`AuthService` — never needing the real HTTP-client injection tokens). Fix: add a mock
+`PatientsApiService` provider to that spec's `TestBed.configureTestingModule`, matching how every
+other API service there is already faked rather than wiring real `HttpClient`/`API_BASE_URL`/
+`TENANT_ID` tokens just to satisfy one new child's constructor.
+
+**Generalizes**: any component added to a shared, unconditionally-rendered shell (`ShellChrome`,
+`AppShell`, `PlatformShell`) needs its own dependencies satisfiable in every spec that constructs
+that shell — grep for `TestBed.createComponent(<TheShellComponent>)` across the codebase before
+adding a new mount, not just the one spec file that happens to be nearby. Note the qualifier:
+`<hms-global-search>` here is *not* behind an `@if` — an `@if`-gated child genuinely is skipped
+(Angular's control-flow blocks create/destroy the embedded view, so a false condition means the
+child component is never constructed at all). The risk is specifically an unconditional mount like
+this one — always present in the template regardless of any signal or permission check inside the
+child itself.

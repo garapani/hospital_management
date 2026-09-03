@@ -693,11 +693,14 @@ Follow the PRD's own phase ordering as-is:
   detail screen gained a Payments display section — payments were already fetched by the backend
   but never surfaced on screen at all before this, so the new fields would otherwise be write-only
   with no way to actually use them for reconciliation. Found in the 2026-09-03 external review.
-- [ ] **Global patient search (Ctrl+K).** No command-palette/spotlight component exists in
-  `staff-console`. Receptionists/triage nurses handling queues and phone calls currently must
-  navigate to the patients list and filter — a top-bar spotlight search over `/patients?q=`/
-  `/directory/resolve` (phone, UHID, name) from any screen would remove that detour. Found in the
-  2026-09-03 external review.
+- [x] **Global patient search (Ctrl+K).** **Resolved (2026-09-03):** `GlobalSearchComponent`,
+  mounted once in `ShellChrome` (shared by both consoles), opens on Ctrl+K/Cmd+K or a visible
+  header button, and searches `GET /patients?q=` — that endpoint already matches name/phone/UHID
+  in one query (`patients.service.ts`'s `findAll`), so no new backend endpoint was needed;
+  `/directory/resolve` (a batch id→name *resolver*, not a search endpoint — re-checked against the
+  actual controller before assuming otherwise) turned out not to be the right fit the original
+  review implied. Debounced (250ms), arrow-key navigable, gated on `patients.read`. 8 new frontend
+  tests. Found in the 2026-09-03 external review.
 - [ ] **Unified doctor consultation pad.** The OPD clinical workflow is split across 4 separate
   routes (`/clinical/patients/:id`, `/clinical/vitals`, `/clinical/encounters`, `/clinical/orders`)
   with no single-screen view — a doctor must leave the encounter, re-search the patient, and order
