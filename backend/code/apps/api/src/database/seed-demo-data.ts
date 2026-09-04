@@ -206,7 +206,7 @@ export async function seedCatalogData(app: INestApplicationContext) {
  * charge-capture and notification subscribers live, so business-data seeding doesn't silently skip
  * auto-billing.
  */
-async function bootAndRunInDemoTenant(correlationId: string, work: (app: INestApplicationContext) => Promise<void>): Promise<void> {
+export async function bootAndRunInDemoTenant(correlationId: string, work: (app: INestApplicationContext) => Promise<void>): Promise<void> {
   const demoConfig = getDemoHospitalAdminConfig();
   const tenantId = demoConfig.tenantId;
   if (tenantId === PLATFORM_TENANT_ID) {
