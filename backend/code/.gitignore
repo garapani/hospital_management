@@ -61,3 +61,8 @@ swagger.json
 # docker-compose.dev.yml bind-mounted local data (postgres, redis, minio, node_modules)
 /.data/
 /data/
+
+# secrets — populated locally / on the deploy host, never committed
+.env
+.env.*
+!.env.example
