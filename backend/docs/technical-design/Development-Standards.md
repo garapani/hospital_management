@@ -5329,3 +5329,37 @@ site that later needs it. The bug doesn't show up in a test that only ever captu
 invoice — it needs a scenario that appends a second line to an already-open invoice after the
 underlying data changed, which is exactly the kind of interaction a single-line unit or integration
 test won't exercise on its own.
+
+## 142. `InvoicesService.cancel()` has no non-HTTP actor fallback, unlike its siblings — and a bulk seed script needs its own authenticated tenant context, not just tenantId
+
+`database/seed-demo-bulk-data.ts` (QA volume for the `demo` tenant — see Module-Reference.md)
+applies a spread of invoice states, including `cancel()`. `recordPayment`/`createReturn` both take
+an optional actor field (`receivedBy?`/`returnedBy?`) specifically as a fallback for a non-HTTP
+caller with no authenticated `TenantContextService.getAccountId()` to resolve — this file's own
+pattern for "actor never trusted from the caller, but a fallback exists for tests/scripts"
+(documented on `RecordPaymentInput`/`CreateReturnInput`). `cancel(id: string)` has no such
+parameter at all: it resolves its cancellation-reversal journal's `createdBy` purely from the
+tenant context, and `bootAndRunInDemoTenant` (the boot helper this seeder and `seedDemoData` both
+share) only sets `tenantId`/`correlationId` — no `accountId` — because `seedDemoData` itself never
+needed one. Running `cancel()` under that bare context inserted a NULL into `journal_entries
+.createdBy`, a NOT NULL column, and failed with a Postgres constraint violation rather than
+anything actor-shaped. Fixed by nesting a second `TenantContextService.run({ tenantId, accountId:
+DOCTOR_ID, correlationId }, ...)` inside the outer one for this seeder's own logic, rather than
+changing the shared boot helper's contract (which would be a wider, unnecessary change for
+`seedDemoData`'s sake). **Lesson: before calling a service method from a non-HTTP context, check
+whether it has an actor-fallback parameter — not every mutating method in this codebase does, and
+the ones that don't need a real authenticated tenant context, not just a tenant id.**
+
+A second, unrelated finding from the same debugging session, worth a note even though it didn't
+turn into a code change: migration `0104` (Development-Standards §141) applied cleanly and fully
+across 220+ fresh throwaway schemas in the full test suite, but showed up with only 2 of its 3
+`ALTER TABLE` statements landed against two long-lived local-dev schemas (`tenant_demo`,
+`tenant___platform`) that have accumulated state across many sessions — the third statement's
+column was missing from the live table despite the migration being recorded as applied. The
+migration file and its SQL are provably correct (re-running the missing statement by hand worked
+immediately, with no error); this reads as drift specific to those two long-lived local volumes,
+not a bug in the migration or in `runMigrations({ transaction: 'each' })`. Noted here rather than
+investigated further given the evidence pointed at environment-specific accumulated state, not
+reproducible code — but it's the reason `migrate-tenants.ts`'s own "verify the columns actually
+landed, don't just trust the migrations table" instinct (see the `migration-safety-check` skill)
+is worth following literally after any real backfill, not treated as boilerplate caution.
